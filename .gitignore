@@ -1,0 +1,106 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+.env.production
+*.env.local
+*.env.production
+!.env.example
+!**/.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+logs/
+**/logs/
+*.log
+*.log.*
+*.out
+*.err
+codex-*.log
+codex-*.out
+codex-*.err
+*.err.log
+*.out.log
+*.stderr.log
+*.stdout.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+.claude/
+.codex/
+
+# Codex/Superpowers scratch state
+.superpowers/
+docs/superpowers/
+
+# Build output
+dist/
+build/
+*.egg-info/
+
+# Deployment packages generated locally; keep deploy scripts/config templates tracked
+deploy/*.tar.gz
+deploy/*.zip
+deploy/**/*.tar.gz
+deploy/**/*.zip
+
+# Lock files (keep package.json only)
+pnpm-lock.yaml
+pnpm-workspace.yaml
+package-lock.json
+
+# Python pip cache (downloaded packages, not source code)
+.pip-cache/
+
+# Gitea server installation (contains SSH/JWT private keys, bare git repos, server data)
+softwareGitea/
+
+# Environment backups (contain secrets)
+*.env.backup
+*.env.bak
+
+# Security keys and certificates (prevent accidental credential leaks)
+*.pem
+*.rsa
+*.key
+*.p12
+*.pfx
+
+# Course materials (large PDFs/PPTs, not system code)
+frontend/courses/
+
+# RagFlow server runtime logs
+ragflow/docker/ragflow-logs/
+
+# Python wheels (build artifacts, downloadable via pip)
+*.whl
+
+# Vim/editor swap files
+*.swp
+*.swo
+*~
+
+# TRAE IDE state
+.trae/
