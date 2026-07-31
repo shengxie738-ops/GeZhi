@@ -104,3 +104,6 @@ ragflow/docker/ragflow-logs/
 
 # TRAE IDE state
 .trae/
+
+# 团队内部配置文档（含真实密钥，仅私发，绝不提交）
+系统配置详细信息.md
