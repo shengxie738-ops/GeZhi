@@ -121,7 +121,7 @@ frontend/tests/render_*
 服务器连接指南.md
 
 # 调试产物（含生产服务器信息，本地保留不上传）
-debug-deploy-health-audit.md
+debug-*.md
 *.audit.md
 
 # 本地数据库备份/导出（含真实用户数据、Gitea 私钥，体积大且涉密，绝不提交）
