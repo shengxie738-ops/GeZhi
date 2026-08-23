@@ -18,6 +18,7 @@ import TeacherCourseManager from './components/TeacherCourseManager.js';
 import TeacherDashboard from './components/TeacherDashboard.js';
 import TeacherProjectManager from './components/TeacherProjectManager.js?v=20260816_002';
 import TeacherAiLessonPrep from './components/TeacherAiLessonPrep.js';
+import ForeignLangPage from './components/foreign-lang/ForeignLangPage.js?v=20260823_9';
 import { homeworkApi } from './api/homework.js';
 import { examCenterApi } from './api/examCenter.js';
 import { profileApi } from './api/profileApi.js';
@@ -59,6 +60,7 @@ const app = createApp({
         TeacherDashboard,
         TeacherProjectManager,
         TeacherAiLessonPrep,
+        ForeignLangPage,
     },
     setup() {
         // 1. 全局提示 Hook
@@ -514,9 +516,12 @@ const app = createApp({
             agentMode: chat.agentMode,
             historyLoading: chat.historyLoading,
             historyError: chat.historyError,
-            showHistoryPanel: chat.showHistoryPanel,
-            highlightedMessageId: chat.highlightedMessageId,
-            historyPanelTitle: chat.historyPanelTitle,
+            activeConversationId: chat.activeConversationId,
+            conversationList: chat.conversationList,
+            activeConversation: chat.activeConversation,
+            activeConversationMessages: chat.activeConversationMessages,
+            isViewingHistory: chat.isViewingHistory,
+            sidebarActiveConversationId: chat.sidebarActiveConversationId,
             messages: chat.messages,
             files: chat.files,
             knowledgeRepositories: chat.knowledgeRepositories,
@@ -549,10 +554,10 @@ const app = createApp({
             toggleRAG: chat.toggleRAG,
             setAgentMode: chat.setAgentMode,
             loadChatHistory: chat.loadChatHistory,
-            openHistoryPanel: chat.openHistoryPanel,
-            closeHistoryPanel: chat.closeHistoryPanel,
-            jumpToHistoryMessage: chat.jumpToHistoryMessage,
-            deleteHistoryMessage: chat.deleteHistoryMessage,
+            startNewConversation: chat.startNewConversation,
+            selectConversation: chat.selectConversation,
+            backToCurrentConversation: chat.backToCurrentConversation,
+            deleteConversation: chat.deleteConversation,
             clearChatHistory: chat.clearChatHistory,
             fillInput: chat.fillInput,
             getVisualGuideTypeMeta: chat.getVisualGuideTypeMeta,

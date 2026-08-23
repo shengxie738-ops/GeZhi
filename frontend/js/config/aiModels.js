@@ -138,8 +138,41 @@ export const IMAGE_MODEL_OPTIONS = [
     }
 ];
 
+// 全模态语音模型（qwen omni）：仅供口语训练使用，文本任务一律使用文本模型
+export const OMNI_MODEL_OPTIONS = [
+    {
+        id: 'qwen3.5-omni-flash',
+        label: 'qwen3.5-omni-flash',
+        provider: '阿里云百炼',
+        baseUrl: 'https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        hint: '口语评测 · 极速'
+    },
+    {
+        id: 'qwen3.5-omni-plus',
+        label: 'qwen3.5-omni-plus',
+        provider: '阿里云百炼',
+        baseUrl: 'https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        hint: '口语评测 · 旗舰'
+    },
+    {
+        id: 'qwen-omni-turbo',
+        label: 'qwen-omni-turbo',
+        provider: '阿里云百炼',
+        baseUrl: 'https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        hint: '口语评测 · 均衡'
+    },
+    {
+        id: 'qwen3-omni-flash-2025-12-01',
+        label: 'qwen3-omni-flash',
+        provider: '阿里云百炼',
+        baseUrl: 'https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        hint: '口语评测 · 经典'
+    }
+];
+
 export const DEFAULT_AGENT_MODEL = 'qwen3.7-plus';
 export const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0-pro';
+export const DEFAULT_OMNI_MODEL = 'qwen3.5-omni-flash';
 
 export function mergeModelOptions(primaryOptions = [], fallbackOptions = []) {
     const merged = new Map();
@@ -162,4 +195,8 @@ export function getTextModelLabel(modelId) {
 
 export function getImageModelLabel(modelId) {
     return IMAGE_MODEL_OPTIONS.find((model) => model.id === modelId)?.label || modelId || DEFAULT_IMAGE_MODEL;
+}
+
+export function getOmniModelLabel(modelId) {
+    return OMNI_MODEL_OPTIONS.find((model) => model.id === modelId)?.label || modelId || DEFAULT_OMNI_MODEL;
 }

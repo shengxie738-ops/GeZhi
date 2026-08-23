@@ -44,8 +44,11 @@ export function useAuth(showToast, onLoginSuccess) {
     const currentView = ref(normalizeStoredView(currentRole.value, localStorage.getItem('currentView')));
 
     const activeMenus = computed(() => currentRole.value === 'student' ? studentMenus : teacherMenus);
+    // 外语学习工作台没有侧栏菜单项，入口在工作台模式分流页；挂载期间顶部信息回落到"工作台"菜单
+    const VIEW_MENU_ALIASES = { 'foreign-lang': 'workspace' };
     const currentMenuInfo = computed(() => {
-        const menu = activeMenus.value.find(m => m.id === currentView.value);
+        const target = VIEW_MENU_ALIASES[currentView.value] || currentView.value;
+        const menu = activeMenus.value.find(m => m.id === target);
         if (!menu) {
             currentView.value = currentRole.value === 'student' ? 'dashboard' : 't_dashboard';
             return activeMenus.value[0];

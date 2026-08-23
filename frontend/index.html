@@ -818,23 +818,423 @@
             overflow: hidden;
         }
 
-        .guided-workspace-grid {
+        /* Codex 式工作台骨架：tutor 三栏（侧栏/对话/Mira），RAG 双栏（侧栏/对话） */
+        .workspace-shell {
             flex: 1;
             min-height: 0;
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            display: flex;
             gap: 1rem;
             padding: 1rem;
         }
 
-        .guided-workspace-grid.rag-mode {
-            grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+        .workspace-shell.is-rag {
             gap: 1.25rem;
             padding: 1.25rem;
         }
 
+        /* 左侧栏：安静的会话导航，让对话区成为视觉主角 */
+        .workspace-sidebar {
+            width: 264px;
+            flex-shrink: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            border-radius: 1.5rem;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(241, 247, 250, 0.56)),
+                radial-gradient(circle at 20% 0%, rgba(185, 28, 28, 0.05), transparent 40%);
+            border: 1px solid rgba(255, 255, 255, 0.68);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.86),
+                0 22px 62px rgba(28, 43, 56, 0.10);
+            overflow: hidden;
+        }
+
+        .workspace-shell.is-rag .workspace-sidebar {
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(240, 247, 250, 0.56)),
+                radial-gradient(circle at 20% 0%, rgba(28, 43, 56, 0.06), transparent 40%);
+        }
+
+        .workspace-new-chat {
+            margin: 1rem 1rem 0.5rem;
+            height: 42px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border-radius: 999px;
+            font-size: 0.8125rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #c22a2a, #991b1b);
+            border: none;
+            box-shadow: 0 12px 28px rgba(185, 28, 28, 0.26);
+            transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+            cursor: pointer;
+        }
+
+        .workspace-new-chat:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 32px rgba(185, 28, 28, 0.30);
+        }
+
+        .workspace-new-chat:active {
+            transform: scale(0.97);
+        }
+
+        .workspace-new-chat:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .workspace-new-chat.is-pending {
+            box-shadow:
+                inset 0 0 0 2px rgba(255, 255, 255, 0.62),
+                0 12px 28px rgba(185, 28, 28, 0.30);
+        }
+
+        .workspace-shell.is-rag .workspace-new-chat {
+            background: linear-gradient(135deg, #243648, #1c2b38);
+            box-shadow: 0 12px 28px rgba(28, 43, 56, 0.28);
+        }
+
+        .workspace-shell.is-rag .workspace-new-chat:hover {
+            box-shadow: 0 16px 32px rgba(28, 43, 56, 0.32);
+        }
+
+        .workspace-shell.is-rag .workspace-new-chat.is-pending {
+            box-shadow:
+                inset 0 0 0 2px rgba(255, 255, 255, 0.62),
+                0 12px 28px rgba(28, 43, 56, 0.30);
+        }
+
+        .workspace-sidebar-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem 0.5rem;
+        }
+
+        .workspace-sidebar-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: rgb(100 116 139);
+            font-family: 'Barlow Condensed', sans-serif;
+        }
+
+        .workspace-shell.is-tutor .workspace-sidebar-title .ph {
+            color: #b91c1c;
+        }
+
+        .workspace-shell.is-rag .workspace-sidebar-title .ph {
+            color: #1c2b38;
+        }
+
+        .workspace-sidebar-icon-btn {
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: 0.625rem;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            color: rgb(100 116 139);
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 180ms ease;
+            cursor: pointer;
+        }
+
+        .workspace-sidebar-icon-btn:hover {
+            background: #fff;
+            color: rgb(30 41 59);
+        }
+
+        .workspace-sidebar-icon-btn:disabled {
+            opacity: 0.6;
+            cursor: wait;
+        }
+
+        .workspace-conversation-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0.25rem 0.75rem 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+
+        .workspace-conversation-empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: rgb(148 163 184);
+            padding: 1.5rem 0.75rem;
+        }
+
+        .workspace-conversation-empty .ph {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .workspace-conversation-empty-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: rgb(100 116 139);
+        }
+
+        .workspace-conversation-empty-hint {
+            font-size: 0.6875rem;
+            margin-top: 0.25rem;
+            line-height: 1.6;
+        }
+
+        .workspace-conversation-item {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.625rem 0.625rem 0.625rem 0.9375rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(226, 232, 240, 0.7);
+            background: rgba(255, 255, 255, 0.55);
+            cursor: pointer;
+            transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+
+        .workspace-conversation-item::before {
+            content: '';
+            position: absolute;
+            left: 0.3125rem;
+            top: 50%;
+            transform: translateY(-50%) scaleY(0);
+            width: 3px;
+            height: 58%;
+            border-radius: 999px;
+            background: #b91c1c;
+            transition: transform 180ms ease;
+        }
+
+        .workspace-shell.is-rag .workspace-conversation-item::before {
+            background: #1c2b38;
+        }
+
+        .workspace-conversation-item:hover {
+            background: rgba(255, 255, 255, 0.92);
+            border-color: rgba(148, 163, 184, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .workspace-conversation-item:focus-visible {
+            outline: 2px solid rgba(185, 28, 28, 0.45);
+            outline-offset: 1px;
+        }
+
+        .workspace-shell.is-rag .workspace-conversation-item:focus-visible {
+            outline-color: rgba(28, 43, 56, 0.45);
+        }
+
+        .workspace-conversation-item.is-active {
+            background: rgba(185, 28, 28, 0.06);
+            border-color: rgba(185, 28, 28, 0.22);
+            box-shadow: 0 10px 26px rgba(185, 28, 28, 0.08);
+        }
+
+        .workspace-conversation-item.is-active::before {
+            transform: translateY(-50%) scaleY(1);
+        }
+
+        .workspace-shell.is-rag .workspace-conversation-item.is-active {
+            background: rgba(28, 43, 56, 0.06);
+            border-color: rgba(28, 43, 56, 0.22);
+            box-shadow: 0 10px 26px rgba(28, 43, 56, 0.08);
+        }
+
+        .workspace-conversation-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .workspace-conversation-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: rgb(51 65 85);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .workspace-conversation-item.is-active .workspace-conversation-title {
+            color: #b91c1c;
+        }
+
+        .workspace-shell.is-rag .workspace-conversation-item.is-active .workspace-conversation-title {
+            color: #1c2b38;
+        }
+
+        .workspace-conversation-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 0.25rem;
+            font-size: 0.625rem;
+            font-weight: 600;
+            color: rgb(148 163 184);
+        }
+
+        .workspace-conversation-sep {
+            opacity: 0.6;
+        }
+
+        .workspace-conversation-delete {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        .workspace-sidebar-foot {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.625rem 1rem;
+            border-top: 1px solid rgba(226, 232, 240, 0.6);
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .workspace-sync-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            font-size: 0.625rem;
+            font-weight: 700;
+            color: rgb(5 150 105);
+        }
+
+        .workspace-sync-status.is-warning {
+            color: rgb(217 119 6);
+        }
+
+        .workspace-sync-dot {
+            width: 0.375rem;
+            height: 0.375rem;
+            border-radius: 999px;
+            background: currentColor;
+            animation: workspace-sync-pulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes workspace-sync-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+        .workspace-clear-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            height: 1.625rem;
+            padding: 0 0.625rem;
+            border-radius: 0.625rem;
+            background: rgba(185, 28, 28, 0.07);
+            border: 1px solid rgba(185, 28, 28, 0.14);
+            color: #b91c1c;
+            font-size: 0.625rem;
+            font-weight: 700;
+            transition: all 180ms ease;
+            cursor: pointer;
+        }
+
+        .workspace-clear-btn:hover:not(:disabled) {
+            background: #b91c1c;
+            color: #fff;
+        }
+
+        .workspace-clear-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 查看历史对话时悬浮于对话区顶部的提示条 */
+        .history-review-banner {
+            position: absolute;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            padding: 0.4375rem 0.625rem 0.4375rem 1rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            box-shadow: 0 14px 36px rgba(28, 43, 56, 0.14);
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: rgb(71 85 105);
+            white-space: nowrap;
+        }
+
+        .history-review-banner .ph-clock-counter-clockwise {
+            color: #b91c1c;
+        }
+
+        .workspace-shell.is-rag .history-review-banner .ph-clock-counter-clockwise {
+            color: #1c2b38;
+        }
+
+        .history-review-banner button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            height: 1.75rem;
+            padding: 0 0.75rem;
+            border-radius: 999px;
+            background: #b91c1c;
+            color: #fff;
+            border: none;
+            font-size: 0.6875rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 180ms ease;
+        }
+
+        .history-review-banner button:hover {
+            background: #991b1b;
+        }
+
+        .workspace-shell.is-rag .history-review-banner button {
+            background: #1c2b38;
+        }
+
+        .workspace-shell.is-rag .history-review-banner button:hover {
+            background: #253645;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .workspace-sync-dot {
+                animation: none;
+            }
+        }
+
         .chat-agent-column {
             position: relative;
+            flex: 1 1 auto;
+            min-width: 0;
             min-height: 0;
             overflow: hidden;
             border-radius: 1.5rem;
@@ -856,72 +1256,11 @@
                 0 26px 75px rgba(28, 43, 56, 0.12);
         }
 
-        .knowledge-history-rail {
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            border-radius: 1.75rem;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(242, 248, 250, 0.62)),
-                radial-gradient(circle at 90% 0%, rgba(28, 43, 56, 0.12), transparent 36%);
-            border: 1px solid rgba(255, 255, 255, 0.78);
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.88),
-                0 22px 62px rgba(28, 43, 56, 0.10);
-            overflow: hidden;
-        }
-
-        .knowledge-history-item {
-            border-radius: 1rem;
-            border: 1px solid rgba(226, 232, 240, 0.88);
-            background: rgba(255, 255, 255, 0.72);
-            box-shadow: 0 10px 28px rgba(28, 43, 56, 0.05);
-            transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
-            position: relative;
-            cursor: pointer;
-        }
-
-        .knowledge-history-item:hover {
-            transform: translateY(-1px);
-            border-color: rgba(28, 43, 56, 0.18);
-            background: rgba(255, 255, 255, 0.92);
-        }
-
-        .history-panel-item {
-            cursor: pointer;
-            transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
-        }
-
-        .history-panel-item:hover {
-            border-color: rgba(28, 43, 56, 0.22);
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 12px 28px rgba(28, 43, 56, 0.08);
-        }
-
         .chat-message-anchor {
             scroll-margin-top: 1.5rem;
             scroll-margin-bottom: 6rem;
             border-radius: 1.25rem;
             transition: box-shadow 220ms ease, background-color 220ms ease;
-        }
-
-        .chat-message-highlight {
-            background: rgba(28, 43, 56, 0.06);
-            box-shadow:
-                0 0 0 2px rgba(28, 43, 56, 0.28),
-                0 16px 36px rgba(28, 43, 56, 0.12);
-            animation: chat-message-pulse 1.2s ease-in-out 2;
-        }
-
-        @keyframes chat-message-pulse {
-            0%, 100% { box-shadow: 0 0 0 2px rgba(28, 43, 56, 0.28), 0 16px 36px rgba(28, 43, 56, 0.12); }
-            50% { box-shadow: 0 0 0 4px rgba(28, 43, 56, 0.16), 0 18px 40px rgba(28, 43, 56, 0.16); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .chat-message-highlight {
-                animation: none;
-            }
         }
 
         .knowledge-history-delete {
@@ -931,10 +1270,8 @@
             transition: opacity 160ms ease, transform 160ms ease, background 160ms ease, color 160ms ease;
         }
 
-        .knowledge-history-item:hover .knowledge-history-delete,
-        .knowledge-history-item:focus-within .knowledge-history-delete,
-        .history-panel-item:hover .knowledge-history-delete,
-        .history-panel-item:focus-within .knowledge-history-delete {
+        .workspace-conversation-item:hover .knowledge-history-delete,
+        .workspace-conversation-item:focus-within .knowledge-history-delete {
             opacity: 1;
             pointer-events: auto;
             transform: scale(1);
@@ -969,11 +1306,14 @@
         }
 
         .visual-guide-panel {
+            width: 380px;
+            flex-shrink: 0;
             min-height: 0;
             display: flex;
             flex-direction: column;
             padding: 1rem;
             border-radius: 1.5rem;
+            overflow-y: auto;
             background:
                 radial-gradient(circle at 88% 8%, rgba(185, 28, 28, 0.10), transparent 32%),
                 radial-gradient(circle at 18% 96%, rgba(37, 99, 235, 0.10), transparent 34%),
@@ -1295,27 +1635,59 @@
         }
 
         @media (max-width: 1180px) {
-            .guided-workspace-grid {
-                grid-template-columns: minmax(0, 1fr);
+            .workspace-shell {
+                flex-direction: column;
                 overflow-y: auto;
             }
 
-            .guided-workspace-grid.rag-mode {
-                grid-template-columns: minmax(0, 1fr);
+            .workspace-sidebar {
+                width: 100%;
+                flex: none;
             }
 
-            .knowledge-history-rail {
-                min-height: 360px;
+            /* 窄屏下会话列表横向滑动，保持三块内容都可直达 */
+            .workspace-conversation-list {
+                flex-direction: row;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding-bottom: 0.625rem;
+            }
+
+            .workspace-conversation-item {
+                flex: 0 0 248px;
+            }
+
+            .workspace-conversation-empty {
+                flex: 0 0 auto;
+                flex-direction: row;
+                gap: 0.5rem;
+                padding: 1rem;
+            }
+
+            .workspace-conversation-empty .ph {
+                margin-bottom: 0;
+            }
+
+            .chat-agent-column {
+                flex: none;
+                height: 580px;
             }
 
             .visual-guide-panel {
+                width: 100%;
+                flex: none;
                 min-height: 520px;
             }
         }
 
         @media (max-width: 760px) {
-            .knowledge-history-rail {
-                min-height: 320px;
+            .workspace-conversation-item {
+                flex-basis: 208px;
+            }
+
+            .chat-agent-column {
+                height: 520px;
             }
         }
 
@@ -2925,7 +3297,7 @@
                                     <p class="text-sm text-slate-400 mb-10 tracking-widest"
                                         style="font-family: 'Barlow Condensed', sans-serif;">格物致知 · 开启协同智能学习</p>
 
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                                         <!-- 引导式学习卡片 -->
                                         <div @click="selectWorkspaceMode('tutor')"
                                             class="glass-panel-liquid p-8 cursor-pointer flex flex-col items-center text-center transition-all duration-500 hover:scale-[1.02] border-2 border-transparent hover:border-[#b91c1c]/20 group">
@@ -2956,6 +3328,21 @@
                                             <span
                                                 class="mt-6 px-4 py-1.5 bg-[#1c2b38]/5 text-[#1c2b38] border border-[#1c2b38]/10 rounded-full text-xs font-semibold group-hover:bg-[#1c2b38] group-hover:text-white transition-colors duration-500">检索课件文献</span>
                                         </div>
+                                        <!-- 外语学习入口卡片 -->
+                                        <div @click="currentView = 'foreign-lang'"
+                                            class="glass-panel-liquid p-8 cursor-pointer flex flex-col items-center text-center transition-all duration-500 hover:scale-[1.02] border-2 border-transparent hover:border-[#002FA7]/25 group">
+                                            <div
+                                                class="w-16 h-16 bg-gradient-to-br from-[#002FA7] to-[#002276] text-white rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-[0_8px_20px_-4px_rgba(0,47,167,0.35)] group-hover:scale-105 transition-transform duration-500">
+                                                <i class="ph ph-translate"></i>
+                                            </div>
+                                            <h3 class="text-lg font-bold text-slate-800 mb-2"
+                                                style="font-family: 'Noto Serif SC', serif;">外语学习</h3>
+                                            <p class="text-xs text-slate-400 leading-relaxed max-w-[240px]">
+                                                AI Language Atelier。阅读精读 · 写作批改 · 全模态口语评测 · 生词闭环，Lexa 与 Echo 双智能体执教。
+                                            </p>
+                                            <span
+                                                class="mt-6 px-4 py-1.5 bg-[#002FA7]/5 text-[#002FA7] border border-[#002FA7]/10 rounded-full text-xs font-semibold group-hover:bg-[#002FA7] group-hover:text-white transition-colors duration-500">进入外语工作台</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -2981,116 +3368,93 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div v-if="workspaceMode !== 'rag'"
-                                        class="px-6 py-2 border-b border-white/20 bg-white/20 backdrop-blur-xl flex items-center justify-between text-[11px] text-slate-500">
-                                        <div class="flex items-center gap-2">
-                                            <i class="ph ph-clock-counter-clockwise text-slate-400"></i>
-                                            <span>当前 {{ workspaceMode === 'rag' ? '知识库检索' : '引导式学习' }} 历史：{{
-                                                messages.length }} 条</span>
-                                            <span v-if="historyError" class="text-amber-600">{{ historyError }}</span>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <button @click="openHistoryPanel"
-                                                class="h-7 px-3 rounded-lg border border-white/40 text-[10px] font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                                                :class="workspaceMode === 'rag' ? 'bg-[#1c2b38] text-white hover:bg-[#253645]' : 'bg-[#b91c1c] text-white hover:bg-[#991b1b]'">
-                                                <i class="ph ph-history"></i>
-                                                历史记录
+                                    <div class="workspace-shell"
+                                        :class="workspaceMode === 'rag' ? 'is-rag' : 'is-tutor'">
+                                        <!-- 左侧栏：对话历史 + 新增对话（两种模式共用） -->
+                                        <aside class="workspace-sidebar">
+                                            <button type="button" @click="startNewConversation"
+                                                class="workspace-new-chat"
+                                                :class="activeConversationId === 'new' ? 'is-pending' : ''"
+                                                :disabled="thinkingAgent !== null">
+                                                <i class="ph ph-plus"></i>
+                                                <span>新增对话</span>
                                             </button>
-                                            <button @click="loadChatHistory(workspaceMode)"
-                                                class="h-7 px-2.5 rounded-lg bg-white/60 border border-white text-[10px] font-bold text-slate-500 hover:text-slate-800 hover:bg-white transition-all flex items-center gap-1"
-                                                :disabled="historyLoading">
-                                                <i class="ph"
-                                                    :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-clock-counter-clockwise'"></i>
-                                                {{ historyLoading ? '同步中' : '刷新历史' }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <transition name="fade">
-                                        <div v-if="showHistoryPanel"
-                                            class="absolute inset-y-0 right-0 z-40 w-full max-w-md bg-white/80 backdrop-blur-2xl border-l border-white/70 shadow-[0_24px_70px_rgba(28,43,56,0.18)] flex flex-col">
-                                            <div
-                                                class="px-5 py-4 border-b border-slate-200/70 flex items-center justify-between">
-                                                <div>
-                                                    <h3
-                                                        class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                                        <i class="ph" :class="workspaceMode === 'rag' ? 'ph-database text-[#1c2b38]' : 'ph-graduation-cap text-[#b91c1c]'"></i>
-                                                        {{ historyPanelTitle() }}
-                                                    </h3>
-                                                    <p class="text-[11px] text-slate-400 mt-1">已同步后端数据库 · 共 {{
-                                                        messages.length }} 条</p>
-                                                </div>
-                                                <button @click="closeHistoryPanel"
-                                                    class="w-8 h-8 rounded-lg bg-white/70 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-white transition-all">
-                                                    <i class="ph ph-x"></i>
+                                            <div class="workspace-sidebar-head">
+                                                <span class="workspace-sidebar-title">
+                                                    <i class="ph"
+                                                        :class="workspaceMode === 'rag' ? 'ph-database' : 'ph-chats-circle'"></i>
+                                                    {{ workspaceMode === 'rag' ? '检索历史' : '对话历史' }}
+                                                </span>
+                                                <button type="button" @click="loadChatHistory(workspaceMode)"
+                                                    class="workspace-sidebar-icon-btn" :disabled="historyLoading"
+                                                    title="同步历史">
+                                                    <i class="ph"
+                                                        :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
                                                 </button>
                                             </div>
-                                            <div
-                                                class="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
-                                                <span class="text-[11px] text-slate-500">每条记录包含数据库时间戳</span>
-                                                <div class="flex items-center gap-2">
-                                                    <button @click="clearChatHistory(workspaceMode)"
-                                                        class="h-7 px-2.5 rounded-lg bg-[#b91c1c]/8 border border-[#b91c1c]/15 text-[10px] font-bold text-[#b91c1c] hover:bg-[#b91c1c] hover:text-white transition-all flex items-center gap-1"
-                                                        :disabled="historyLoading || messages.length === 0">
-                                                        <i class="ph ph-trash"></i>
-                                                        清空全部
-                                                    </button>
-                                                    <button @click="loadChatHistory(workspaceMode)"
-                                                        class="h-7 px-2.5 rounded-lg bg-slate-900/5 border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-white transition-all flex items-center gap-1"
-                                                        :disabled="historyLoading">
-                                                        <i class="ph"
-                                                            :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
-                                                        同步
-                                                    </button>
+                                            <div class="workspace-conversation-list">
+                                                <div v-if="conversationList.length === 0"
+                                                    class="workspace-conversation-empty">
+                                                    <i class="ph ph-chat-centered-dots"></i>
+                                                    <p class="workspace-conversation-empty-title">暂无对话</p>
+                                                    <p class="workspace-conversation-empty-hint">发起一次{{
+                                                        workspaceMode === 'rag' ? '检索' : '学习对话' }}后会自动归档。</p>
                                                 </div>
-                                            </div>
-                                            <div class="flex-1 overflow-y-auto p-5 space-y-3">
-                                                <div v-if="messages.length === 0"
-                                                    class="h-full flex flex-col items-center justify-center text-center text-slate-400">
-                                                    <i class="ph ph-clock-counter-clockwise text-3xl mb-3"></i>
-                                                    <p class="text-xs font-bold">暂无{{ workspaceMode === 'rag' ? '知识库检索' : '引导式学习' }}历史</p>
-                                                    <p class="text-[11px] mt-1">发起一次{{ workspaceMode === 'rag' ? '检索' : '学习对话' }}后会自动写入数据库。</p>
-                                                </div>
-                                                <div v-for="msg in messages" :key="'history-' + msg.id"
-                                                    class="history-panel-item rounded-xl border border-slate-200/80 bg-white/70 p-3 shadow-sm group"
-                                                    role="button"
-                                                    tabindex="0"
-                                                    title="跳转到对应对话"
-                                                    @click="jumpToHistoryMessage(msg)"
-                                                    @keydown.enter.prevent="jumpToHistoryMessage(msg)"
-                                                    @keydown.space.prevent="jumpToHistoryMessage(msg)">
-                                                    <div class="flex items-center justify-between gap-3 mb-2">
-                                                        <span class="text-[11px] font-bold"
-                                                            :class="msg.senderType === 'user' ? 'text-[#b91c1c]' : 'text-[#1c2b38]'">
-                                                            {{ msg.senderType === 'user' ? '我' :
-                                                            getAgentInfo(msg.senderId).name }}
-                                                        </span>
-                                                        <div class="flex items-center gap-1.5 shrink-0">
-                                                            <span class="text-[10px] text-slate-400 whitespace-nowrap">{{
-                                                                msg.time || msg.createdAt }}</span>
-                                                            <button type="button"
-                                                                @click.stop="deleteHistoryMessage(msg)"
-                                                                class="knowledge-history-delete h-6 w-6 rounded-lg bg-white border border-slate-200 text-slate-400 flex items-center justify-center"
-                                                                title="删除这条历史"
-                                                                aria-label="删除这条历史">
-                                                                <i class="ph ph-trash text-xs"></i>
-                                                            </button>
+                                                <div v-for="conv in conversationList" :key="conv.id"
+                                                    class="workspace-conversation-item"
+                                                    :class="conv.id === sidebarActiveConversationId ? 'is-active' : ''"
+                                                    role="button" tabindex="0"
+                                                    :title="conv.title"
+                                                    @click="selectConversation(conv.id)"
+                                                    @keydown.enter.prevent="selectConversation(conv.id)"
+                                                    @keydown.space.prevent="selectConversation(conv.id)">
+                                                    <div class="workspace-conversation-main">
+                                                        <p class="workspace-conversation-title">{{ conv.title }}</p>
+                                                        <div class="workspace-conversation-meta">
+                                                            <span>{{ conv.messageCount }} 条</span>
+                                                            <span
+                                                                class="workspace-conversation-sep">·</span>
+                                                            <span>{{ conv.lastTime || conv.startedTime || '刚刚'
+                                                                }}</span>
                                                         </div>
                                                     </div>
-                                                    <p
-                                                        class="text-xs leading-relaxed text-slate-600 line-clamp-2 whitespace-pre-wrap">
-                                                        {{ msg.content }}</p>
+                                                    <button type="button"
+                                                        class="knowledge-history-delete workspace-conversation-delete"
+                                                        @click.stop="deleteConversation(conv)" title="删除这段对话"
+                                                        aria-label="删除这段对话">
+                                                        <i class="ph ph-trash"></i>
+                                                    </button>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </transition>
-                                    <div class="guided-workspace-grid"
-                                        :class="workspaceMode === 'rag' ? 'rag-mode' : ''">
+                                            <div class="workspace-sidebar-foot">
+                                                <span class="workspace-sync-status"
+                                                    :class="historyError ? 'is-warning' : ''">
+                                                    <span class="workspace-sync-dot"></span>
+                                                    {{ historyLoading ? '同步中' : (historyError ? '本地缓存' : '已同步') }}
+                                                </span>
+                                                <button type="button" @click="clearChatHistory(workspaceMode)"
+                                                    class="workspace-clear-btn"
+                                                    :disabled="historyLoading || messages.length === 0">
+                                                    <i class="ph ph-trash"></i>清空全部
+                                                </button>
+                                            </div>
+                                        </aside>
+                                        <!-- 中间：对话区 -->
                                         <div class="chat-agent-column"
                                             :class="workspaceMode === 'rag' ? 'knowledge-search-shell' : ''">
+                                            <transition name="fade">
+                                                <div v-if="isViewingHistory" class="history-review-banner">
+                                                    <i class="ph ph-clock-counter-clockwise"></i>
+                                                    <span>正在查看历史对话</span>
+                                                    <button type="button" @click="backToCurrentConversation">
+                                                        回到最新对话<i class="ph ph-arrow-bend-up-right"></i>
+                                                    </button>
+                                                </div>
+                                            </transition>
                                             <div ref="chatContainer"
                                                 class="h-full overflow-y-auto p-6 flex flex-col gap-6 scroll-smooth"
                                                 :class="workspaceMode === 'rag' ? 'pb-44' : 'pb-40'">
-                                                <div v-if="messages.length === 0" class="m-auto text-center"
+                                                <div v-if="activeConversationMessages.length === 0" class="m-auto text-center"
                                                     :class="workspaceMode === 'rag' ? 'knowledge-empty-state' : ''">
                                                     <div class="w-16 h-16 bg-white/60 backdrop-blur-md rounded-full flex items-center justify-center text-3xl shadow-md mx-auto mb-4 border border-white"
                                                         :class="workspaceMode === 'rag' ? 'text-[#1c2b38]' : 'text-[#b91c1c]'">
@@ -3124,12 +3488,9 @@
                                                     </div>
                                                 </div>
 
-                                                <div v-for="msg in messages" :key="msg.id"
+                                                <div v-for="msg in activeConversationMessages" :key="msg.id"
                                                     class="chat-message-anchor flex flex-col w-full max-w-4xl mx-auto"
-                                                    :class="[
-                                                        msg.senderType === 'user' ? 'items-end' : 'items-start',
-                                                        highlightedMessageId === msg.id ? 'chat-message-highlight' : ''
-                                                    ]"
+                                                    :class="msg.senderType === 'user' ? 'items-end' : 'items-start'"
                                                     :data-message-id="msg.id">
                                                     <div v-if="msg.senderType === 'user'"
                                                         class="flex items-end gap-2 max-w-[85%]">
@@ -3283,108 +3644,6 @@
                                             </div>
                                         </div>
 
-                                        <aside v-if="workspaceMode === 'rag'" class="knowledge-history-rail">
-                                            <div class="p-5 border-b border-white/60">
-                                                <div class="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <p
-                                                            class="text-[10px] text-slate-400 font-bold uppercase tracking-[0.18em]">
-                                                            Retrieval archive</p>
-                                                        <h3 class="mt-1 text-base font-extrabold text-slate-800 flex items-center gap-2"
-                                                            style="font-family: 'Noto Serif SC', serif;">
-                                                            <i class="ph ph-clock-counter-clockwise text-[#1c2b38]"></i>
-                                                            检索历史
-                                                        </h3>
-                                                    </div>
-                                                    <button @click="loadChatHistory('rag')"
-                                                        class="h-8 w-8 rounded-xl bg-white/70 border border-white text-slate-500 hover:text-[#1c2b38] hover:bg-white transition-all flex items-center justify-center"
-                                                        :disabled="historyLoading">
-                                                        <i class="ph"
-                                                            :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
-                                                    </button>
-                                                </div>
-                                                <div class="mt-4 grid grid-cols-2 gap-2">
-                                                    <div class="rounded-2xl bg-white/60 border border-white px-3 py-3">
-                                                        <div class="text-[10px] text-slate-400 font-bold">历史条目</div>
-                                                        <div class="mt-1 text-2xl font-black text-[#1c2b38]">{{
-                                                            messages.length }}</div>
-                                                    </div>
-                                                    <div class="rounded-2xl bg-white/60 border border-white px-3 py-3">
-                                                        <div class="text-[10px] text-slate-400 font-bold">同步状态</div>
-                                                        <div class="mt-2 flex items-center gap-1.5 text-xs font-bold"
-                                                            :class="historyError ? 'text-amber-600' : 'text-emerald-600'">
-                                                            <span class="w-1.5 h-1.5 rounded-full"
-                                                                :class="historyError ? 'bg-amber-500' : 'bg-emerald-500'"></span>
-                                                            {{ historyLoading ? '同步中' : (historyError ? '本地缓存' : '已同步')
-                                                            }}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="px-5 py-3 border-b border-white/50">
-                                                <div class="flex items-center justify-between gap-2">
-                                                    <span class="text-[11px] font-bold text-slate-500">最近检索记录</span>
-                                                    <div class="flex items-center gap-1.5">
-                                                        <button @click="clearChatHistory('rag')"
-                                                            class="h-7 px-2.5 rounded-lg bg-[#b91c1c]/8 border border-[#b91c1c]/12 text-[10px] font-bold text-[#b91c1c] hover:bg-[#b91c1c] hover:text-white transition-all flex items-center gap-1"
-                                                            :disabled="historyLoading || messages.length === 0"
-                                                            title="清空全部历史">
-                                                            <i class="ph ph-trash"></i>
-                                                            清空
-                                                        </button>
-                                                        <button @click="openHistoryPanel"
-                                                            class="h-7 px-2.5 rounded-lg bg-[#1c2b38]/8 border border-[#1c2b38]/10 text-[10px] font-bold text-[#1c2b38] hover:bg-[#1c2b38] hover:text-white transition-all">
-                                                            查看全部
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="flex-1 overflow-y-auto p-5 space-y-3">
-                                                <div v-if="messages.length === 0"
-                                                    class="h-full min-h-[220px] flex flex-col items-center justify-center text-center text-slate-400 px-3">
-                                                    <div
-                                                        class="w-14 h-14 rounded-2xl bg-white/70 border border-white flex items-center justify-center text-2xl text-[#1c2b38] mb-3">
-                                                        <i class="ph ph-archive-box"></i>
-                                                    </div>
-                                                    <p class="text-xs font-bold text-slate-600">暂无知识库检索历史</p>
-                                                    <p class="text-[11px] mt-1 leading-relaxed">
-                                                        发起检索后，问题、回答与数据库时间戳会在这里归档。</p>
-                                                </div>
-                                                <div v-for="msg in messages.slice().reverse().slice(0, 8)"
-                                                    :key="'rail-history-' + msg.id"
-                                                    class="knowledge-history-item p-3"
-                                                    role="button"
-                                                    tabindex="0"
-                                                    title="跳转到对应对话"
-                                                    @click="jumpToHistoryMessage(msg)"
-                                                    @keydown.enter.prevent="jumpToHistoryMessage(msg)"
-                                                    @keydown.space.prevent="jumpToHistoryMessage(msg)">
-                                                    <div class="flex items-center justify-between gap-2 mb-2">
-                                                        <span class="text-[11px] font-bold flex items-center gap-1.5 min-w-0"
-                                                            :class="msg.senderType === 'user' ? 'text-[#b91c1c]' : 'text-[#1c2b38]'">
-                                                            <i class="ph shrink-0"
-                                                                :class="msg.senderType === 'user' ? 'ph-user-circle' : 'ph-robot'"></i>
-                                                            <span class="truncate">{{ msg.senderType === 'user' ? '我' :
-                                                            getAgentInfo(msg.senderId).name }}</span>
-                                                        </span>
-                                                        <div class="flex items-center gap-1 shrink-0">
-                                                            <span class="text-[10px] text-slate-400 whitespace-nowrap">{{
-                                                                msg.time || msg.createdAt }}</span>
-                                                            <button type="button"
-                                                                @click.stop="deleteHistoryMessage(msg)"
-                                                                class="knowledge-history-delete h-6 w-6 rounded-lg bg-white border border-slate-200 text-slate-400 flex items-center justify-center"
-                                                                title="删除这条历史"
-                                                                aria-label="删除这条历史">
-                                                                <i class="ph ph-trash text-xs"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <p
-                                                        class="text-xs leading-relaxed text-slate-600 line-clamp-2 whitespace-pre-wrap">
-                                                        {{ msg.content }}</p>
-                                                </div>
-                                            </div>
-                                        </aside>
 
                                         <aside v-if="workspaceMode === 'tutor'" class="visual-guide-panel">
                                             <div class="flex items-start justify-between gap-3 mb-4">
@@ -3804,6 +4063,13 @@
                                 @show-toast="showToast"></student-academic-space>
                         </transition>
 
+                        <!-- 4.5.3. 外语学习工作台（AI Language Atelier） -->
+                        <transition name="fade">
+                            <foreign-lang-page v-if="currentView === 'foreign-lang'" :current-user="currentUser"
+                                :agents="agents" @show-toast="showToast" @back="currentView = 'workspace'"
+                                @open-agents="currentView = 'agents'"></foreign-lang-page>
+                        </transition>
+
                         <!-- 4.6. 错题本 -->
                         <transition name="fade">
                             <student-mistake-book v-if="currentView === 'mistakes'" :current-user="currentUser"
@@ -4219,8 +4485,8 @@
 
                                             <div>
                                                 <label class="block text-xs font-semibold text-slate-600 mb-1.5">
-                                                    {{ agentForm.modelCategory === 'image' ? '图片生成模型' : '搭载大模型' }}
-                                                    ({{ agentForm.modelCategory === 'image' ? 'Image Routing' : 'LLM Routing' }})</label>
+                                                    {{ agentForm.modelCategory === 'image' ? '图片生成模型' : agentForm.modelCategory === 'omni' ? '全模态语音模型' : '搭载大模型' }}
+                                                    ({{ agentForm.modelCategory === 'image' ? 'Image Routing' : agentForm.modelCategory === 'omni' ? 'Omni Voice Routing' : 'LLM Routing' }})</label>
                                                 <select v-model="agentForm.model"
                                                     class="w-full bg-white/60 backdrop-blur-sm border border-white text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-[#1c2b38]/20 focus:border-[#1c2b38] px-3 py-2.5 outline-none transition-all">
                                                     <option v-for="model in activeAgentModelOptions" :key="model.id"
@@ -4580,7 +4846,7 @@
 
     </div>
 
-    <script type="module" src="./js/main.js?t=20260816_0012"></script>
+    <script type="module" src="./js/main.js?t=20260823_0015"></script>
 
     <!-- Premium Interactive Effects: Generative Art & Card Spotlight -->
     <script>

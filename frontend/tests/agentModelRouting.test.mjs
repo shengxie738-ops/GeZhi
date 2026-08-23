@@ -73,7 +73,7 @@ assert.match(mockData, /id: 'agent_ranked_coach'/);
 assert.match(mockData, /name: '排位赛AI教练'/);
 assert.match(mockData, /role: '排位诊断与冲分策略教练'/);
 
-assert.match(agentsHook, /import\s+\{\s*DEFAULT_AGENT_MODEL,\s*DEFAULT_IMAGE_MODEL,\s*IMAGE_MODEL_OPTIONS,\s*TEXT_MODEL_OPTIONS,\s*mergeModelOptions\s*\}\s+from\s+['"]\.\.\/config\/aiModels\.js['"]/);
+assert.match(agentsHook, /import\s+\{\s*DEFAULT_AGENT_MODEL,\s*DEFAULT_IMAGE_MODEL,\s*DEFAULT_OMNI_MODEL,\s*IMAGE_MODEL_OPTIONS,\s*OMNI_MODEL_OPTIONS,\s*TEXT_MODEL_OPTIONS,\s*mergeModelOptions\s*\}\s+from\s+['"]\.\.\/config\/aiModels\.js['"]/);
 assert.match(agentsHook, /import\s+request\s+from\s+['"]\.\.\/utils\/request\.js['"]/);
 assert.match(agentsHook, /import\s+\{\s*agentApi\s*\}\s+from\s+['"]\.\.\/api\/agents\.js['"]/);
 assert.match(agentsHook, /const\s+updateAgentModel\s*=\s*async\s*\(agent,\s*modelId\)\s*=>/);

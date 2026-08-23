@@ -4,7 +4,8 @@ import { buildVisualGuideSvg, createLocalVisualGuide, getVisualGuideSourceLabel,
 import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
 import request from '../utils/request.js';
-import { getChatStorageKey, getHistoryPanelTitle, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode, shouldShowHistoryButton } from '../utils/chatModes.js';
+import { getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
+import { findConversationForMessage, groupMessagesIntoConversations } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 
 export function useChat(currentUser, showToast, agentResolver = null) {
@@ -15,9 +16,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const agentMode = ref('tutor');
     const historyLoading = ref(false);
     const historyError = ref('');
-    const showHistoryPanel = ref(false);
-    const highlightedMessageId = ref(null);
-    let highlightTimer = null;
+    const activeConversationId = ref(null);
     const createEmptyVisualGuide = () => ({
         title: 'AI 引导图生成师',
         caption: '可将问题转为可视化图片。',
@@ -61,6 +60,70 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const messages = ref(readStoredMessages('tutor'));
 
+    // ================== 伪会话模型：把线性消息流按用户提问切分为对话 ==================
+    // activeConversationId: null = 当前最新对话；'new' = 新增对话的空白态；'conv-xxx' = 查看历史对话
+    const conversationList = computed(() => {
+        const conversations = groupMessagesIntoConversations(messages.value);
+        return conversations.slice().reverse();
+    });
+
+    const activeConversation = computed(() => {
+        if (!activeConversationId.value || activeConversationId.value === 'new') return null;
+        return conversationList.value.find(conversation => conversation.id === activeConversationId.value) || null;
+    });
+
+    const isViewingHistory = computed(() => Boolean(activeConversation.value));
+
+    // 侧栏高亮：查看历史时指向该对话，其余情况指向最新对话（新增对话空白态时不高亮）
+    const sidebarActiveConversationId = computed(() => {
+        if (activeConversationId.value === 'new') return null;
+        if (activeConversation.value) return activeConversation.value.id;
+        return conversationList.value[0]?.id || null;
+    });
+
+    const activeConversationMessages = computed(() => {
+        if (activeConversationId.value === 'new') return [];
+        if (activeConversation.value) return activeConversation.value.messages;
+        const conversations = groupMessagesIntoConversations(messages.value);
+        return conversations.length ? conversations[conversations.length - 1].messages : [];
+    });
+
+    const scrollChatToBottom = async () => {
+        await nextTick();
+        if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+    };
+
+    const selectConversation = async (conversationId) => {
+        // 最新对话即「当前对话」，点击它等同于回到当前
+        const isLatest = conversationList.value[0]?.id === conversationId;
+        const nextId = isLatest ? null : conversationId;
+        if (activeConversationId.value === nextId) return;
+        activeConversationId.value = nextId;
+        await nextTick();
+        if (chatContainer.value) chatContainer.value.scrollTop = 0;
+    };
+
+    const backToCurrentConversation = async () => {
+        activeConversationId.value = null;
+        await scrollChatToBottom();
+    };
+
+    const resetVisualGuideForNewConversation = () => {
+        visualGuidePrompt.value = '';
+        visualGuideImage.value = null;
+        visualGuideStatus.value = 'ready';
+        visualGuide.value = createEmptyVisualGuide();
+        showVisualGuideViewer.value = false;
+    };
+
+    const startNewConversation = async () => {
+        activeConversationId.value = 'new';
+        if (normalizeAgentMode(agentMode.value) !== 'rag') {
+            resetVisualGuideForNewConversation();
+        }
+        await scrollChatToBottom();
+    };
+
     const hydrateParsedMessages = () => {
         Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
         messages.value.forEach(msg => {
@@ -75,6 +138,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const sessionId = getSessionId();
         agentMode.value = normalizedMode;
         forceRAG.value = normalizedMode === 'rag';
+        activeConversationId.value = null;
 
         messages.value = readStoredMessages(normalizedMode);
         hydrateParsedMessages();
@@ -101,52 +165,6 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const setAgentMode = (mode) => loadChatHistory(mode);
-    const openHistoryPanel = async () => {
-        if (!shouldShowHistoryButton(agentMode.value)) return;
-        showHistoryPanel.value = true;
-        await loadChatHistory(agentMode.value);
-    };
-    const closeHistoryPanel = () => {
-        showHistoryPanel.value = false;
-    };
-
-    const jumpToHistoryMessage = async (message) => {
-        if (!message?.id) return;
-        const targetId = message.id;
-        const exists = messages.value.some(item => item.id === targetId);
-        if (!exists) {
-            showToast('未找到对应的对话消息', 'warning');
-            return;
-        }
-
-        showHistoryPanel.value = false;
-        highlightedMessageId.value = targetId;
-        if (highlightTimer) {
-            clearTimeout(highlightTimer);
-            highlightTimer = null;
-        }
-
-        await nextTick();
-        const container = chatContainer.value;
-        const targetIdStr = String(targetId);
-        const candidates = container
-            ? Array.from(container.querySelectorAll('[data-message-id]'))
-            : [];
-        const target = candidates.find(el => el.getAttribute('data-message-id') === targetIdStr);
-
-        if (!target) {
-            showToast('对话消息尚未渲染完成，请稍后重试', 'warning');
-            return;
-        }
-
-        target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        highlightTimer = setTimeout(() => {
-            if (highlightedMessageId.value === targetId) {
-                highlightedMessageId.value = null;
-            }
-            highlightTimer = null;
-        }, 2600);
-    };
 
     const resolveHistoryMessageDbId = (messageId) => {
         const raw = String(messageId || '');
@@ -158,12 +176,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         return Number.isFinite(parsed) ? parsed : null;
     };
 
-    const deleteHistoryMessage = async (message) => {
-        if (!message?.id) return;
-        const preview = String(message.content || '').replace(/\s+/g, ' ').slice(0, 36);
-        const confirmed = window.confirm(`确认删除这条历史记录？\n「${preview}${preview.length >= 36 ? '…' : ''}」`);
-        if (!confirmed) return;
-
+    // 单条消息的删除：云端尽力同步，后端不可用时仍清理本地缓存
+    const removeHistoryMessageRecord = async (message) => {
         const dbId = resolveHistoryMessageDbId(message.id);
         const sessionId = getSessionId();
         try {
@@ -176,17 +190,28 @@ export function useChat(currentUser, showToast, agentResolver = null) {
                     throw new Error(resJson.message || '删除失败');
                 }
             }
-            messages.value = messages.value.filter(item => item.id !== message.id);
-            if (parsedHtmlCache[message.id]) delete parsedHtmlCache[message.id];
-            showToast('历史记录已删除', 'success');
         } catch (error) {
-            // 后端不可用时仍允许清理本地缓存，避免按钮失效
+            historyError.value = '历史记录已从本地移除，云端同步可能未完成。';
+            console.info('[Chat] Delete history fallback to local cache.', error);
+        } finally {
             messages.value = messages.value.filter(item => item.id !== message.id);
             if (parsedHtmlCache[message.id]) delete parsedHtmlCache[message.id];
-            historyError.value = '历史记录已从本地移除，云端同步可能未完成。';
-            showToast(error.message || '已从本地删除', 'warning');
-            console.info('[Chat] Delete history fallback to local cache.', error);
         }
+    };
+
+    const deleteConversation = async (conversation) => {
+        if (!conversation?.id || !conversation.messages?.length) return;
+        const preview = conversation.title || '未命名对话';
+        const confirmed = window.confirm(`确认删除这段对话？\n「${preview}」共 ${conversation.messages.length} 条消息，删除后不可恢复。`);
+        if (!confirmed) return;
+
+        for (const message of conversation.messages) {
+            await removeHistoryMessageRecord(message);
+        }
+        if (activeConversationId.value === conversation.id) {
+            activeConversationId.value = null;
+        }
+        showToast('对话已删除', 'success');
     };
 
     const clearChatHistory = async (mode = agentMode.value) => {
@@ -219,6 +244,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             historyError.value = '历史记录已从本地清空，云端同步可能未完成。';
             showToast(error.message || '已从本地清空', 'warning');
             console.info('[Chat] Clear history fallback to local cache.', error);
+        } finally {
+            activeConversationId.value = null;
         }
     };
 
@@ -687,6 +714,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const sessionId = getSessionId();
         const prompt = inputText.value;
         if (!prompt.trim() || thinkingAgent.value) return;
+        // 发送永远追加到消息流末尾：从历史对话或空白态发送时，自动回到当前对话
+        activeConversationId.value = null;
         if (agentMode.value !== 'rag' && shouldTriggerVisualGuideGeneration(prompt)) {
             visualGuideType.value = 'concept';
             generateVisualGuide(prompt, { reason: 'student-question', force: true });
@@ -716,9 +745,12 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         agentMode,
         historyLoading,
         historyError,
-        showHistoryPanel,
-        highlightedMessageId,
-        historyPanelTitle: () => getHistoryPanelTitle(agentMode.value),
+        activeConversationId,
+        conversationList,
+        activeConversation,
+        activeConversationMessages,
+        isViewingHistory,
+        sidebarActiveConversationId,
         messages,
         files,
         knowledgeRepositories,
@@ -752,10 +784,10 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         toggleRAG,
         setAgentMode,
         loadChatHistory,
-        openHistoryPanel,
-        closeHistoryPanel,
-        jumpToHistoryMessage,
-        deleteHistoryMessage,
+        startNewConversation,
+        selectConversation,
+        backToCurrentConversation,
+        deleteConversation,
         clearChatHistory,
         fillInput,
         getVisualGuideTypeMeta,

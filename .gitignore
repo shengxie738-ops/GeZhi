@@ -126,3 +126,12 @@ debug-*.md
 
 # 本地数据库备份/导出（含真实用户数据、Gitea 私钥，体积大且涉密，绝不提交）
 数据库资料/
+
+# 全模态模型配置（含明文 API Key，仅入 backend/.env，绝不提交）
+全模态语言模型配置.txt
+
+# 外语模块本地调试产物（devboot 含本地测试账号引导）
+frontend/devboot.html
+frontend/devdebug.html
+.tmp-shots/
+.dbg/

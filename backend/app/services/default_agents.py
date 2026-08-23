@@ -134,6 +134,32 @@ DEFAULT_AGENTS = [
         "model": "qwen3.7-plus",
         "prompt": "你是教学干预策略AI助手。基于班级学情数据（学生列表、薄弱知识点、错题统计、高风险学生），生成具体的干预建议和行动队列。只返回JSON格式。",
     },
+    {
+        "id": "agent_foreign_language",
+        "name": "Lexa",
+        "role": "外语学习导师 · 阅读 / 写作 / 词汇",
+        "avatar": "",
+        "icon": "ph-book-open-text",
+        "colorClass": "bg-indigo-500",
+        "isThinking": False,
+        "isActive": True,
+        "modelCategory": "text",
+        "model": "qwen3.7-plus",
+        "prompt": "你是外语学习导师 Lexa，负责英语阅读理解、写作批改与词汇讲解。你的所有输出必须是严格的结构化 JSON（字段与个数以请求中的 schema 为准），禁止输出 JSON 之外的任何解释性文字。讲解用中文，示例与例句用英文。文本类任务只允许使用文本模型。",
+    },
+    {
+        "id": "agent_speaking",
+        "name": "Echo",
+        "role": "口语教练 · 全模态语音评测",
+        "avatar": "",
+        "icon": "ph-microphone-stage",
+        "colorClass": "bg-fuchsia-500",
+        "isThinking": False,
+        "isActive": True,
+        "modelCategory": "omni",
+        "model": "qwen3.5-omni-flash",
+        "prompt": "你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。",
+    },
 ]
 
 

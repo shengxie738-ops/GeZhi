@@ -43,7 +43,7 @@ class JsonStore:
             query = query.filter(DomainRecord.owner_id == owner_id)
         if status is not None:
             query = query.filter(DomainRecord.status == status)
-        records = query.order_by(DomainRecord.created_at.desc()).all()
+        records = query.order_by(DomainRecord.created_at.desc(), DomainRecord.id.desc()).all()
         return [payload for payload in (load_payload(record) for record in records) if payload is not None]
 
     def get_record(

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     # LLM
     OPENAI_API_KEY: str
     OPENAI_API_BASE: str
+    # 全模态（omni）语音模型 Key；为空时回落到 OPENAI_API_KEY（同一 MaaS 实例）
+    QWEN_OMNI_API_KEY: str = ""
     LLM_MODEL: str = "Spark-X2-Flash"
     LLM_MODEL_MAX: str = "qwen3.7-max"
     LLM_MODEL_FLASH: str = "qwen3.6-flash"

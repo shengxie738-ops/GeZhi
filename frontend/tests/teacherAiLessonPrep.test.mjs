@@ -88,4 +88,18 @@ assert.match(component, /excerpt:\s*clipText\(item\.excerpt,\s*4000\)/);
     assert.ok(!/resourceId|course:|score/.test(citationKeys), '导出 citations 不得携带 resourceId/course/score 多余键');
 }
 
+// 生成教案前校验：已选中含不可检索课件（旧版 .ppt）时必须拦截并提示改选 PDF
+{
+    const guardBlock = component.slice(component.indexOf('const ensureSelected'), component.indexOf('const ensureAiReady'));
+    assert.ok(guardBlock.length > 0, 'ensureSelected block not found');
+    assert.ok(guardBlock.includes('!item.searchable'), 'ensureSelected 须筛出已选中不可检索课件');
+    assert.ok(guardBlock.includes('PDF'), '提示文案须引导改选 PDF 课件');
+    assert.match(guardBlock, /show-toast/);
+    assert.ok(guardBlock.includes('return false'), '校验失败须中止生成');
+    const generateBlock = component.slice(component.indexOf('const generatePlan'), component.indexOf('const runInstruction'));
+    assert.ok(generateBlock.includes('ensureSelected()'), 'generatePlan 须调用 ensureSelected');
+    const summarizeBlock = component.slice(component.indexOf('const summarizeResources'), component.indexOf('const currentContentText'));
+    assert.ok(summarizeBlock.includes('ensureSelected()'), 'summarizeResources 须调用 ensureSelected');
+}
+
 console.log('teacher AI lesson prep static tests passed');

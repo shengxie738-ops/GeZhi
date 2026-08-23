@@ -228,8 +228,12 @@ export default {
                 emit('show-toast', '请先选择课件资源', 'error');
                 return false;
             }
-            if (!selectedSearchableCount.value) {
-                emit('show-toast', '所选课件暂无可检索文本', 'error');
+            // 旧版 .ppt 无可检索文本，后端检索会静默忽略；混选时必须拦截并引导改选 PDF 版
+            const unsearchable = selectedResources.value.filter((item) => !item.searchable);
+            if (unsearchable.length) {
+                const names = unsearchable.slice(0, 2).map((item) => item.name).join('、');
+                const suffix = unsearchable.length > 2 ? ` 等 ${unsearchable.length} 份` : '';
+                emit('show-toast', `已选课件包含不可检索的 PPT（${names}${suffix}），无法提取内容，请切换课件格式，改选 PDF 课件`, 'error');
                 return false;
             }
             return true;

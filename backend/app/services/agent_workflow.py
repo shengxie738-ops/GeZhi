@@ -134,6 +134,7 @@ DEFAULT_AGENT_MODELS = {
     "agent_researcher": "qwen3.6-plus",
     "agent_coder": "kimi-k2.7-code",
     "agent_visual_guide": "qwen-image-2.0-pro",
+    "agent_foreign_language": "qwen3.7-plus",
 }
 
 # 向下兼容引用，供画像分析和普通检索缺省调用。
