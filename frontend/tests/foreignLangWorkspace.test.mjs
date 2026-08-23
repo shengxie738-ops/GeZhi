@@ -66,7 +66,8 @@ for (const file of [
 const page = read('js/components/foreign-lang/ForeignLangPage.js');
 assert.match(page, /data-testid="foreign-lang-page"/);
 assert.match(page, /language atelier/i, '页面品牌标识');
-// AI Tutor 可折叠 + 可拖宽，状态持久化
+assert.match(page, /data-testid="lat-rail-overview"/, '左侧导航栏需有首页概览（Overview）入口');
+assert.match(page, /selectUnit\('overview'\)/, '点击首页概览需切换至概览页');
 assert.match(page, /data-testid="lat-tutor-resizer"/, '拖宽手柄');
 assert.match(page, /data-testid="lat-tutor-spine"/, '收起后的书脊展开按钮');
 assert.match(page, /lat_tutor_width/, '宽度需持久化到 localStorage');
@@ -262,4 +263,14 @@ assert.doesNotMatch(writingComp, /rows="12"/, '自适应后模板不应再依赖
 assert.match(foreignPage, /\.lat-editor-textarea\{[^}]*min-height:320px/, '写作框 CSS 需为 min-height:320px 保底而非固定 height');
 assert.doesNotMatch(foreignPage, /\.lat-editor-textarea\{[^}]*resize:vertical/, '自适应后不应保留手动纵向拖拽（与自动撑高冲突）');
 
+// ---- 写作按需多维优化 + 移除 ORIGINAL 框 ----
+assert.ok(api.includes('/language/writing/optimize'), 'api 需支持 /language/writing/optimize 优化端点');
+assert.match(langHook2, /optimizeWriting/, 'hook 需导出 optimizeWriting 方法');
+assert.match(writingComp, /lat-optimize-btn/, '写作修改页需包含多维优化作文按钮');
+assert.match(writingComp, /lat-improved-panel/, '写作修改页需包含 IMPROVED 全文精修卡片');
+assert.doesNotMatch(writingComp, /data-testid="lat-writing-diff-original"/, '底部的 ORIGINAL 框需彻底移除，避免与上方 DRAFT 重复');
+assert.match(foreignPage, /\.lat-issues-optimize-dock/, '页面需包含 ISSUES 底部优化栏样式');
+assert.match(foreignPage, /\.lat-improved-panel/, '页面需包含 IMPROVED 卡片样式');
+
 console.log('foreign language workspace tests passed');
+

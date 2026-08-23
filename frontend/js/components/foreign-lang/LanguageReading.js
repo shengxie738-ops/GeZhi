@@ -114,7 +114,7 @@ export default {
                     <div class="lat-card lat-input-card">
                         <span class="lat-eyebrow">YOUR PASSAGE</span>
                         <input v-model="lang.reading.title" class="lat-input" placeholder="给这篇文章起个标题（可选）" />
-                        <textarea v-model="lang.reading.text" class="lat-textarea" rows="9"
+                        <textarea v-model="lang.reading.text" class="lat-textarea" rows="12"
                             placeholder="粘贴英文文章（至少 60 个字符）…" data-testid="lat-reading-input"></textarea>
                         <p v-if="lang.reading.error" class="lat-error"><i class="ph ph-warning-circle"></i>{{ lang.reading.error }}</p>
                         <div class="lat-row-end">

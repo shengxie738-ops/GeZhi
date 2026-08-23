@@ -1,7 +1,7 @@
-import { reactive, computed, onMounted, onUnmounted, ref } from 'vue';
-import { useLanguageWorkspace } from '../../hooks/useLanguageWorkspace.js?v=20260823_7';
-import LanguageReading from './LanguageReading.js?v=20260823_4';
-import LanguageWriting from './LanguageWriting.js?v=20260823_6';
+import { reactive, computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useLanguageWorkspace } from '../../hooks/useLanguageWorkspace.js?v=20260824_2';
+import LanguageReading from './LanguageReading.js?v=20260824_4';
+import LanguageWriting from './LanguageWriting.js?v=20260824_3';
 import LanguageSpeaking from './LanguageSpeaking.js?v=20260823_5';
 import LanguageVocabulary from './LanguageVocabulary.js?v=20260823_4';
 import LanguageInsights from './LanguageInsights.js?v=20260823_4';
@@ -83,10 +83,10 @@ const ATELIER_CSS = `
 .lat-stat-num small{font-size:15px;font-weight:600;margin-left:2px}
 .lat-mono{font-family:'IBM Plex Mono',Consolas,monospace;font-size:11px;letter-spacing:.14em}
 .lat-dim{color:#8a8880}
-.lat-stage{max-width:920px}
-.lat-stage-title{font-family:'Fraunces',Georgia,serif;font-weight:900;font-size:34px;line-height:1.16;margin:14px 0 8px;letter-spacing:-.005em}
+.lat-stage{max-width:100%}
+.lat-stage-title{font-family:'Fraunces',Georgia,serif;font-weight:900;font-size:38px;line-height:1.16;margin:14px 0 8px;letter-spacing:-.005em}
 .lat-stage-title em{font-style:italic;color:#002FA7;background:linear-gradient(transparent 62%,#FFC400 62%);padding:0 2px}
-.lat-stage-sub{color:#5c5a54;font-size:13.5px;margin-bottom:26px;max-width:620px}
+.lat-stage-sub{color:#5c5a54;font-size:14.5px;margin-bottom:26px;max-width:800px;line-height:1.6}
 .lat-section{animation:latRise .45s cubic-bezier(.2,.7,.3,1) both}
 
 /* ---------- 卡片 / 按钮 / 输入 ---------- */
@@ -167,45 +167,47 @@ const ATELIER_CSS = `
   border-bottom:2px solid #FF4D00;padding-bottom:2px}
 
 /* ---------- Reading ---------- */
-.lat-input-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start}
-.lat-input-card{display:flex;flex-direction:column;gap:12px}
-.lat-samples{display:flex;flex-direction:column;gap:4px;max-height:560px;overflow-y:auto;position:relative}
+.lat-input-grid{display:grid;grid-template-columns:1.32fr 1fr;gap:28px;align-items:start}
+.lat-input-card{padding:26px 28px;display:flex;flex-direction:column;gap:16px;box-shadow:6px 6px 0 #15161A}
+.lat-input-card .lat-input{padding:13px 16px;font-size:15px;font-weight:600}
+.lat-input-card .lat-textarea{padding:16px 18px;font-size:15.5px;line-height:1.85;min-height:360px}
+.lat-samples{padding:26px 28px;display:flex;flex-direction:column;gap:8px;max-height:660px;overflow-y:auto;position:relative;box-shadow:6px 6px 0 #15161A}
 .lat-samples::-webkit-scrollbar{width:8px}
 .lat-samples::-webkit-scrollbar-thumb{background:#15161A33;border:2px solid #fff}
-.lat-sample-group{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.lat-sample-group{margin-top:14px;display:flex;flex-direction:column;gap:10px}
 .lat-sample-group:first-of-type{margin-top:4px}
-.lat-sample-group-head{display:flex;align-items:baseline;justify-content:space-between;width:100%;background:transparent;border:none;
-  font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;padding:10px 0 2px;
+.lat-sample-group-head{display:flex;align-items:center;justify-content:space-between;width:100%;background:transparent;border:none;
+  font-family:'IBM Plex Mono',Consolas,monospace;font-size:12px;letter-spacing:.15em;text-transform:uppercase;padding:12px 4px 6px;
   border-top:2px dashed #15161A33;cursor:pointer;text-align:left;transition:background .15s}
 .lat-sample-group-head:hover{background:#002FA70d}
 .lat-sample-group:first-of-type .lat-sample-group-head{border-top:none;padding-top:2px}
-.lat-sample-group-label{font-weight:700;color:#15161A}
-.lat-group-meta{display:inline-flex;align-items:center;gap:7px}
-.lat-sample-group-caret{font-size:13px;color:#FF4D00;transition:transform .15s}
-.lat-sample{display:flex;align-items:center;gap:10px;padding:10px 12px;border:2px solid #15161A;background:#fff;
-  cursor:pointer;text-align:left;transition:background .15s,transform .15s}
-.lat-sample:hover{background:#FFC40033;transform:translateX(3px)}
-.lat-sample-tag{flex-shrink:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;font-weight:700;
-  letter-spacing:.05em;padding:4px 7px;color:#fff;border:2px solid #15161A}
+.lat-sample-group-label{font-weight:700;font-size:14px;color:#15161A}
+.lat-group-meta{display:inline-flex;align-items:center;gap:8px}
+.lat-sample-group-caret{font-size:14px;color:#FF4D00;transition:transform .15s}
+.lat-sample{display:flex;align-items:center;gap:12px;padding:12px 16px;border:2px solid #15161A;background:#fff;
+  cursor:pointer;text-align:left;transition:background .15s,transform .15s;box-shadow:3px 3px 0 #15161A}
+.lat-sample:hover{background:#FFC40033;transform:translate(-1px,-2px);box-shadow:5px 5px 0 #15161A}
+.lat-sample-tag{flex-shrink:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10.5px;font-weight:700;
+  letter-spacing:.05em;padding:5px 8px;color:#fff;border:2px solid #15161A}
 .lat-tag-basic{background:#15161A}
 .lat-tag-basic-long{background:#0F5C34}
 .lat-tag-cet-4{background:#002FA7}
 .lat-tag-cet-6{background:#FF4D00}
 .lat-tag-user{background:#7A3EF0}
-.lat-samples-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}
-.lat-import-btn{padding:6px 10px;font-size:10.5px}
-.lat-sample-user{display:flex;align-items:center;gap:10px;padding:10px 12px;border:2px solid #15161A;background:#fff;
-  cursor:pointer;text-align:left;transition:background .15s,transform .15s}
-.lat-sample-user:hover{background:#FFC40033;transform:translateX(3px)}
+.lat-samples-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:10px;border-bottom:2px solid #15161A1a}
+.lat-import-btn{padding:8px 14px;font-size:12px;font-weight:600}
+.lat-sample-user{display:flex;align-items:center;gap:12px;padding:12px 16px;border:2px solid #15161A;background:#fff;
+  cursor:pointer;text-align:left;transition:background .15s,transform .15s;box-shadow:3px 3px 0 #15161A}
+.lat-sample-user:hover{background:#FFC40033;transform:translate(-1px,-2px);box-shadow:5px 5px 0 #15161A}
 .lat-sample-user:focus-visible{outline:3px solid #FF4D00;outline-offset:2px}
-.lat-icon-btn-sm{width:26px;height:26px;font-size:13px;flex-shrink:0}
-.lat-rename-input{flex:1;min-width:0;border:2px solid #15161A;background:#fff;padding:5px 8px;font-size:13px;
+.lat-icon-btn-sm{width:28px;height:28px;font-size:14px;flex-shrink:0}
+.lat-rename-input{flex:1;min-width:0;border:2px solid #15161A;background:#fff;padding:6px 10px;font-size:13.5px;
   font-family:inherit;outline:none;transition:box-shadow .15s}
 .lat-rename-input:focus{box-shadow:3px 3px 0 #002FA7}
-.lat-user-empty{padding:16px;text-align:center;border:2px dashed #15161A44;background:#F5F2EB}
-.lat-sample-level{flex-shrink:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;font-weight:600;
-  color:#15161A;background:#F5F2EB;border:1.5px solid #15161A;padding:2px 6px}
-.lat-sample-title{flex:1;font-weight:600;font-size:13px;line-height:1.35}
+.lat-user-empty{padding:20px;text-align:center;border:2px dashed #15161A44;background:#F5F2EB;font-size:13px}
+.lat-sample-level{flex-shrink:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10.5px;font-weight:600;
+  color:#15161A;background:#F5F2EB;border:1.5px solid #15161A;padding:3px 7px}
+.lat-sample-title{flex:1;font-weight:600;font-size:14px;line-height:1.4}
 .lat-read-stats{display:flex;border:2px solid #15161A;background:#fff;box-shadow:5px 5px 0 #15161A;margin-bottom:20px;overflow:hidden}
 .lat-read-stat{flex:1;padding:14px 16px;border-right:2px solid #15161A;display:flex;flex-direction:column;gap:4px}
 .lat-read-stat:last-child{border-right:none}
@@ -281,6 +283,8 @@ const ATELIER_CSS = `
 .lat-meter{display:grid;grid-template-columns:110px 1fr 34px;align-items:center;gap:10px}
 .lat-meter-track{height:12px;border:2px solid #15161A;background:#fff;overflow:hidden}
 .lat-meter-track i{display:block;height:100%;background:#002FA7;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+
+/* 兼容历史模态框内的竖向 issue 列表 */
 .lat-issue{display:flex;gap:12px;align-items:flex-start;padding:11px 12px;border:2px solid transparent;cursor:pointer;transition:background .13s,border-color .13s}
 .lat-issue:hover{background:#FFC40022}
 .lat-issue-active{border-color:#15161A;background:#fff;box-shadow:3px 3px 0 #15161A}
@@ -297,6 +301,62 @@ const ATELIER_CSS = `
 .lat-issue-reason{font-size:12px;color:#5c5a54;margin-top:3px}
 .lat-issue-actions{display:flex;flex-direction:column;gap:6px}
 .lat-applied{color:#0F5C34;font-weight:600}
+
+/* ---------- Writing: 横向通栏 ISSUES 卡片 ---------- */
+.lat-issues-panel{margin-top:24px;display:flex;flex-direction:column;gap:16px}
+.lat-issues-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:14px;border-bottom:2px solid #15161A}
+.lat-issues-title-group{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.lat-issues-hint{font-size:12.5px;color:#5c5a54}
+.lat-issues-pending-tag{color:#FF4D00;font-weight:600}
+.lat-issues-all-done-tag{color:#0F5C34;font-weight:600}
+.lat-issues-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.lat-issues-tabs{display:inline-flex;border:2px solid #15161A;background:#fff}
+.lat-issues-tab{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:none;background:transparent;
+  font-family:'IBM Plex Mono',Consolas,monospace;font-size:11px;font-weight:600;letter-spacing:.06em;cursor:pointer;color:#5c5a54;transition:background .15s,color .15s}
+.lat-issues-tab + .lat-issues-tab{border-left:2px solid #15161A}
+.lat-issues-tab:hover{background:#FFC40022}
+.lat-issues-tab-active{background:#15161A;color:#fff}
+.lat-issues-tab-active .lat-tab-badge{background:#FFC400;color:#15161A}
+.lat-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;
+  border-radius:2px;background:#EDEAE1;color:#15161A;font-size:10px;font-weight:700}
+.lat-accept-all-btn{padding:6px 12px;font-size:11px}
+.lat-issues-list{display:flex;flex-direction:column;gap:10px}
+.lat-issue-row{display:flex;align-items:center;gap:16px;padding:12px 16px;border:2px solid #15161A;background:#fff;
+  cursor:pointer;box-shadow:3px 3px 0 #15161A;transition:transform .15s,box-shadow .15s,background .15s;position:relative}
+.lat-issue-row:hover{transform:translate(-1px,-2px);box-shadow:5px 5px 0 #15161A;background:#FFFAF0}
+.lat-issue-row-active{border-color:#002FA7;box-shadow:5px 5px 0 #002FA7;background:#FFF}
+.lat-issue-row-applied{opacity:.65;background:#FAFAFA}
+.lat-issue-badge-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;min-width:92px}
+.lat-issue-num{font-family:'IBM Plex Mono',Consolas,monospace;font-size:9.5px;color:#8a8880}
+.lat-issue-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.lat-issue-diff{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14.5px;line-height:1.5}
+.lat-issue-del del{color:#B3241C;background:#E5352B1a;padding:2px 6px;border:1px dashed #E5352B44;font-family:'Fraunces',Georgia,serif}
+.lat-issue-arrow{font-size:14px;color:#FF4D00;flex-shrink:0}
+.lat-issue-ins ins{color:#0F5C34;background:#002FA714;padding:2px 6px;border:1px solid #002FA733;text-decoration:none;font-weight:600;font-family:'Fraunces',Georgia,serif}
+.lat-issue-reason{font-size:12.5px;color:#5c5a54;line-height:1.5}
+.lat-issue-actions{flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;min-width:110px}
+.lat-issue-accept-btn{font-size:11.5px;padding:6px 14px}
+.lat-issue-done-chip{display:inline-flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',Consolas,monospace;font-size:11px;
+  font-weight:700;letter-spacing:.08em;color:#0F5C34;background:#0F5C3415;border:1.5px solid #0F5C34;padding:4px 10px}
+.lat-btn-sm{padding:6px 12px;font-size:11px}
+
+.lat-issues-optimize-dock{margin-top:16px;padding-top:16px;border-top:2px dashed #15161A22;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.lat-optimize-info{display:flex;flex-direction:column;gap:3px;flex:1;min-width:240px}
+.lat-optimize-title{font-family:'IBM Plex Mono',Consolas,monospace;font-size:12px;font-weight:700;letter-spacing:.08em;color:#002FA7;display:flex;align-items:center;gap:6px}
+.lat-optimize-desc{font-size:12px;color:#5c5a54;line-height:1.5}
+.lat-optimize-btn{padding:10px 22px;font-size:13px;display:inline-flex;align-items:center;gap:8px;box-shadow:4px 4px 0 #15161A}
+.lat-optimize-btn:hover:not(:disabled){transform:translate(-1px,-2px);box-shadow:6px 6px 0 #15161A}
+
+/* ---------- IMPROVED 全文精修成果卡片 ---------- */
+.lat-improved-panel{margin-top:24px;background:#F9F8F5;border:2px solid #15161A;box-shadow:6px 6px 0 #15161A;padding:22px 24px;display:flex;flex-direction:column;gap:14px;animation:latRise .25s ease-out}
+.lat-improved-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-bottom:12px;border-bottom:2px solid #15161A1a}
+.lat-improved-title-group{display:flex;align-items:center;gap:10px}
+.lat-improved-title-group .lat-eyebrow-accent{font-size:12px;letter-spacing:.12em;display:inline-flex;align-items:center;gap:6px}
+.lat-chip-mode{background:#002FA7;color:#fff;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;font-weight:700;padding:2px 8px}
+.lat-improved-actions{display:flex;align-items:center;gap:10px}
+.lat-improved-body{padding:6px 0}
+.lat-improved-text{font-family:'Fraunces',Georgia,serif;font-size:16.5px;line-height:1.9;color:#15161A;white-space:pre-wrap;word-break:break-word;margin:0}
+
 .lat-diff{border:2px solid #15161A}
 .lat-diff-row{padding:12px 14px}
 .lat-diff-row + .lat-diff-row{border-top:2px solid #15161A}
@@ -307,8 +367,8 @@ const ATELIER_CSS = `
 .lat-diff-good{background:#002FA70d}
 .lat-diff-good .lat-mono{color:#002FA7}
 .lat-diff-good p{font-family:'Fraunces',Georgia,serif;font-size:14.5px;line-height:1.7;font-weight:500}
-.lat-write-diff{display:flex;flex-direction:column;gap:16px;margin-top:24px}
-.lat-write-diff .lat-card p{margin:0}
+.lat-write-diff{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+.lat-write-diff .lat-card p{margin:0;white-space:pre-wrap;word-break:break-word}
 
 /* ---------- 写作历史覆盖层 ---------- */
 .lat-history-overlay{position:absolute;inset:0;background:rgba(21,22,26,.45);display:flex;align-items:center;justify-content:center;z-index:40;padding:30px}
@@ -510,7 +570,15 @@ export default {
     setup(props, { emit }) {
         const showToast = (message, type) => emit('show-toast', message, type);
         const lang = reactive(useLanguageWorkspace(showToast));
-        const activeUnit = ref('overview');
+        
+        // ---------------- 当前 Unit 持久化（刷新页面不退出当前学习单元） ----------------
+        const LAT_UNIT_KEY = 'lat_active_unit';
+        const storedUnit = localStorage.getItem(LAT_UNIT_KEY);
+        const validUnits = ['overview', 'reading', 'writing', 'speaking', 'vocabulary', 'insights'];
+        const activeUnit = ref(validUnits.includes(storedUnit) ? storedUnit : 'overview');
+        watch(activeUnit, (val) => {
+            if (val) localStorage.setItem(LAT_UNIT_KEY, val);
+        });
 
         const foreignAgent = computed(() => props.agents.find((agent) => agent.id === 'agent_foreign_language'));
         const speakingAgent = computed(() => props.agents.find((agent) => agent.id === 'agent_speaking'));
@@ -597,7 +665,14 @@ export default {
             lang.loadWordbook();
             lang.loadReadingProgress();
             lang.loadUserArticles();
+            if (activeUnit.value === 'vocabulary') lang.loadWordbook();
+            if (activeUnit.value === 'insights') lang.loadInsights();
         });
+
+        const goBack = () => {
+            localStorage.removeItem(LAT_UNIT_KEY);
+            emit('back');
+        };
 
         return {
             units: UNITS, lang, activeUnit, selectUnit,
@@ -605,7 +680,7 @@ export default {
             tutorWidth, tutorCollapsed, tutorResizing, tutorActive,
             startTutorResize, resetTutorWidth, toggleTutor,
             goAgents: () => emit('open-agents'),
-            goBack: () => emit('back')
+            goBack
         };
     },
     template: `
@@ -619,6 +694,16 @@ export default {
                 </div>
                 <div class="lat-rail-nav">
                     <span class="lat-rail-label">UNITS</span>
+                    <!-- 首页概览（位于阅读理解上方） -->
+                    <button type="button" class="lat-rail-item" data-testid="lat-rail-overview"
+                        :class="{ 'lat-rail-item-active': activeUnit === 'overview' }" @click="selectUnit('overview')">
+                        <span class="lat-rail-item-index"><i class="ph ph-house-simple" style="font-size:15px;line-height:1"></i></span>
+                        <span class="lat-rail-item-text">
+                            <span class="lat-rail-item-en">Overview</span>
+                            <span class="lat-rail-item-zh">首页概览</span>
+                        </span>
+                    </button>
+
                     <button v-for="unit in units" :key="unit.id" type="button" class="lat-rail-item"
                         :class="{ 'lat-rail-item-active': activeUnit === unit.id }" @click="selectUnit(unit.id)">
                         <span class="lat-rail-item-index">U.{{ unit.index }}</span>

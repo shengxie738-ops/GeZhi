@@ -226,12 +226,71 @@ async def analyze_writing(model_id: str, text: str, mode: str = "standard") -> d
             }
         )
     data["issues"] = issues
-    data.setdefault("improvedText", "")
+    data["improvedText"] = ""  # 批改阶段不强制生成改写，交由用户点击“多维优化作文”按需生成
     data["mode"] = mode
     # 混合评分：错误密度/词汇多样性等代码实测证据与模型判断融合，overall 一律重算
     fused = fuse_writing(data["score"], writing_metrics(text, issues), data.get("scoreEvidence"))
     data["score"], data["evidence"], data["scoreBasis"] = fused["score"], fused["evidence"], fused["scoreBasis"]
     return data
+
+
+# ---------------------------------------------------------------- 写作多维优化
+OPTIMIZE_SYSTEM = (
+    "你是英语资深写作导师与母语润色专家。输出严格 JSON，禁止任何 JSON 之外的文字。"
+    "你的任务是对学生的英文作文进行多维度深度重写与精修，严格遵循两阶段重写原则。"
+)
+
+OPTIMIZE_SCHEMA_HINT = """{
+  "improvedText": "结合所有建议并经过多维度升华后的完整英文作文"
+}"""
+
+
+async def optimize_writing(
+    model_id: str,
+    text: str,
+    mode: str = "standard",
+    issues: list[dict] | None = None,
+) -> dict:
+    mode_rules = {
+        "light": "Light：仅纠正明确语法错误，最大程度保留用户原始表达，不做过度风格升级。",
+        "standard": "Standard：纠正全部语法错误，并将不自然表达优化为自然地道的书面语。",
+        "advanced": "Advanced：达到母语者/Academic Writing 高水准全面重写，大幅升级学术词汇与句式多样性。",
+    }
+    rule = mode_rules.get(mode, mode_rules["standard"])
+
+    issues_text_lines = []
+    if issues:
+        for idx, item in enumerate(issues, start=1):
+            orig = item.get("original", "")
+            sug = item.get("suggestion", "")
+            reason = item.get("reasonZh", "")
+            issues_text_lines.append(f"{idx}. [{item.get('type', 'issue').upper()}] 原文: \"{orig}\" -> 建议修改: \"{sug}\" (理由: {reason})")
+    issues_summary = "\n".join(issues_text_lines) if issues_text_lines else "（无额外逐项标记，请直接进行多维优化）"
+
+    prompt = (
+        f"请对以下学生英文作文进行【两阶段多维度优化重写】。\n"
+        f"【修改强度目标】：{rule}\n\n"
+        f"【第一阶段：基底采纳】\n"
+        f"必须彻底吸纳并修复以下第一步生成的 ISSUES 诊断建议：\n{issues_summary}\n\n"
+        f"【第二阶段：多维全局升华】\n"
+        f"在解决上述问题的基础上，对整篇文章进行全局多维度优化升级：\n"
+        f"1. Coherence（连贯性）：优化段落过渡与衔接逻辑，添加恰当的逻辑连接词；\n"
+        f"2. Lexical Sophistication（词汇升级）：消除基础词重复，采用更地道、精准的高级书面词汇；\n"
+        f"3. Syntactic Diversity（句式多样性）：结合分词短语、从句与复合句式，避免句型单调；\n"
+        f"4. Fluency & Tone（母语语感）：消除中式直译与生硬语法，使行文地道流畅。\n\n"
+        f"严格按 JSON schema 输出：\n{OPTIMIZE_SCHEMA_HINT}\n\n"
+        f"【学生原始作文】\n{text[:WRITING_MAX_CHARS]}"
+    )
+
+    data = await chat_json(model_id, system=OPTIMIZE_SYSTEM, user=prompt, temperature=0.2, max_tokens=6000)
+    improved_text = str(data.get("improvedText") or "").strip()
+    if not improved_text:
+        # 后备处理：若模型未按字段返回，尝试读取原始文本或做保底
+        improved_text = text
+    return {
+        "improvedText": improved_text,
+        "mode": mode,
+    }
 
 
 # ---------------------------------------------------------------- 口语评测

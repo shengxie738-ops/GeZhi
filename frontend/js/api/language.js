@@ -29,6 +29,13 @@ export const languageApi = {
         }).then(unwrap);
     },
 
+    optimizeWriting(text, mode = 'standard', issues = [], historyId = null) {
+        return request('/language/writing/optimize', {
+            method: 'POST',
+            body: JSON.stringify({ text, mode, issues, historyId })
+        }).then(unwrap);
+    },
+
     analyzeSpeaking(payload) {
         return request('/language/speaking/analyze', {
             method: 'POST',

@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 
 export default {
     name: 'LanguageWriting',
@@ -67,6 +67,44 @@ export default {
             }
         });
 
+        // ---------------- ISSUES 分类筛选与批量采纳 ----------------
+        const issueFilter = ref('all');
+        const filteredIssues = computed(() => {
+            const issues = (props.lang.writing.result?.issues || []).map((issue, index) => ({
+                ...issue,
+                originalIndex: index
+            }));
+            if (issueFilter.value === 'all') return issues;
+            return issues.filter(issue => issue.type === issueFilter.value);
+        });
+
+        const issueCounts = computed(() => {
+            const issues = props.lang.writing.result?.issues || [];
+            const counts = { all: issues.length, grammar: 0, vocabulary: 0, expression: 0, style: 0, pending: 0 };
+            for (const issue of issues) {
+                if (counts[issue.type] !== undefined) counts[issue.type]++;
+                if (!issue.applied) counts.pending++;
+            }
+            return counts;
+        });
+
+        const acceptAllWritingFixes = () => {
+            const issues = props.lang.writing.result?.issues || [];
+            if (!issues.length) return;
+            // 筛选未应用的 issue 并从后向前按 start 倒序排列，防止字符索引偏移
+            const unapplied = issues
+                .map((issue, index) => ({ ...issue, index }))
+                .filter(item => !item.applied && typeof item.start === 'number' && typeof item.end === 'number')
+                .sort((a, b) => b.start - a.start);
+            if (!unapplied.length) return;
+            let curText = props.lang.writing.text;
+            for (const item of unapplied) {
+                curText = curText.slice(0, item.start) + item.suggestion + curText.slice(item.end);
+                props.lang.writing.result.issues[item.index] = { ...item, applied: true };
+            }
+            props.lang.writing.text = curText;
+        };
+
         // ---------------- 写作历史 ----------------
         const historyConfirmId = ref('');
         let historyConfirmTimer = null;
@@ -90,12 +128,49 @@ export default {
             return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
         };
 
+        const copyImprovedText = () => {
+            const text = props.lang.writing.result?.improvedText;
+            if (!text) return;
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('已复制改写全文至剪贴板');
+                }).catch(() => {
+                    prompt('请按 Ctrl+C 复制改写全文：', text);
+                });
+            } else {
+                prompt('请按 Ctrl+C 复制改写全文：', text);
+            }
+        };
+
+        const applyImprovedToEditor = () => {
+            const text = props.lang.writing.result?.improvedText;
+            if (!text) return;
+            props.lang.writing.text = text;
+            props.lang.writing.result = null;
+        };
+
         onUnmounted(() => {
             if (historyConfirmTimer) clearTimeout(historyConfirmTimer);
             editorWidthObserver?.disconnect();
         });
 
-        return { modes, markedSegments, syncScroll, typeClass, typeLabels, historyConfirmId, requestHistoryDelete, formatHistoryTime, editorTextarea };
+        return {
+            modes,
+            markedSegments,
+            syncScroll,
+            typeClass,
+            typeLabels,
+            issueFilter,
+            filteredIssues,
+            issueCounts,
+            acceptAllWritingFixes,
+            copyImprovedText,
+            applyImprovedToEditor,
+            historyConfirmId,
+            requestHistoryDelete,
+            formatHistoryTime,
+            editorTextarea
+        };
     },
     template: `
         <div class="lat-section" data-testid="lat-writing">
@@ -181,38 +256,94 @@ export default {
                                 </li>
                             </ul>
                         </div>
-
-                        <div v-if="lang.writing.result.issues.length" class="lat-card lat-mini" data-testid="lat-issues">
-                            <span class="lat-eyebrow">ISSUES · {{ lang.writing.result.issues.length }}</span>
-                            <div v-for="(issue, ii) in lang.writing.result.issues" :key="ii" class="lat-issue"
-                                :class="{ 'lat-issue-active': lang.writing.activeIssueIndex === ii }"
-                                @click="lang.writing.activeIssueIndex = ii; lang.showGrammarCard(issue)">
-                                <span class="lat-issue-type" :class="'lat-issue-' + issue.type">{{ typeLabels[issue.type] }}</span>
-                                <div class="lat-issue-body">
-                                    <p class="lat-issue-line"><del>{{ issue.original }}</del> → <ins>{{ issue.suggestion }}</ins></p>
-                                    <p class="lat-issue-reason">{{ issue.reasonZh }}</p>
-                                </div>
-                                <div class="lat-issue-actions">
-                                    <button v-if="!issue.applied" class="lat-icon-btn" type="button" title="接受修改"
-                                        @click.stop="lang.acceptWritingFix(ii)"><i class="ph ph-check"></i></button>
-                                    <span v-else class="lat-mono lat-applied">DONE</span>
-                                </div>
-                            </div>
-                        </div>
-
                     </template>
                 </div>
             </div>
 
-            <!-- ORIGINAL / IMPROVED 改写对照：占满整行，左右边界与上方 DRAFT/ISSUES 列对齐 -->
-            <div v-if="lang.writing.result?.improvedText" class="lat-write-diff" data-testid="lat-writing-diff">
-                <div class="lat-card lat-mini lat-diff-bad" data-testid="lat-writing-diff-original">
-                    <span class="lat-eyebrow">ORIGINAL</span>
-                    <p>{{ lang.writing.text }}</p>
+            <!-- ISSUES UI 框：横向通栏布置，与下方的 ORIGINAL UI 框左右边界严格对齐 -->
+            <div v-if="lang.writing.result?.issues?.length" class="lat-card lat-issues-panel" data-testid="lat-issues">
+                <header class="lat-issues-header">
+                    <div class="lat-issues-title-group">
+                        <span class="lat-eyebrow">ISSUES · {{ lang.writing.result.issues.length }}</span>
+                        <span class="lat-issues-hint">共诊断出 {{ lang.writing.result.issues.length }} 处修改建议 · 点击条目可查看语法卡片解析</span>
+                    </div>
+
+                    <div class="lat-issues-toolbar">
+                        <!-- 分类过滤 Tabs -->
+                        <div class="lat-issues-tabs">
+                            <button type="button" class="lat-issues-tab" :class="{ 'lat-issues-tab-active': issueFilter === 'all' }"
+                                @click="issueFilter = 'all'">
+                                ALL <span class="lat-tab-badge">{{ issueCounts.all }}</span>
+                            </button>
+                            <button v-for="type in ['grammar', 'vocabulary', 'expression', 'style']" :key="type"
+                                type="button" class="lat-issues-tab"
+                                :class="[{ 'lat-issues-tab-active': issueFilter === type }, 'lat-tab-' + type]"
+                                @click="issueFilter = type">
+                                {{ typeLabels[type] }} <span class="lat-tab-badge">{{ issueCounts[type] }}</span>
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- 横向列表布局 -->
+                <div class="lat-issues-list">
+                    <div v-for="issue in filteredIssues" :key="issue.originalIndex" class="lat-issue-row"
+                        :class="{ 'lat-issue-row-active': lang.writing.activeIssueIndex === issue.originalIndex }"
+                        @click="lang.writing.activeIssueIndex = issue.originalIndex; lang.showGrammarCard(issue)">
+                        
+                        <!-- 左侧：分类 Badge 与序号 -->
+                        <div class="lat-issue-badge-wrap">
+                            <span class="lat-issue-type" :class="'lat-issue-' + issue.type">{{ typeLabels[issue.type] }}</span>
+                            <span class="lat-issue-num">#{{ issue.originalIndex + 1 }}</span>
+                        </div>
+
+                        <!-- 中间：修改对比与中文诊断解析 -->
+                        <div class="lat-issue-main">
+                            <div class="lat-issue-diff">
+                                <span class="lat-issue-del" title="原文表达"><del>{{ issue.original }}</del></span>
+                                <i class="ph ph-arrow-right lat-issue-arrow"></i>
+                                <span class="lat-issue-ins" title="AI 建议修改"><ins>{{ issue.suggestion }}</ins></span>
+                            </div>
+                            <p class="lat-issue-reason">{{ issue.reasonZh }}</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="lat-card lat-mini lat-diff-good" data-testid="lat-writing-diff-improved">
-                    <span class="lat-eyebrow lat-eyebrow-accent">IMPROVED</span>
-                    <p>{{ lang.writing.result.improvedText }}</p>
+
+                <!-- ISSUES 下方：多维优化作文操作栏 -->
+                <div class="lat-issues-optimize-dock">
+                    <div class="lat-optimize-info">
+                        <span class="lat-optimize-title"><i class="ph ph-sparkle"></i> AI 多维优化作文</span>
+                        <span class="lat-optimize-desc">结合以上诊断建议，对文章进行语法修正、高级词汇、逻辑衔接与母语者语感的全局深度重写。</span>
+                    </div>
+                    <button type="button" class="lat-btn lat-btn-accent lat-optimize-btn"
+                        :disabled="lang.writing.optimizing"
+                        @click="lang.optimizeWriting()"
+                        data-testid="lat-optimize-btn">
+                        <i v-if="lang.writing.optimizing" class="ph ph-spinner animate-spin"></i>
+                        <i v-else class="ph ph-sparkle"></i>
+                        <span>{{ lang.writing.optimizing ? '正在多维深度优化中…' : (lang.writing.result?.improvedText ? '重新生成多维优化' : '多维优化作文') }}</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- IMPROVED 全文精修成果卡片：仅在用户点击优化作文成功后显示，左右边界与 ISSUES 框严格对齐 -->
+            <div v-if="lang.writing.result?.improvedText" class="lat-card lat-improved-panel" data-testid="lat-writing-diff-improved">
+                <header class="lat-improved-header">
+                    <div class="lat-improved-title-group">
+                        <span class="lat-eyebrow lat-eyebrow-accent"><i class="ph ph-sparkle"></i> IMPROVED · AI 多维精修全文</span>
+                        <span class="lat-chip lat-chip-mode">{{ lang.writing.mode?.toUpperCase() }}</span>
+                    </div>
+                    <div class="lat-improved-actions">
+                        <button type="button" class="lat-btn lat-btn-sm lat-btn-ghost" @click="copyImprovedText()" title="复制精修全文">
+                            <i class="ph ph-copy"></i> 复制全文
+                        </button>
+                        <button type="button" class="lat-btn lat-btn-sm lat-btn-primary" @click="applyImprovedToEditor()" title="载入编辑器继续研习">
+                            <i class="ph ph-arrow-u-up-left"></i> 载入编辑器
+                        </button>
+                    </div>
+                </header>
+                <div class="lat-improved-body">
+                    <p class="lat-improved-text">{{ lang.writing.result.improvedText }}</p>
                 </div>
             </div>
 
@@ -293,7 +424,7 @@ export default {
                                     <span class="lat-mono">ORIGINAL</span>
                                     <p>{{ lang.writingHistory.active.text }}</p>
                                 </div>
-                                <div class="lat-diff-row lat-diff-good">
+                                <div v-if="lang.writingHistory.active.improvedText" class="lat-diff-row lat-diff-good">
                                     <span class="lat-mono">IMPROVED</span>
                                     <p>{{ lang.writingHistory.active.improvedText }}</p>
                                 </div>

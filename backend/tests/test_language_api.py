@@ -46,6 +46,8 @@ from app.api.endpoints.language import (
     update_word,
     vocabulary_explain,
     writing_analyze,
+    writing_optimize,
+    WritingOptimizeRequest,
     writing_history_delete,
     writing_history_detail,
     writing_history_list,
@@ -252,14 +254,15 @@ class WritingHistoryApiTest(LanguageApiTestBase):
                     "end": 5,
                 }
             ],
-            "improvedText": "He went to school yesterday.",
+            "improvedText": "",
             "mode": "standard",
         }
         with patch("app.api.endpoints.language.analyze_writing", return_value=fake):
             return asyncio.run(writing_analyze(WritingAnalyzeRequest(text=text), AUTH, self.db))
 
     def test_writing_analyze_saves_full_history(self):
-        self._analyze("He go to school yesterday.")
+        analyze_res = self._analyze("He go to school yesterday.")
+        self.assertIn("historyId", analyze_res["data"])
         entries = asyncio.run(writing_history_list(AUTH, self.db))["data"]["entries"]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["mode"], "standard")
@@ -268,8 +271,36 @@ class WritingHistoryApiTest(LanguageApiTestBase):
         self.assertEqual(entries[0]["preview"], "He go to school yesterday.")
         detail = asyncio.run(writing_history_detail(entries[0]["id"], AUTH, self.db))["data"]
         self.assertEqual(detail["text"], "He go to school yesterday.")
-        self.assertEqual(detail["improvedText"], "He went to school yesterday.")
         self.assertEqual(detail["wordCount"], 5)
+
+    def test_writing_optimize_updates_database(self):
+        analyze_res = self._analyze("He go to school yesterday.")
+        history_id = analyze_res["data"]["historyId"]
+        
+        # 初始状态未优化，improvedText 为 ""
+        detail_before = asyncio.run(writing_history_detail(history_id, AUTH, self.db))["data"]
+        self.assertEqual(detail_before.get("improvedText", ""), "")
+
+        # 调用优化接口
+        fake_opt = {"improvedText": "He went to school yesterday and enjoyed his classes.", "mode": "standard"}
+        with patch("app.api.endpoints.language.optimize_writing", return_value=fake_opt):
+            opt_res = asyncio.run(
+                writing_optimize(
+                    WritingOptimizeRequest(
+                        text="He go to school yesterday.",
+                        mode="standard",
+                        issues=[{"original": "He go", "suggestion": "He went", "reasonZh": "过去式"}],
+                        historyId=history_id,
+                    ),
+                    AUTH,
+                    self.db,
+                )
+            )
+        self.assertEqual(opt_res["data"]["improvedText"], "He went to school yesterday and enjoyed his classes.")
+        
+        # 验证数据库中真实 patch 更新成功
+        detail_after = asyncio.run(writing_history_detail(history_id, AUTH, self.db))["data"]
+        self.assertEqual(detail_after.get("improvedText"), "He went to school yesterday and enjoyed his classes.")
 
     def test_writing_history_newest_first(self):
         self._analyze("First draft.")

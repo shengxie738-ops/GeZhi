@@ -61,18 +61,46 @@ export function useLanguageWorkspace(showToast) {
         }
     };
 
-    // ---------------- 阅读理解 ----------------
+    // ---------------- 阅读理解（带本地状态缓存，刷新不丢失） ----------------
+    const READING_STATE_KEY = 'lat_reading_state';
+    const getStoredReadingState = () => {
+        try {
+            const raw = localStorage.getItem(READING_STATE_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    };
+    const storedReading = getStoredReadingState();
     const reading = reactive({
-        stage: 'input', // input | analyzing | study | quiz | result
-        text: '',
-        title: '',
-        articleId: '', // 样例/题库文章才有稳定 id，用于已读标记
-        analysis: null,
+        stage: storedReading?.stage || 'input', // input | analyzing | study | quiz | result
+        text: storedReading?.text || '',
+        title: storedReading?.title || '',
+        articleId: storedReading?.articleId || '', // 样例/题库文章才有稳定 id，用于已读标记
+        analysis: storedReading?.analysis || null,
         error: '',
-        quizAnswers: [],
-        quizSubmitted: false,
+        quizAnswers: storedReading?.quizAnswers || [],
+        quizSubmitted: storedReading?.quizSubmitted || false,
         startedAt: null
     });
+
+    const persistReadingState = () => {
+        if (reading.stage !== 'input' || (reading.text && reading.text.trim())) {
+            try {
+                localStorage.setItem(READING_STATE_KEY, JSON.stringify({
+                    stage: reading.stage,
+                    text: reading.text,
+                    title: reading.title,
+                    articleId: reading.articleId,
+                    analysis: reading.analysis,
+                    quizAnswers: reading.quizAnswers,
+                    quizSubmitted: reading.quizSubmitted
+                }));
+            } catch {}
+        } else {
+            localStorage.removeItem(READING_STATE_KEY);
+        }
+    };
 
     const readingTokens = computed(() =>
         reading.analysis
@@ -109,10 +137,12 @@ export function useLanguageWorkspace(showToast) {
             reading.startedAt = Date.now();
             reading.quizAnswers = reading.analysis.questions.map(() => null);
             reading.quizSubmitted = false;
+            persistReadingState();
             loadOverview();
         } catch (error) {
             reading.stage = 'input';
             reading.error = error?.message || '阅读分析失败，请稍后重试';
+            persistReadingState();
             showToast(reading.error, 'error');
         }
     };
@@ -120,6 +150,7 @@ export function useLanguageWorkspace(showToast) {
     const answerQuiz = (questionIndex, optionIndex) => {
         if (reading.quizSubmitted) return;
         reading.quizAnswers[questionIndex] = optionIndex;
+        persistReadingState();
     };
 
     const submitQuiz = () => {
@@ -129,6 +160,7 @@ export function useLanguageWorkspace(showToast) {
         }
         reading.quizSubmitted = true;
         reading.stage = 'result';
+        persistReadingState();
         const durationSec = Math.round((Date.now() - (reading.startedAt || Date.now())) / 1000);
         languageApi
             .recordProgress({
@@ -148,7 +180,10 @@ export function useLanguageWorkspace(showToast) {
             .catch(() => {});
     };
 
-    const backToReadingStudy = () => { reading.stage = 'study'; };
+    const backToReadingStudy = () => {
+        reading.stage = 'study';
+        persistReadingState();
+    };
     const resetReading = () => {
         reading.stage = 'input';
         reading.text = '';
@@ -158,27 +193,62 @@ export function useLanguageWorkspace(showToast) {
         reading.error = '';
         reading.quizAnswers = [];
         reading.quizSubmitted = false;
+        localStorage.removeItem(READING_STATE_KEY);
     };
 
-    // ---------------- 写作训练 ----------------
+    // ---------------- 写作训练（带草稿与批改结果持久化，刷新不丢失） ----------------
+    const WRITING_TEXT_KEY = 'lat_writing_draft_text';
+    const WRITING_MODE_KEY = 'lat_writing_mode';
+    const WRITING_RESULT_KEY = 'lat_writing_result';
+
+    const getStoredWritingResult = () => {
+        try {
+            const raw = localStorage.getItem(WRITING_RESULT_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const storedWritingResult = getStoredWritingResult();
     const writing = reactive({
-        text: '',
-        mode: 'standard',
+        text: localStorage.getItem(WRITING_TEXT_KEY) || '',
+        mode: localStorage.getItem(WRITING_MODE_KEY) || 'standard',
         analyzing: false,
-        result: null,
+        optimizing: false,
+        result: storedWritingResult,
         error: '',
-        activeIssueIndex: -1
+        activeIssueIndex: storedWritingResult?.issues?.length ? 0 : -1
     });
 
     // 真实写作耗时：从起笔（文本由空变非空）计时，清空后重新起算，提交批改时上报用于学习时长统计
     let writingStartedAt = null;
     watch(() => writing.text, (text) => {
+        if (text) {
+            localStorage.setItem(WRITING_TEXT_KEY, text);
+        } else {
+            localStorage.removeItem(WRITING_TEXT_KEY);
+        }
         if ((text || '').trim()) {
             if (!writingStartedAt) writingStartedAt = Date.now();
         } else {
             writingStartedAt = null;
         }
     });
+
+    watch(() => writing.mode, (mode) => {
+        if (mode) localStorage.setItem(WRITING_MODE_KEY, mode);
+    });
+
+    watch(() => writing.result, (res) => {
+        if (res) {
+            try {
+                localStorage.setItem(WRITING_RESULT_KEY, JSON.stringify(res));
+            } catch {}
+        } else {
+            localStorage.removeItem(WRITING_RESULT_KEY);
+        }
+    }, { deep: true });
 
     const analyzeWriting = async () => {
         const trimmed = (writing.text || '').trim();
@@ -199,6 +269,35 @@ export function useLanguageWorkspace(showToast) {
             showToast(writing.error, 'error');
         } finally {
             writing.analyzing = false;
+        }
+    };
+
+    const optimizeWriting = async () => {
+        const trimmed = (writing.text || '').trim();
+        if (!trimmed) {
+            showToast('请先输入作文并批改', 'warning');
+            return;
+        }
+        if (!writing.result) {
+            showToast('请先进行作文批改后再执行多维优化', 'warning');
+            return;
+        }
+        writing.optimizing = true;
+        try {
+            const issues = writing.result.issues || [];
+            const historyId = writing.result.historyId || null;
+            const optRes = await languageApi.optimizeWriting(trimmed, writing.mode, issues, historyId);
+            if (optRes?.improvedText) {
+                writing.result.improvedText = optRes.improvedText;
+                showToast('已结合诊断建议完成多维重写优化，并已同步保存至历史记录', 'success');
+                if (writingHistory.show) loadWritingHistory();
+            } else {
+                showToast('多维优化未返回有效改写，请稍后重试', 'warning');
+            }
+        } catch (error) {
+            showToast(error?.message || '多维优化失败，请稍后重试', 'error');
+        } finally {
+            writing.optimizing = false;
         }
     };
 
@@ -369,11 +468,17 @@ export function useLanguageWorkspace(showToast) {
         }
     };
 
-    // ---------------- 口语训练 ----------------
+    // ---------------- 口语训练（带本地偏好持久化） ----------------
+    const SPEAKING_MODE_KEY = 'lat_speaking_mode';
+    const SPEAKING_TOPIC_ID_KEY = 'lat_speaking_topic_id';
+    const storedSpeakingMode = localStorage.getItem(SPEAKING_MODE_KEY) || 'read_aloud';
+    const storedTopicId = localStorage.getItem(SPEAKING_TOPIC_ID_KEY);
+    const initialTopic = SPEAKING_TOPICS.find((t) => t.id === storedTopicId) || SPEAKING_TOPICS[0];
+
     const speaking = reactive({
-        mode: 'read_aloud', // read_aloud | free
+        mode: storedSpeakingMode, // read_aloud | free
         referenceText: READ_ALOUD_TEXTS[0],
-        topic: SPEAKING_TOPICS[0],
+        topic: initialTopic,
         recording: false,
         elapsed: 0,
         audioUrl: '',
@@ -381,6 +486,13 @@ export function useLanguageWorkspace(showToast) {
         analyzing: false,
         result: null,
         error: ''
+    });
+
+    watch(() => speaking.mode, (mode) => {
+        if (mode) localStorage.setItem(SPEAKING_MODE_KEY, mode);
+    });
+    watch(() => speaking.topic, (topic) => {
+        if (topic?.id) localStorage.setItem(SPEAKING_TOPIC_ID_KEY, topic.id);
     });
 
     let mediaStream = null;
@@ -715,7 +827,7 @@ export function useLanguageWorkspace(showToast) {
     return {
         overview, overviewLoading, loadOverview,
         reading, readingTokens, quizCorrect, startReading, answerQuiz, submitQuiz, backToReadingStudy, resetReading,
-        writing, analyzeWriting, acceptWritingFix,
+        writing, analyzeWriting, optimizeWriting, acceptWritingFix,
         writingHistory, loadWritingHistory, openWritingHistory, closeWritingHistory, openWritingHistoryEntry, deleteWritingHistoryEntry, loadWritingToEditor,
         speaking, startRecording, stopRecording, analyzeSpeaking,
         wordbook, wordbookLoading, loadWordbook, addWord, removeWord, setProficiency,

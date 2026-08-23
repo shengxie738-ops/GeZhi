@@ -18,7 +18,7 @@ import TeacherCourseManager from './components/TeacherCourseManager.js';
 import TeacherDashboard from './components/TeacherDashboard.js';
 import TeacherProjectManager from './components/TeacherProjectManager.js?v=20260816_002';
 import TeacherAiLessonPrep from './components/TeacherAiLessonPrep.js';
-import ForeignLangPage from './components/foreign-lang/ForeignLangPage.js?v=20260823_9';
+import ForeignLangPage from './components/foreign-lang/ForeignLangPage.js?v=20260824_5';
 import { homeworkApi } from './api/homework.js';
 import { examCenterApi } from './api/examCenter.js';
 import { profileApi } from './api/profileApi.js';

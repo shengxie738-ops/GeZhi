@@ -22,6 +22,7 @@ from app.services.language_service import (
     analyze_reading,
     analyze_speaking,
     analyze_writing,
+    optimize_writing,
     build_learning_advice,
     explain_vocabulary,
 )
@@ -116,6 +117,14 @@ class WritingAnalyzeRequest(BaseModel):
     text: str = Field(min_length=5, max_length=8000)
     mode: str = "standard"
     durationSec: float = Field(default=0.0, ge=0, le=7200)  # 前端追踪的真实写作耗时，供学习时长统计
+    model: Optional[str] = None
+
+
+class WritingOptimizeRequest(BaseModel):
+    text: str = Field(min_length=5, max_length=8000)
+    mode: str = "standard"
+    issues: list[dict] = []
+    historyId: Optional[str] = None
     model: Optional[str] = None
 
 
@@ -304,7 +313,47 @@ async def writing_analyze(
         prefix="lang",
         owner_id=username,
     )
-    return {"status": "success", "data": {**data, "model": model_id}}
+    return {"status": "success", "data": {**data, "historyId": history_key, "model": model_id}}
+
+
+@router.post("/language/writing/optimize")
+async def writing_optimize(
+    request: WritingOptimizeRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    username = require_user(authorization)
+    model_id = resolve_language_model(db, FOREIGN_AGENT_ID, request.model, category="text")
+    try:
+        data = await optimize_writing(model_id, request.text, request.mode, request.issues)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"多维优化失败：{exc}")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"多维优化服务暂不可用：{exc}")
+
+    store = JsonStore(db)
+    improved_text = data.get("improvedText", "")
+    target_history_id = request.historyId
+
+    if target_history_id:
+        existing = store.get_payload(LANGUAGE_MODULE, WRITING_HISTORY_TYPE, target_history_id, owner_id=username)
+        if existing:
+            store.patch(LANGUAGE_MODULE, WRITING_HISTORY_TYPE, target_history_id, {"improvedText": improved_text}, owner_id=username)
+    else:
+        recent_records = store.list_payloads(LANGUAGE_MODULE, record_type=WRITING_HISTORY_TYPE, owner_id=username)
+        if recent_records:
+            target_history_id = recent_records[0].get("id")
+            store.patch(LANGUAGE_MODULE, WRITING_HISTORY_TYPE, target_history_id, {"improvedText": improved_text}, owner_id=username)
+
+    return {
+        "status": "success",
+        "data": {
+            "improvedText": improved_text,
+            "historyId": target_history_id,
+            "mode": data.get("mode", request.mode),
+            "model": model_id,
+        },
+    }
 
 
 # ---------------------------------------------------------------- 写作历史
