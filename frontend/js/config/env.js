@@ -1,5 +1,6 @@
 const DEFAULT_API_ORIGIN = 'https://gezhisystem.com';
-const LOCAL_DEV_API_ORIGIN = 'http://127.0.0.1:8516';
+// 本地端口 8516 落入 Windows 保留端口段（winnat 8429-8528），改用 9516
+const LOCAL_DEV_API_ORIGIN = 'http://127.0.0.1:9516';
 
 function normalizeApiOrigin(value) {
     const origin = String(value || '').trim().replace(/\/+$/, '');
