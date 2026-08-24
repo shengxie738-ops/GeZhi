@@ -3565,11 +3565,11 @@
                                                 <!-- 用户消息气泡 -->
                                                 <div v-if="msg.senderType === 'user'"
                                                     class="flex items-end gap-2.5 max-w-[85%]">
-                                                    <div class="text-white p-4 rounded-2xl rounded-tr-sm shadow-md bg-gradient-to-r from-violet-600 to-indigo-700">
-                                                        <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
-                                                        <div class="mt-2 text-[10px] text-white/70 text-right">{{ msg.time }}</div>
+                                                    <div class="bg-white text-slate-800 border border-slate-200/80 p-4 rounded-2xl rounded-tr-sm shadow-xs">
+                                                        <p class="text-sm leading-relaxed whitespace-pre-wrap font-normal">{{ msg.content }}</p>
+                                                        <div class="mt-2 text-[10px] text-slate-400 text-right">{{ msg.time }}</div>
                                                     </div>
-                                                    <div class="w-8 h-8 rounded-full border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center bg-slate-800 text-white font-bold text-xs">
+                                                    <div class="w-8 h-8 rounded-full border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center bg-slate-800 text-white font-bold text-xs shadow-xs">
                                                         <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url" class="w-full h-full object-cover" />
                                                         <span v-else>{{ currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : 'U' }}</span>
                                                     </div>
