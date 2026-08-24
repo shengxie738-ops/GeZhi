@@ -3255,651 +3255,418 @@
                                                                         {{ video.url }}
                                                                     </a>
                                                                 </div>
-                                                                <a :href="video.url" target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    class="shrink-0 w-7 h-7 rounded-lg bg-white border border-sky-100 text-sky-600 hover:bg-sky-500 hover:text-white transition-colors flex items-center justify-center">
-                                                                    <i class="ph ph-arrow-square-out text-sm"></i>
-                                                                </a>
-                                                            </div>
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                            <!-- 弹窗尾部 -->
-                                            <div
-                                                class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
-                                                <button @click="activeNodeDetails = null"
-                                                    class="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">关闭</button>
-                                                <button v-if="activeNodeDetails.status === 'doing'"
-                                                    @click="activeNodeDetails = null; currentView='study';"
-                                                    class="px-4 py-2 rounded-xl text-xs font-medium text-white bg-[#b91c1c] hover:bg-[#991b1b] shadow-md transition-colors flex items-center gap-1"><i
-                                                        class="ph ph-timer"></i> 开启专注</button>
-                                                <button v-if="activeNodeDetails.status !== 'pending'"
-                                                    @click="activeNodeDetails = null; currentView='workspace';"
-                                                    class="px-4 py-2 rounded-xl text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1"><i
-                                                        class="ph ph-chat-teardrop"></i> 提问导师</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </transition>
-                            </div>
-                        </transition>
-
-                        <!-- 3. 工作台 -->
+                                                                <a :href                        <!-- 3. 一站式 Work 超级工作台 -->
                         <transition name="fade">
-                            <div v-show="currentView === 'workspace'" class="absolute inset-0 flex"
-                                style="background: transparent;">
-                                <!-- 新增：工作台学习模式选择分流页 -->
-                                <div v-if="!workspaceMode"
-                                    class="m-auto max-w-4xl w-full p-8 flex flex-col items-center justify-center animate-fade-in select-none">
-                                    <h2 class="text-3xl font-extrabold text-slate-800 mb-2"
-                                        style="font-family: 'Noto Serif SC', serif;">选择您的工作台模式</h2>
-                                    <p class="text-sm text-slate-400 mb-10 tracking-widest"
-                                        style="font-family: 'Barlow Condensed', sans-serif;">格物致知 · 开启协同智能学习</p>
-
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                                        <!-- 引导式学习卡片 -->
-                                        <div @click="selectWorkspaceMode('tutor')"
-                                            class="glass-panel-liquid p-8 cursor-pointer flex flex-col items-center text-center transition-all duration-500 hover:scale-[1.02] border-2 border-transparent hover:border-[#b91c1c]/20 group">
-                                            <div
-                                                class="w-16 h-16 bg-gradient-to-br from-[#b91c1c] to-[#991b1b] text-white rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-[0_8px_20px_-4px_rgba(185,28,28,0.3)] group-hover:scale-105 transition-transform duration-500">
-                                                <i class="ph ph-graduation-cap"></i>
-                                            </div>
-                                            <h3 class="text-lg font-bold text-slate-800 mb-2"
-                                                style="font-family: 'Noto Serif SC', serif;">引导式学习</h3>
-                                            <p class="text-xs text-slate-400 leading-relaxed max-w-[240px]">
-                                                多智能体协同答疑。主规划师 Alina 与导师 Prof. X 联合点拨，自动构建知识图谱与错题 analysis。
-                                            </p>
-                                            <span
-                                                class="mt-6 px-4 py-1.5 bg-[#b91c1c]/5 text-[#b91c1c] border border-[#b91c1c]/10 rounded-full text-xs font-semibold group-hover:bg-[#b91c1c] group-hover:text-white transition-colors duration-500">开启学习之旅</span>
-                                        </div>
-                                        <!-- 知识库检索卡片 -->
-                                        <div @click="selectWorkspaceMode('rag')"
-                                            class="glass-panel-liquid p-8 cursor-pointer flex flex-col items-center text-center transition-all duration-500 hover:scale-[1.02] border-2 border-transparent hover:border-[#1c2b38]/20 group">
-                                            <div
-                                                class="w-16 h-16 bg-gradient-to-br from-[#1c2b38] to-[#253645] text-white rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-[0_8px_20px_-4px_rgba(28,43,56,0.3)] group-hover:scale-105 transition-transform duration-500">
-                                                <i class="ph ph-database"></i>
-                                            </div>
-                                            <h3 class="text-lg font-bold text-slate-800 mb-2"
-                                                style="font-family: 'Noto Serif SC', serif;">知识库检索</h3>
-                                            <p class="text-xs text-slate-400 leading-relaxed max-w-[240px]">
-                                                基于课件的精准搜索。DataBot 检索专有课件文档库，提炼引用来源，给出严谨权威的学术答复。
-                                            </p>
-                                            <span
-                                                class="mt-6 px-4 py-1.5 bg-[#1c2b38]/5 text-[#1c2b38] border border-[#1c2b38]/10 rounded-full text-xs font-semibold group-hover:bg-[#1c2b38] group-hover:text-white transition-colors duration-500">检索课件文献</span>
-                                        </div>
-                                        <!-- 外语学习入口卡片 -->
-                                        <div @click="currentView = 'foreign-lang'"
-                                            class="glass-panel-liquid p-8 cursor-pointer flex flex-col items-center text-center transition-all duration-500 hover:scale-[1.02] border-2 border-transparent hover:border-[#002FA7]/25 group">
-                                            <div
-                                                class="w-16 h-16 bg-gradient-to-br from-[#002FA7] to-[#002276] text-white rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-[0_8px_20px_-4px_rgba(0,47,167,0.35)] group-hover:scale-105 transition-transform duration-500">
-                                                <i class="ph ph-translate"></i>
-                                            </div>
-                                            <h3 class="text-lg font-bold text-slate-800 mb-2"
-                                                style="font-family: 'Noto Serif SC', serif;">外语学习</h3>
-                                            <p class="text-xs text-slate-400 leading-relaxed max-w-[240px]">
-                                                AI Language Atelier。阅读精读 · 写作批改 · 全模态口语评测 · 生词闭环，Lexa 与 Echo 双智能体执教。
-                                            </p>
-                                            <span
-                                                class="mt-6 px-4 py-1.5 bg-[#002FA7]/5 text-[#002FA7] border border-[#002FA7]/10 rounded-full text-xs font-semibold group-hover:bg-[#002FA7] group-hover:text-white transition-colors duration-500">进入外语工作台</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 真实的聊天工作台区域 -->
-                                <section v-else class="flex-1 flex flex-col relative h-full">
-                                    <!-- 顶部模式状态条，带返回按钮 -->
-                                    <div
-                                        class="px-6 py-3 border-b border-white/20 bg-white/30 backdrop-blur-xl flex justify-between items-center z-10 shrink-0 select-none">
-                                        <div class="flex items-center gap-2">
-                                            <button @click="workspaceMode = null"
-                                                class="w-8 h-8 rounded-xl bg-white/50 border border-white text-slate-500 hover:text-slate-800 hover:bg-white transition-all flex items-center justify-center active:scale-90"
-                                                title="返回模式选择">
-                                                <i class="ph ph-arrow-left"></i>
+                            <div v-show="currentView === 'workspace'" class="absolute inset-0 flex overflow-hidden bg-[#f8fafc] text-slate-800 select-none">
+                                <!-- 左侧专属侧栏 (Codex / TRAE 风格) -->
+                                <aside class="w-64 min-w-[250px] max-w-[270px] bg-slate-50/90 border-r border-slate-200/80 flex flex-col justify-between p-3.5 backdrop-blur-md shrink-0 h-full">
+                                    <!-- 顶部模式选择与主操作 -->
+                                    <div class="flex flex-col gap-3 min-h-0 flex-1">
+                                        <!-- 顶部标签切换组 -->
+                                        <div class="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl text-xs font-semibold text-slate-600">
+                                            <button type="button" class="flex-1 py-1 px-2 rounded-lg bg-white text-slate-800 shadow-xs flex items-center justify-center gap-1">
+                                                <i class="ph ph-book-open text-sm"></i> Work
                                             </button>
-                                            <div class="flex items-center gap-1.5">
-                                                <span class="text-xs font-bold text-slate-400">当前模式:</span>
-                                                <span class="text-xs px-2.5 py-0.5 rounded-full font-bold shadow-sm"
-                                                    :class="workspaceMode === 'rag' ? 'bg-gradient-to-r from-[#1c2b38] to-[#253645] text-white' : 'bg-[#b91c1c]/5 text-[#b91c1c] border border-[#b91c1c]/10'">
-                                                    <i :class="workspaceMode === 'rag' ? 'ph-database' : 'ph-graduation-cap'"
-                                                        class="mr-1 text-[11px]"></i>
-                                                    {{ workspaceMode === 'rag' ? '知识库检索' : '引导式学习' }}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="workspace-shell"
-                                        :class="workspaceMode === 'rag' ? 'is-rag' : 'is-tutor'">
-                                        <!-- 左侧栏：对话历史 + 新增对话（两种模式共用） -->
-                                        <aside class="workspace-sidebar">
-                                            <button type="button" @click="startNewConversation"
-                                                class="workspace-new-chat"
-                                                :class="activeConversationId === 'new' ? 'is-pending' : ''"
-                                                :disabled="thinkingAgent !== null">
-                                                <i class="ph ph-plus"></i>
-                                                <span>新增对话</span>
+                                            <button type="button" @click="currentView = 'coding'" class="flex-1 py-1 px-2 rounded-lg hover:text-slate-900 transition-colors flex items-center justify-center gap-1 text-slate-500">
+                                                <i class="ph ph-code text-sm"></i> Code
                                             </button>
-                                            <div class="workspace-sidebar-head">
-                                                <span class="workspace-sidebar-title">
-                                                    <i class="ph"
-                                                        :class="workspaceMode === 'rag' ? 'ph-database' : 'ph-chats-circle'"></i>
-                                                    {{ workspaceMode === 'rag' ? '检索历史' : '对话历史' }}
-                                                </span>
-                                                <button type="button" @click="loadChatHistory(workspaceMode)"
-                                                    class="workspace-sidebar-icon-btn" :disabled="historyLoading"
-                                                    title="同步历史">
-                                                    <i class="ph"
-                                                        :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
-                                                </button>
+                                            <button type="button" @click="currentView = 'pathway'" class="flex-1 py-1 px-2 rounded-lg hover:text-slate-900 transition-colors flex items-center justify-center gap-1 text-slate-500">
+                                                <i class="ph ph-paint-brush text-sm"></i> Design
+                                            </button>
+                                        </div>
+
+                                        <!-- + 新建任务 按钮 -->
+                                        <button type="button" @click="startNewConversation"
+                                            class="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold rounded-xl shadow-xs hover:shadow transition-all flex items-center justify-start gap-2 group active:scale-98"
+                                            :disabled="thinkingAgent !== null">
+                                            <div class="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                                                <i class="ph ph-plus text-sm"></i>
                                             </div>
-                                            <div class="workspace-conversation-list">
-                                                <div v-if="conversationList.length === 0"
-                                                    class="workspace-conversation-empty">
-                                                    <i class="ph ph-chat-centered-dots"></i>
-                                                    <p class="workspace-conversation-empty-title">暂无对话</p>
-                                                    <p class="workspace-conversation-empty-hint">发起一次{{
-                                                        workspaceMode === 'rag' ? '检索' : '学习对话' }}后会自动归档。</p>
+                                            <span class="text-sm">新建任务</span>
+                                        </button>
+
+                                        <!-- 快捷功能导航区 -->
+                                        <div class="flex flex-col gap-1 py-1">
+                                            <button type="button" @click="showToast('插件市场：已挂载 WebSearch, Python 沙箱, 图表渲染引擎', 'info')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-puzzle-piece text-base text-indigo-500"></i>
+                                                <span>插件市场</span>
+                                            </button>
+                                            <button type="button" @click="switchWorkMode('rag')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
+                                                :class="agentMode === 'rag' ? 'bg-[#1c2b38]/10 text-[#1c2b38] font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
+                                                <i class="ph ph-database text-base text-emerald-600"></i>
+                                                <span>知识库检索</span>
+                                            </button>
+                                            <button type="button" @click="switchWorkMode('tutor')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
+                                                :class="agentMode === 'tutor' ? 'bg-[#b91c1c]/10 text-[#b91c1c] font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
+                                                <i class="ph ph-graduation-cap text-base text-[#b91c1c]"></i>
+                                                <span>引导式学习</span>
+                                            </button>
+                                            <button type="button" @click="showToast('自动化工作流助手已在后台就绪', 'info')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-timer text-base text-amber-500"></i>
+                                                <span>自动化</span>
+                                            </button>
+                                            <button type="button" @click="showToast('办公助理已连接，支持文档与格式化处理', 'info')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-briefcase text-base text-blue-500"></i>
+                                                <span>办公助理</span>
+                                            </button>
+                                            <button type="button" @click="showToast('模板库已准备就绪', 'info')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-file-text text-base text-teal-600"></i>
+                                                <span>模板库</span>
+                                            </button>
+                                            <button type="button" @click="currentView = 'foreign-lang'"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-translate text-base text-blue-600"></i>
+                                                <span>进入外语工作台</span>
+                                            </button>
+                                        </div>
+
+                                        <!-- 任务列表 (Task List) -->
+                                        <div class="flex-1 flex flex-col min-h-0 pt-2 border-t border-slate-200/70">
+                                            <div class="flex items-center justify-between px-2 pb-1.5 text-[11px] font-bold text-slate-400">
+                                                <span>任务列表</span>
+                                                <div class="flex items-center gap-1 text-slate-400">
+                                                    <button type="button" @click="loadChatHistory(agentMode)" :disabled="historyLoading" class="hover:text-slate-700" title="刷新任务">
+                                                        <i class="ph" :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
+                                                    </button>
+                                                    <i class="ph ph-caret-up-down"></i>
                                                 </div>
+                                            </div>
+
+                                            <div class="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                                <!-- 默认任务分组/当前空白态 -->
+                                                <div @click="startNewConversation"
+                                                    class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+                                                    :class="activeConversationId === 'new' || (!activeConversation && conversationList.length === 0) ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-500 hover:bg-slate-200/50 hover:text-slate-800'">
+                                                    <div class="flex items-center gap-2 truncate">
+                                                        <i class="ph ph-cloud text-slate-400"></i>
+                                                        <span class="truncate">默认</span>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 历史对话列表 -->
                                                 <div v-for="conv in conversationList" :key="conv.id"
-                                                    class="workspace-conversation-item"
-                                                    :class="conv.id === sidebarActiveConversationId ? 'is-active' : ''"
-                                                    role="button" tabindex="0"
-                                                    :title="conv.title"
                                                     @click="selectConversation(conv.id)"
-                                                    @keydown.enter.prevent="selectConversation(conv.id)"
-                                                    @keydown.space.prevent="selectConversation(conv.id)">
-                                                    <div class="workspace-conversation-main">
-                                                        <p class="workspace-conversation-title">{{ conv.title }}</p>
-                                                        <div class="workspace-conversation-meta">
-                                                            <span>{{ conv.messageCount }} 条</span>
-                                                            <span
-                                                                class="workspace-conversation-sep">·</span>
-                                                            <span>{{ conv.lastTime || conv.startedTime || '刚刚'
-                                                                }}</span>
-                                                        </div>
+                                                    class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+                                                    :class="conv.id === sidebarActiveConversationId && activeConversationId !== 'new' ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'">
+                                                    <div class="flex items-center gap-2 truncate flex-1 min-w-0" :title="conv.title">
+                                                        <i class="ph ph-folder text-slate-400"></i>
+                                                        <span class="truncate">{{ conv.title }}</span>
                                                     </div>
-                                                    <button type="button"
-                                                        class="knowledge-history-delete workspace-conversation-delete"
-                                                        @click.stop="deleteConversation(conv)" title="删除这段对话"
-                                                        aria-label="删除这段对话">
-                                                        <i class="ph ph-trash"></i>
+                                                    <button type="button" @click.stop="deleteConversation(conv)"
+                                                        class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-all"
+                                                        title="删除此任务">
+                                                        <i class="ph ph-trash text-xs"></i>
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div class="workspace-sidebar-foot">
-                                                <span class="workspace-sync-status"
-                                                    :class="historyError ? 'is-warning' : ''">
-                                                    <span class="workspace-sync-dot"></span>
-                                                    {{ historyLoading ? '同步中' : (historyError ? '本地缓存' : '已同步') }}
-                                                </span>
-                                                <button type="button" @click="clearChatHistory(workspaceMode)"
-                                                    class="workspace-clear-btn"
-                                                    :disabled="historyLoading || messages.length === 0">
-                                                    <i class="ph ph-trash"></i>清空全部
-                                                </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- 底部用户信息栏 -->
+                                    <div class="pt-3 border-t border-slate-200/70 flex items-center justify-between select-none">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <div class="w-7 h-7 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                                                <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url" class="w-full h-full object-cover" />
+                                                <span v-else>{{ currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : 'U' }}</span>
                                             </div>
-                                        </aside>
-                                        <!-- 中间：对话区 -->
-                                        <div class="chat-agent-column"
-                                            :class="workspaceMode === 'rag' ? 'knowledge-search-shell' : ''">
-                                            <transition name="fade">
-                                                <div v-if="isViewingHistory" class="history-review-banner">
-                                                    <i class="ph ph-clock-counter-clockwise"></i>
-                                                    <span>正在查看历史对话</span>
-                                                    <button type="button" @click="backToCurrentConversation">
-                                                        回到最新对话<i class="ph ph-arrow-bend-up-right"></i>
+                                            <div class="truncate text-xs font-semibold text-slate-700">
+                                                {{ dashboardDisplayName }}
+                                            </div>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-bold shrink-0">免费</span>
+                                        </div>
+                                        <div class="flex items-center gap-1 text-slate-400 hover:text-slate-600 cursor-pointer text-xs font-medium" @click="showToast('格至移动端与网页端实时互通', 'info')" title="移动端">
+                                            <i class="ph ph-device-mobile"></i>
+                                            <span class="text-[10px]">移动端</span>
+                                        </div>
+                                    </div>
+                                </aside>
+
+                                <!-- 右侧核心工作区 (Codex / TRAE 风格) -->
+                                <main class="flex-1 flex flex-col relative h-full bg-[#fafafa] overflow-hidden">
+                                    <!-- 顶部微状态条 -->
+                                    <header class="px-6 py-3 flex items-center justify-between border-b border-slate-200/40 bg-white/40 backdrop-blur-sm z-10 select-none">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-bold text-slate-400">当前模式:</span>
+                                            <span class="text-xs px-2.5 py-0.5 rounded-full font-bold shadow-xs flex items-center gap-1"
+                                                :class="agentMode === 'rag' ? 'bg-[#1c2b38] text-white' : 'bg-[#b91c1c]/10 text-[#b91c1c] border border-[#b91c1c]/20'">
+                                                <i :class="agentMode === 'rag' ? 'ph ph-database' : 'ph ph-graduation-cap'"></i>
+                                                {{ agentMode === 'rag' ? '知识库检索' : '一站式协同' }}
+                                            </span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-medium flex items-center gap-1">
+                                                <i class="ph ph-cpu text-violet-500"></i>
+                                                {{ currentModelInfo.label || currentModel }}
+                                            </span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <button v-if="isViewingHistory" @click="backToCurrentConversation"
+                                                class="px-3 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-all flex items-center gap-1 shadow-xs">
+                                                <i class="ph ph-arrow-left"></i> 回到最新对话
+                                            </button>
+                                        </div>
+                                    </header>
+
+                                    <!-- 场景 A：首屏 / 新建任务空白态 -->
+                                    <div v-if="activeConversationMessages.length === 0 || activeConversationId === 'new'"
+                                        class="flex-1 flex flex-col items-center justify-center p-6 md:p-12 overflow-y-auto max-w-4xl mx-auto w-full animate-fade-in">
+                                        
+                                        <!-- 居中大标题 -->
+                                        <div class="text-center mb-6 select-none">
+                                            <div class="inline-flex items-center gap-2.5 text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight"
+                                                style="font-family: 'Noto Serif SC', serif;">
+                                                <i class="ph ph-book-open-text text-violet-600"></i>
+                                                <span>Work with 格至</span>
+                                            </div>
+                                            <p class="text-sm text-slate-400 mt-2.5 tracking-wide">
+                                                帮您整理论文综述、编写 PPT、分析 Excel 等日常工作，输出专业级工作成果。
+                                            </p>
+                                        </div>
+
+                                        <!-- 超级 AI 问答输入框卡片 -->
+                                        <div class="w-full max-w-3xl bg-white rounded-3xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.06)] p-4 flex flex-col transition-all focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
+                                            <textarea v-model="inputText"
+                                                @keydown.enter.exact.prevent="sendMessage"
+                                                rows="4"
+                                                class="w-full bg-transparent resize-none outline-none p-2 text-sm text-slate-800 placeholder-slate-400 transition-colors leading-relaxed"
+                                                placeholder="帮您整理论文综述、编写 PPT、分析 Excel 等日常工作，输出专业级工作成果。"></textarea>
+
+                                            <!-- 卡片底栏操作区 -->
+                                            <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                <!-- 左侧多模态与附件工具 -->
+                                                <div class="flex items-center gap-1.5 text-slate-500">
+                                                    <button type="button" @click="triggerFileInput"
+                                                        class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-600 hover:text-slate-900"
+                                                        title="添加附件">
+                                                        <i class="ph ph-plus text-base font-bold"></i>
                                                     </button>
-                                                </div>
-                                            </transition>
-                                            <div ref="chatContainer"
-                                                class="h-full overflow-y-auto p-6 flex flex-col gap-6 scroll-smooth"
-                                                :class="workspaceMode === 'rag' ? 'pb-44' : 'pb-40'">
-                                                <div v-if="activeConversationMessages.length === 0" class="m-auto text-center"
-                                                    :class="workspaceMode === 'rag' ? 'knowledge-empty-state' : ''">
-                                                    <div class="w-16 h-16 bg-white/60 backdrop-blur-md rounded-full flex items-center justify-center text-3xl shadow-md mx-auto mb-4 border border-white"
-                                                        :class="workspaceMode === 'rag' ? 'text-[#1c2b38]' : 'text-[#b91c1c]'">
-                                                        <i
-                                                            :class="workspaceMode === 'rag' ? 'ph ph-books' : 'ph ph-magic-wand'"></i>
-                                                    </div>
-                                                    <h3 class="text-xl font-bold text-slate-800 mb-2"
-                                                        style="font-family: 'Noto Serif SC', serif;">{{
-                                                        workspaceMode === 'rag' ? '开始一次有来源的知识检索' : '欢迎来到多智能体核心枢纽' }}
-                                                    </h3>
-                                                    <p class="text-sm text-slate-400 max-w-sm mx-auto tracking-wide">
-                                                        {{ workspaceMode === 'rag'
-                                                        ? '输入课程资料相关问题，DataBot 会优先基于个人知识库生成回答，并保留引用线索与历史记录。'
-                                                        : '直接输入问题，左侧文本智能体讲解，右侧 Mira 会同步生成学习引导图。' }}</p>
-                                                    <div v-if="workspaceMode === 'rag'"
-                                                        class="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-500">
-                                                        <div
-                                                            class="rounded-xl bg-white/65 border border-white px-3 py-2">
-                                                            <i
-                                                                class="ph ph-file-magnifying-glass text-[#1c2b38] mr-1"></i>课件定位
-                                                        </div>
-                                                        <div
-                                                            class="rounded-xl bg-white/65 border border-white px-3 py-2">
-                                                            <i class="ph ph-quotes text-[#1c2b38] mr-1"></i>引用保留
-                                                        </div>
-                                                        <div
-                                                            class="rounded-xl bg-white/65 border border-white px-3 py-2">
-                                                            <i
-                                                                class="ph ph-clock-counter-clockwise text-[#1c2b38] mr-1"></i>历史归档
-                                                        </div>
-                                                    </div>
+                                                    <button type="button" @click="showToast('图像识别多模态已就绪', 'info')"
+                                                        class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-500 hover:text-slate-800"
+                                                        title="上传图片">
+                                                        <i class="ph ph-image text-base"></i>
+                                                    </button>
+                                                    <button type="button" @click="showToast('多媒体/视频解析已挂载', 'info')"
+                                                        class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-500 hover:text-slate-800"
+                                                        title="多媒体分析">
+                                                        <i class="ph ph-video-camera text-base"></i>
+                                                    </button>
                                                 </div>
 
-                                                <div v-for="msg in activeConversationMessages" :key="msg.id"
-                                                    class="chat-message-anchor flex flex-col w-full max-w-4xl mx-auto"
-                                                    :class="msg.senderType === 'user' ? 'items-end' : 'items-start'"
-                                                    :data-message-id="msg.id">
-                                                    <div v-if="msg.senderType === 'user'"
-                                                        class="flex items-end gap-2 max-w-[85%]">
-                                                        <div class="text-white p-4 rounded-2xl rounded-tr-sm shadow-md"
-                                                            :class="workspaceMode === 'rag' ? 'bg-[#1c2b38]' : 'bg-[#b91c1c]'">
-                                                            <p class="text-sm leading-relaxed">{{ msg.content }}</p>
-                                                            <div class="mt-2 text-[10px] text-white/70 text-right">{{
-                                                                msg.time }}</div>
-                                                        </div>
-                                                        <div class="w-8 h-8 rounded-full border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center"
-                                                            :class="currentUser?.avatar_url ? '' : 'bg-gradient-to-br from-[#1c2b38] to-[#253645] text-white'">
-                                                            <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url"
-                                                                class="w-full h-full object-cover" alt="头像" />
-                                                            <span v-else class="text-xs font-bold">{{ currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : 'U' }}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div v-else class="flex items-start gap-3 max-w-[95%]">
-                                                        <div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white shadow-md border-2 border-white"
-                                                            :class="getAgentInfo(msg.senderId).colorClass">
-                                                            <i :class="getAgentInfo(msg.senderId).icon"
-                                                                class="text-lg"></i>
-                                                        </div>
-                                                        <div class="flex flex-col gap-1 w-full">
-                                                            <div class="flex items-center gap-2 px-1">
-                                                                <span class="text-xs font-bold text-slate-700">{{
-                                                                    getAgentInfo(msg.senderId).name }}</span>
-                                                                <span
-                                                                    class="text-[9px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-500">{{
-                                                                    getAgentInfo(msg.senderId).role }}</span>
-                                                                <span class="text-[10px] text-slate-400">{{ msg.time
-                                                                    }}</span>
-                                                            </div>
-                                                            <div v-if="msg.content.includes('[QUIZ]')"
-                                                                class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm text-[14px] flex flex-col gap-3 max-w-xl">
-                                                                <div
-                                                                    class="font-bold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                                                                    <i
-                                                                        class="ph ph-sparkle text-[#b91c1c] animate-pulse text-lg"></i>
-                                                                    AI 协同概念自测
+                                                <!-- 右侧模型热切换与发送执行 -->
+                                                <div class="flex items-center gap-2.5 relative">
+                                                    <!-- 模型热切换下拉触发器 -->
+                                                    <div class="relative">
+                                                        <button type="button" @click.stop="toggleModelDropdown"
+                                                            class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-xs font-bold text-slate-700 border border-slate-200/80 flex items-center gap-1.5 transition-all shadow-2xs active:scale-98">
+                                                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                            <span>{{ currentModelInfo.label || currentModel }}</span>
+                                                            <i class="ph ph-caret-down text-slate-400 text-xs"></i>
+                                                        </button>
+
+                                                        <!-- 模型下拉面板 -->
+                                                        <transition name="fade">
+                                                            <div v-if="showModelDropdown"
+                                                                class="absolute right-0 bottom-full mb-2 w-72 bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-fade-in max-h-80 overflow-y-auto">
+                                                                <div class="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 border-b border-slate-100 mb-1 flex justify-between items-center">
+                                                                    <span>选择 AI 模型（即时热切换）</span>
+                                                                    <span class="text-[9px] text-violet-600 font-normal">热插拔生效</span>
                                                                 </div>
-                                                                <p
-                                                                    class="text-xs text-slate-700 font-semibold leading-relaxed">
-                                                                    {{ parseQuiz(msg.content).question }}</p>
-                                                                <div class="flex flex-col gap-2 mt-1.5">
-                                                                    <button
-                                                                        v-for="opt in parseQuiz(msg.content).options"
-                                                                        :key="opt"
-                                                                        @click="checkQuizAnswer(msg.id, opt.charAt(0), parseQuiz(msg.content).answer)"
-                                                                        class="w-full text-left p-3 rounded-xl text-xs border transition-all flex justify-between items-center shadow-sm"
-                                                                        :class="getQuizOptClass(msg.id, opt.charAt(0), parseQuiz(msg.content).answer)">
-                                                                        <span>{{ opt }}</span>
-                                                                        <i v-if="quizStates[msg.id]?.selected === opt.charAt(0)"
-                                                                            :class="opt.charAt(0) === parseQuiz(msg.content).answer ? 'ph-circle-wavy-check text-emerald-500' : 'ph-x-circle text-red-500'"
-                                                                            class="ph text-lg"></i>
+                                                                <div class="space-y-1">
+                                                                    <button v-for="m in modelOptions" :key="m.id"
+                                                                        type="button"
+                                                                        @click="switchModel(m.id)"
+                                                                        class="w-full px-2.5 py-2 rounded-xl text-left transition-all flex items-center justify-between"
+                                                                        :class="currentModel === m.id ? 'bg-violet-50 border border-violet-200 text-violet-900' : 'hover:bg-slate-100 text-slate-700'">
+                                                                        <div class="min-w-0 pr-2">
+                                                                            <div class="text-xs font-bold truncate flex items-center gap-1.5">
+                                                                                <span>{{ m.label || m.id }}</span>
+                                                                                <span v-if="m.provider" class="text-[9px] px-1 py-0.2 rounded bg-slate-200/80 text-slate-600 font-normal">{{ m.provider }}</span>
+                                                                            </div>
+                                                                            <div v-if="m.hint" class="text-[10px] text-slate-400 mt-0.5 truncate">{{ m.hint }}</div>
+                                                                        </div>
+                                                                        <i v-if="currentModel === m.id" class="ph ph-check text-violet-600 font-bold shrink-0"></i>
                                                                     </button>
                                                                 </div>
+                                                            </div>
+                                                        </transition>
+                                                    </div>
+
+                                                    <!-- 语音输入按钮 -->
+                                                    <button type="button" @click="showToast('语音听写功能已就绪', 'info')"
+                                                        class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-500 hover:text-slate-800"
+                                                        title="语音输入">
+                                                        <i class="ph ph-microphone text-base"></i>
+                                                    </button>
+
+                                                    <!-- 发送执行按钮 (紫色渐变胶囊) -->
+                                                    <button type="button" @click="sendMessage"
+                                                        :disabled="!inputText.trim() || thinkingAgent !== null"
+                                                        class="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        <span>发送</span>
+                                                        <i class="ph ph-arrow-up text-sm font-bold"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 云端 / 本地标识切换 -->
+                                        <div class="mt-4 flex items-center gap-2 text-xs text-slate-400 font-medium select-none">
+                                            <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200/70 shadow-2xs">
+                                                <i class="ph ph-cloud text-slate-500"></i>
+                                                <span class="text-slate-600">云端协同</span>
+                                                <i class="ph ph-caret-down text-[10px]"></i>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 场景 B：已有消息时的对话执行流 -->
+                                    <div v-else class="flex-1 flex flex-col relative h-full overflow-hidden">
+                                        <!-- 消息流列表 -->
+                                        <div ref="chatContainer"
+                                            class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 scroll-smooth pb-44 max-w-4xl mx-auto w-full">
+                                            
+                                            <div v-for="msg in activeConversationMessages" :key="msg.id"
+                                                class="chat-message-anchor flex flex-col w-full"
+                                                :class="msg.senderType === 'user' ? 'items-end' : 'items-start'"
+                                                :data-message-id="msg.id">
+                                                
+                                                <!-- 用户消息气泡 -->
+                                                <div v-if="msg.senderType === 'user'"
+                                                    class="flex items-end gap-2.5 max-w-[85%]">
+                                                    <div class="text-white p-4 rounded-2xl rounded-tr-sm shadow-md bg-gradient-to-r from-violet-600 to-indigo-700">
+                                                        <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
+                                                        <div class="mt-2 text-[10px] text-white/70 text-right">{{ msg.time }}</div>
+                                                    </div>
+                                                    <div class="w-8 h-8 rounded-full border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center bg-slate-800 text-white font-bold text-xs">
+                                                        <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url" class="w-full h-full object-cover" />
+                                                        <span v-else>{{ currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : 'U' }}</span>
+                                                    </div>
+                                                </div>
+
+                                                <!-- AI / Agent 消息气泡 -->
+                                                <div v-else class="flex items-start gap-3 max-w-[95%] w-full">
+                                                    <div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white shadow-md border-2 border-white"
+                                                        :class="getAgentInfo(msg.senderId).colorClass">
+                                                        <i :class="getAgentInfo(msg.senderId).icon" class="text-lg"></i>
+                                                    </div>
+                                                    <div class="flex flex-col gap-1.5 w-full min-w-0">
+                                                        <div class="flex items-center gap-2 px-1">
+                                                            <span class="text-xs font-bold text-slate-700">{{ getAgentInfo(msg.senderId).name }}</span>
+                                                            <span class="text-[9px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-500">{{ getAgentInfo(msg.senderId).role }}</span>
+                                                            <span class="text-[10px] text-slate-400">{{ msg.time }}</span>
+                                                        </div>
+                                                        <!-- 答题测试卡片 -->
+                                                        <div v-if="msg.content.includes('[QUIZ]')"
+                                                            class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm text-[14px] flex flex-col gap-3 max-w-xl">
+                                                            <div class="font-bold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                                                                <i class="ph ph-sparkle text-violet-600 animate-pulse text-lg"></i>
+                                                                AI 协同概念自测
+                                                            </div>
+                                                            <p class="text-xs text-slate-700 font-semibold leading-relaxed">{{ parseQuiz(msg.content).question }}</p>
+                                                            <div class="flex flex-col gap-2 mt-1.5">
+                                                                <button v-for="opt in parseQuiz(msg.content).options" :key="opt"
+                                                                    @click="checkQuizAnswer(msg.id, opt.charAt(0), parseQuiz(msg.content).answer)"
+                                                                    class="w-full text-left p-3 rounded-xl text-xs border transition-all flex justify-between items-center shadow-xs"
+                                                                    :class="getQuizOptClass(msg.id, opt.charAt(0), parseQuiz(msg.content).answer)">
+                                                                    <span>{{ opt }}</span>
+                                                                    <i v-if="quizStates[msg.id]?.selected === opt.charAt(0)"
+                                                                        :class="opt.charAt(0) === parseQuiz(msg.content).answer ? 'ph-circle-wavy-check text-emerald-500' : 'ph-x-circle text-red-500'"
+                                                                        class="ph text-lg"></i>
+                                                                </button>
+                                                            </div>
+                                                            <transition name="fade">
+                                                                <div v-if="quizStates[msg.id]?.answered"
+                                                                    class="mt-2 text-[10px] text-slate-500 bg-slate-50 border border-slate-100 p-2.5 rounded-xl leading-relaxed">
+                                                                    <span class="font-bold" :class="quizStates[msg.id].correct ? 'text-emerald-600' : 'text-red-500'">
+                                                                        {{ quizStates[msg.id].correct ? '✓ 回答正确！' : '✗ 回答错误。' }}
+                                                                    </span>
+                                                                    正确答案是 <span class="font-bold text-violet-600">{{ parseQuiz(msg.content).answer }}</span>。自测分数已同步到个人图谱中。
+                                                                </div>
+                                                            </transition>
+                                                        </div>
+                                                        <!-- 普通 Markdown 内容 -->
+                                                        <div v-else
+                                                            class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm markdown-body text-[14px] text-slate-800"
+                                                            v-html="parsedHtmlCache[msg.id] || msg.content"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- 思考中提示 -->
+                                            <div v-if="thinkingAgent"
+                                                class="flex items-start gap-3 max-w-4xl mx-auto w-full">
+                                                <div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white shadow-md animate-pulse border-2 border-white"
+                                                    :class="getAgentInfo(thinkingAgent).colorClass">
+                                                    <i :class="getAgentInfo(thinkingAgent).icon" class="text-lg"></i>
+                                                </div>
+                                                <div class="bg-white border border-slate-200 px-5 py-3.5 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-3">
+                                                    <span class="text-sm text-slate-600 font-medium">{{ getAgentInfo(thinkingAgent).name }} 正在深度思考并生成回答</span>
+                                                    <div class="flex gap-1">
+                                                        <span class="w-1.5 h-1.5 bg-violet-600 rounded-full animate-bounce" style="animation-delay: 0s"></span>
+                                                        <span class="w-1.5 h-1.5 bg-violet-600 rounded-full animate-bounce" style="animation-delay: 0.15s"></span>
+                                                        <span class="w-1.5 h-1.5 bg-violet-600 rounded-full animate-bounce" style="animation-delay: 0.3s"></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 对话态吸底输入栏 -->
+                                        <div class="absolute bottom-0 left-0 w-full pb-6 pt-12 px-6 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent">
+                                            <div class="max-w-4xl mx-auto">
+                                                <div class="bg-white rounded-2xl border-2 border-slate-200 focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10 shadow-lg flex flex-col p-2.5 transition-all">
+                                                    <textarea v-model="inputText"
+                                                        @keydown.enter.exact.prevent="sendMessage" rows="2"
+                                                        class="flex-1 bg-transparent resize-none outline-none py-2 px-3 text-sm max-h-36 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors"
+                                                        placeholder="输入追问或新的任务指令..."></textarea>
+                                                    <div class="flex items-center justify-between pt-2 border-t border-slate-100 px-2">
+                                                        <div class="flex items-center gap-2">
+                                                            <button type="button" @click="triggerFileInput"
+                                                                class="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all" title="上传附件">
+                                                                <i class="ph ph-plus"></i>
+                                                            </button>
+                                                            <!-- 模型热切换 -->
+                                                            <div class="relative">
+                                                                <button type="button" @click.stop="toggleModelDropdown"
+                                                                    class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700 border border-slate-200/60 flex items-center gap-1">
+                                                                    <span>{{ currentModelInfo.label || currentModel }}</span>
+                                                                    <i class="ph ph-caret-down text-[10px]"></i>
+                                                                </button>
                                                                 <transition name="fade">
-                                                                    <div v-if="quizStates[msg.id]?.answered"
-                                                                        class="mt-2 text-[10px] text-slate-500 bg-slate-50 border border-slate-100 p-2.5 rounded-xl leading-relaxed">
-                                                                        <span class="font-bold"
-                                                                            :class="quizStates[msg.id].correct ? 'text-emerald-600' : 'text-red-500'">
-                                                                            {{ quizStates[msg.id].correct ? '✓ 回答正确！' :
-                                                                            '✗ 回答错误。' }}
-                                                                        </span>
-                                                                        正确答案是 <span class="font-bold text-[#b91c1c]">{{
-                                                                            parseQuiz(msg.content).answer
-                                                                            }}</span>。自测分数已同步到您的个人能力图谱中。
+                                                                    <div v-if="showModelDropdown"
+                                                                        class="absolute left-0 bottom-full mb-2 w-64 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 max-h-72 overflow-y-auto">
+                                                                        <div class="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-100 mb-1">
+                                                                            切换 AI 模型
+                                                                        </div>
+                                                                        <div class="space-y-1">
+                                                                            <button v-for="m in modelOptions" :key="m.id"
+                                                                                type="button"
+                                                                                @click="switchModel(m.id)"
+                                                                                class="w-full px-2 py-1.5 rounded-xl text-left transition-all flex items-center justify-between text-xs"
+                                                                                :class="currentModel === m.id ? 'bg-violet-50 font-bold text-violet-800' : 'hover:bg-slate-100 text-slate-700'">
+                                                                                <span class="truncate">{{ m.label || m.id }}</span>
+                                                                                <i v-if="currentModel === m.id" class="ph ph-check text-violet-600"></i>
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                 </transition>
                                                             </div>
-                                                            <div v-else
-                                                                class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm markdown-body text-[14px]"
-                                                                v-html="parsedHtmlCache[msg.id] || msg.content"></div>
                                                         </div>
-                                                    </div>
-                                                </div>
-
-                                                <div v-if="thinkingAgent"
-                                                    class="flex items-start gap-3 max-w-4xl mx-auto w-full">
-                                                    <div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white shadow-md animate-pulse border-2 border-white"
-                                                        :class="getAgentInfo(thinkingAgent).colorClass">
-                                                        <i :class="getAgentInfo(thinkingAgent).icon"
-                                                            class="text-lg"></i>
-                                                    </div>
-                                                    <div
-                                                        class="bg-white border border-slate-200 px-5 py-4 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-3">
-                                                        <span class="text-sm text-slate-600 font-medium">{{
-                                                            getAgentInfo(thinkingAgent).name }} 正在处理</span>
-                                                        <div class="flex gap-1"><span
-                                                                class="w-1.5 h-1.5 bg-[#b91c1c] rounded-full animate-bounce"
-                                                                style="animation-delay: 0s"></span><span
-                                                                class="w-1.5 h-1.5 bg-[#b91c1c] rounded-full animate-bounce"
-                                                                style="animation-delay: 0.15s"></span><span
-                                                                class="w-1.5 h-1.5 bg-[#b91c1c] rounded-full animate-bounce"
-                                                                style="animation-delay: 0.3s"></span></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div class="absolute bottom-0 left-0 w-full pb-6 pt-16 px-6"
-                                                :class="workspaceMode === 'rag' ? 'knowledge-command-dock' : 'bg-gradient-to-t from-slate-50 via-slate-50 to-transparent'">
-                                                <div class="max-w-4xl mx-auto relative">
-                                                    <div class="absolute -top-10 left-0 flex gap-2 flex-wrap">
-                                                        <template v-if="workspaceMode === 'rag'">
-                                                            <button @click="fillInput('请根据我的知识库资料总结队列的核心概念与典型应用')"
-                                                                class="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:text-[#1c2b38] hover:border-[#1c2b38]/40 shadow-sm transition-all"><i
-                                                                    class="ph ph-list-magnifying-glass"></i>
-                                                                检索核心概念</button>
-                                                            <button @click="fillInput('帮我从知识库中查找这个知识点的引用来源')"
-                                                                class="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:text-[#1c2b38] hover:border-[#1c2b38]/40 shadow-sm transition-all"><i
-                                                                    class="ph ph-quotes"></i> 查找引用来源</button>
-                                                        </template>
-                                                        <template v-else>
-                                                            <button @click="fillInput('帮我制定一份大语言模型的学习计划')"
-                                                                class="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:text-[#b91c1c] hover:border-[#b91c1c]/50 shadow-sm transition-all"><i
-                                                                    class="ph ph-map-trifold"></i> 制定学习计划</button>
-                                                            <button @click="fillInput('解释一下什么是 Transformer 架构')"
-                                                                class="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 hover:text-[#b91c1c] hover:border-[#b91c1c]/50 shadow-sm transition-all"><i
-                                                                    class="ph ph-brain"></i> 核心概念讲解</button>
-                                                        </template>
-                                                    </div>
-                                                    <div class="bg-white rounded-2xl border-2 shadow-float flex flex-col p-2 transition-all duration-300"
-                                                        :class="forceRAG 
-                                                             ? 'border-[#1c2b38]/35 ring-4 ring-[#1c2b38]/10 focus-within:border-[#1c2b38] focus-within:ring-[#1c2b38]/15 shadow-[0_0_24px_rgba(28,43,56,0.06)]' 
-                                                             : 'border-slate-200 focus-within:border-[#b91c1c] focus-within:ring-4 focus-within:ring-[#b91c1c]/10'">
-                                                        <div v-if="workspaceMode === 'rag' && courseKnowledgeBases.length > 0"
-                                                            class="flex items-center gap-1.5 flex-wrap px-2 pt-1.5 pb-2 border-b border-slate-100">
-                                                            <span class="text-[10px] text-slate-400 font-bold shrink-0">检索范围:</span>
-                                                            <button v-for="course in courseKnowledgeBases" :key="course.id"
-                                                                @click="toggleCourseDataset(course.id)"
-                                                                class="px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all"
-                                                                :class="selectedCourseDatasetIds.includes(course.id) 
-                                                                    ? 'bg-[#1c2b38] text-white border-[#1c2b38]' 
-                                                                    : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'">
-                                                                {{ course.name }}
-                                                            </button>
-                                                        </div>
-                                                        <div class="flex items-end">
-                                                        <textarea v-model="inputText"
-                                                            @keydown.enter.prevent="sendMessage" rows="1"
-                                                            class="flex-1 bg-transparent resize-none outline-none py-3 px-3 text-sm max-h-32 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors duration-300 pl-4"
-                                                            :placeholder="forceRAG ? '输入您想在专属知识库中检索提问的内容...' : '输入学习需求，开启文字 + 图片协同引导...'"></textarea>
-                                                        <button @click="sendMessage"
+                                                        <button type="button" @click="sendMessage"
                                                             :disabled="!inputText.trim() || thinkingAgent !== null"
-                                                            class="p-3 m-1 rounded-xl transition-all flex items-center justify-center h-10 w-10 shrink-0"
-                                                            :class="inputText.trim() && !thinkingAgent ? (workspaceMode === 'rag' ? 'bg-[#1c2b38] text-white shadow-md hover:bg-[#253645]' : 'bg-[#b91c1c] text-white shadow-md hover:bg-[#991b1b]') : 'bg-slate-100 text-slate-400 cursor-not-allowed'"><i
-                                                                class="ph ph-paper-plane-right text-lg"></i></button>
-                                                        </div>
+                                                            class="px-4 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-xs hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
+                                                            <span>发送</span>
+                                                            <i class="ph ph-arrow-up font-bold"></i>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-
-
-                                        <aside v-if="workspaceMode === 'tutor'" class="visual-guide-panel">
-                                            <div class="flex items-start justify-between gap-3 mb-4">
-                                                <div class="flex items-center gap-3 min-w-0">
-                                                    <div
-                                                        class="w-12 h-12 rounded-2xl bg-white/80 text-[#1c2b38] flex items-center justify-center text-2xl shadow-[0_14px_35px_rgba(28,43,56,0.16)] border border-white/80 relative overflow-hidden">
-                                                        <span
-                                                            class="absolute inset-1 rounded-xl bg-gradient-to-br from-[#b91c1c]/12 via-amber-300/30 to-sky-400/20"></span>
-                                                        <i class="ph ph-flow-arrow relative z-10"></i>
-                                                    </div>
-                                                    <div class="min-w-0">
-                                                        <div class="flex items-center gap-2">
-                                                            <h3 class="text-base font-bold text-slate-800"
-                                                                style="font-family: 'Noto Serif SC', serif;">Mira</h3>
-                                                            <span
-                                                                class="text-[10px] px-2 py-0.5 rounded-full bg-[#b91c1c]/8 text-[#b91c1c] border border-[#b91c1c]/10 font-bold">AI引导图生成师</span>
-                                                        </div>
-                                                        <p class="text-xs text-slate-400 mt-0.5 truncate">
-                                                            把左侧问题转译成概念图与步骤图。</p>
-                                                    </div>
-                                                </div>
-                                                <span
-                                                    class="flex items-center gap-1 text-[10px] text-emerald-600 font-bold shrink-0">
-                                                    <span
-                                                        class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                    在线
-                                                </span>
-                                            </div>
-
-                                            <div class="flex gap-2 mb-4">
-                                                <button v-for="type in visualGuideTypes" :key="type.id"
-                                                    @click="switchVisualGuideType(type.id)"
-                                                    class="flex-1 px-3 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5"
-                                                    :class="visualGuideType === type.id ? 'bg-[#b91c1c]/8 text-[#b91c1c] border-[#b91c1c]/20 shadow-sm' : 'bg-white/55 text-slate-500 border-white/70 hover:text-slate-800'">
-                                                    <i :class="type.icon"></i>{{ type.label }}
-                                                </button>
-                                            </div>
-
-                                            <div class="rounded-2xl bg-white/50 border border-white/70 px-4 py-3 mb-4">
-                                                <div class="text-[10px] text-slate-400 font-bold mb-1">当前问题</div>
-                                                <p
-                                                    class="text-xs text-slate-700 font-semibold leading-relaxed line-clamp-2">
-                                                    {{ visualGuidePrompt || '等待输入学习问题' }}</p>
-                                            </div>
-
-                                            <div class="flex items-center justify-between px-1 mb-2">
-                                                <span class="text-[10px] text-slate-400 font-bold">引导图预览</span>
-                                                <span class="text-[9px] px-2 py-1 rounded-full border font-bold"
-                                                    :class="visualGuideImage ? 'bg-emerald-50/90 text-emerald-600 border-emerald-100' : 'bg-white/80 text-[#b91c1c] border-[#b91c1c]/10'">
-                                                    {{ getVisualGuideSourceLabel() }}
-                                                </span>
-                                            </div>
-
-                                            <div class="visual-guide-canvas mb-4">
-                                                <button v-if="canOpenVisualGuideViewer"
-                                                    @click="openVisualGuideViewer"
-                                                    class="visual-guide-expand-btn">
-                                                    <i class="ph ph-arrows-out-simple"></i>全图查看
-                                                </button>
-                                                <div v-if="visualGuideStatus === 'generating'"
-                                                    class="visual-guide-loading">
-                                                    <div class="visual-orb"></div>
-                                                    <p class="text-xs font-bold text-slate-600">
-                                                        {{ visualGuideType === 'steps' ? 'Prof. X 正在生成代码架构图...' : 'Mira 正在调用 AI 生图接口...' }}
-                                                    </p>
-                                                    <p class="text-[10px] text-slate-400">
-                                                        {{ visualGuideType === 'steps' ? '步骤图使用文本模型，不调用生图模型' : '接口不可用时将自动生成本地草图' }}
-                                                    </p>
-                                                </div>
-
-                                                <div v-else-if="!visualGuidePrompt.trim()"
-                                                    class="visual-guide-image-shell">
-                                                    <div
-                                                        class="w-full h-full rounded-2xl bg-white/60 border border-white/80 flex flex-col items-center justify-center text-center px-8">
-                                                        <div
-                                                            class="w-14 h-14 rounded-2xl bg-white/85 border border-white text-[#b91c1c] flex items-center justify-center text-2xl shadow-sm mb-4">
-                                                            <i class="ph ph-sparkle"></i>
-                                                        </div>
-                                                        <h4 class="text-sm font-extrabold text-slate-800">
-                                                            AI 引导图生成师可将问题转为可视化图片</h4>
-                                                        <p class="text-xs text-slate-500 leading-relaxed mt-2 max-w-md">
-                                                            在左侧文本台输入问题后，Mira 会生成概念图；点击步骤图可生成结构化步骤图。</p>
-                                                    </div>
-                                                </div>
-                                                <div v-else-if="visualGuideImage?.renderedSvg || visualGuideImage?.treeText || visualGuideImage?.mermaid"
-                                                    class="visual-guide-image-shell architecture-guide-shell">
-                                                    <div v-if="visualGuideImage?.renderedSvg"
-                                                        class="architecture-guide-svg-layer"
-                                                        v-html="visualGuideImage.renderedSvg"></div>
-                                                    <pre v-else-if="visualGuideImage?.treeText"
-                                                        class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
-                                                    <div v-else class="architecture-render-failed">
-                                                        <i class="ph ph-warning-circle"></i>
-                                                        <p class="architecture-render-failed-title">渲染失败，请点击重新生成</p>
-                                                        <p class="architecture-render-failed-desc">步骤图数据已生成，但图表引擎未能绘制，可点击下方「重新生成」重试</p>
-                                                    </div>
-                                                </div>
-                                                <div v-else-if="visualGuideImage?.svg || visualGuideImage?.backgroundUrl || visualGuideImage?.backgroundBase64"
-                                                    class="visual-guide-image-shell">
-                                                    <img v-if="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
-                                                        :src="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
-                                                        alt=""
-                                                        class="visual-guide-bg-layer">
-                                                    <div v-if="visualGuideImage?.svg"
-                                                        class="visual-guide-svg-layer"
-                                                        v-html="visualGuideImage.svg"></div>
-                                                </div>
-                                                <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
-                                                    class="visual-guide-image-shell">
-                                                    <img :src="visualGuideImage.imageUrl || visualGuideImage.imageBase64"
-                                                        :alt="visualGuideImage.alt"
-                                                        class="w-full h-full object-contain">
-                                                </div>
-                                                <template v-else>
-                                                    <div class="visual-guide-beam" v-for="angle in [35, 125, 215, 305]"
-                                                        :key="angle" :style="`transform: rotate(${angle}deg);`"></div>
-                                                    <div class="visual-node-center">{{ visualGuide.center }}</div>
-                                                    <div v-for="(node, index) in visualGuide.nodes" :key="node"
-                                                        class="visual-node"
-                                                        :data-edge="visualGuide.edges && visualGuide.edges[index]"
-                                                        :style="index === 0 ? 'left: 6%; top: 22%;' : index === 1 ? 'right: 7%; top: 14%;' : index === 2 ? 'right: 6%; bottom: 18%;' : 'left: 14%; bottom: 12%;'">
-                                                        {{ node }}
-                                                    </div>
-                                                </template>
-                                                <div v-if="!visualGuideImage && visualGuidePrompt.trim()"
-                                                    class="absolute left-4 top-4 z-10 max-w-[78%]">
-                                                    <h4 class="text-sm font-extrabold text-slate-800 truncate">{{
-                                                        visualGuide.title }}</h4>
-                                                    <p class="text-[10px] text-slate-500 mt-1 line-clamp-2">{{
-                                                        visualGuide.caption }}</p>
-                                                </div>
-                                            </div>
-
-                                            <div class="flex gap-2 mb-4">
-                                                <button @click="regenerateVisualGuide"
-                                                    :disabled="!visualGuidePrompt.trim()"
-                                                    class="flex-1 px-4 py-2 rounded-2xl bg-white/70 border border-white text-xs font-bold text-slate-600 hover:text-[#b91c1c] hover:border-[#b91c1c]/20 transition-all">
-                                                    <i class="ph ph-arrows-clockwise mr-1"></i>重新生成
-                                                </button>
-                                                <button @click="downloadVisualGuide"
-                                                    :disabled="!visualGuidePrompt.trim()"
-                                                    class="flex-1 px-4 py-2 rounded-2xl bg-white/70 border border-white text-xs font-bold text-slate-600 hover:text-[#1c2b38] hover:border-[#1c2b38]/20 transition-all">
-                                                    <i class="ph ph-download-simple mr-1"></i>下载图
-                                                </button>
-                                            </div>
-
-                                            <div class="border-t border-white/50 pt-3 mt-auto">
-                                                <div class="flex justify-between items-center mb-2">
-                                                    <span class="text-[10px] text-slate-400 font-bold">生成历史</span>
-                                                    <span class="text-[10px] text-slate-300">{{
-                                                        visualGuideHistory.length }} 张</span>
-                                                </div>
-                                                <div v-if="visualGuideHistory.length === 0"
-                                                    class="rounded-2xl bg-white/45 border border-white/60 px-3 py-4 text-center text-[11px] font-bold text-slate-400">
-                                                    暂无生成历史
-                                                </div>
-                                                <div v-else class="grid grid-cols-3 gap-2">
-                                                    <button v-for="item in visualGuideHistory" :key="item.id"
-                                                        @click="selectVisualGuideHistory(item)"
-                                                        class="rounded-2xl bg-white/55 border border-white/70 p-2 text-left hover:-translate-y-0.5 hover:shadow-sm transition-all min-h-[70px]">
-                                                        <div class="text-[9px] font-bold mb-1"
-                                                            :class="item.source === 'backend' ? 'text-emerald-600' : 'text-[#b91c1c]'">
-                                                            {{ getVisualGuideTypeMeta(item.type).label }}
-                                                        </div>
-                                                        <p class="text-[10px] text-slate-600 leading-snug line-clamp-2">
-                                                            {{ item.prompt }}</p>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </aside>
                                     </div>
-                                </section>
-
-                                <transition name="uc-fade">
-                                    <div v-if="showVisualGuideViewer" class="visual-guide-viewer-backdrop"
-                                        @click.self="closeVisualGuideViewer">
-                                        <div class="visual-guide-viewer-modal">
-                                            <div class="visual-guide-viewer-header">
-                                                <div class="min-w-0">
-                                                    <div class="flex items-center gap-2 mb-2">
-                                                        <span
-                                                            class="text-[10px] px-2 py-1 rounded-full border font-bold"
-                                                            :class="visualGuideImage ? 'bg-emerald-50/90 text-emerald-600 border-emerald-100' : 'bg-white/80 text-[#b91c1c] border-[#b91c1c]/10'">
-                                                            {{ getVisualGuideSourceLabel() }}
-                                                        </span>
-                                                        <span class="text-[10px] text-slate-400 font-bold">
-                                                            {{ getVisualGuideTypeMeta(visualGuideType).label }}
-                                                        </span>
-                                                    </div>
-                                                    <h3 class="text-lg font-extrabold text-slate-800 truncate">
-                                                        {{ visualGuide.title }}
-                                                    </h3>
-                                                    <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-                                                        {{ visualGuide.caption }}
-                                                    </p>
-                                                </div>
-                                                <div class="flex items-center gap-2 shrink-0">
-                                                    <button @click="downloadVisualGuide"
-                                                        class="px-3 py-2 rounded-xl bg-white/80 border border-white text-xs font-bold text-slate-600 hover:text-[#1c2b38] hover:border-[#1c2b38]/20 transition-all">
-                                                        <i class="ph ph-download-simple mr-1"></i>下载图
-                                                    </button>
-                                                    <button @click="closeVisualGuideViewer"
-                                                        class="w-10 h-10 rounded-full bg-slate-100/90 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-all">
-                                                        <i class="ph ph-x text-base"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <div class="visual-guide-viewer-stage">
-                                                <div class="visual-guide-viewer-canvas">
-                                                    <div v-if="visualGuideImage?.renderedSvg || visualGuideImage?.treeText || visualGuideImage?.mermaid"
-                                                        class="visual-guide-image-shell architecture-guide-shell">
-                                                        <div v-if="visualGuideImage?.renderedSvg"
-                                                            class="architecture-guide-svg-layer"
-                                                            v-html="visualGuideImage.renderedSvg"></div>
-                                                        <pre v-else-if="visualGuideImage?.treeText"
-                                                            class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
-                                                        <div v-else class="architecture-render-failed">
-                                                            <i class="ph ph-warning-circle"></i>
-                                                            <p class="architecture-render-failed-title">渲染失败，请点击重新生成</p>
-                                                            <p class="architecture-render-failed-desc">请关闭本窗口后，点击右侧面板的「重新生成」按钮重试</p>
-                                                        </div>
-                                                    </div>
-                                                    <div v-else-if="visualGuideImage?.svg || visualGuideImage?.backgroundUrl || visualGuideImage?.backgroundBase64"
-                                                        class="visual-guide-image-shell">
-                                                        <img v-if="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
-                                                            :src="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
-                                                            alt=""
-                                                            class="visual-guide-bg-layer">
-                                                        <div v-if="visualGuideImage?.svg"
-                                                            class="visual-guide-svg-layer"
-                                                            v-html="visualGuideImage.svg"></div>
-                                                    </div>
-                                                    <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
-                                                        class="visual-guide-image-shell">
-                                                        <img :src="visualGuideImage.imageUrl || visualGuideImage.imageBase64"
-                                                            :alt="visualGuideImage.alt"
-                                                            class="w-full h-full object-contain">
-                                                    </div>
-                                                    <template v-else>
-                                                        <div class="visual-guide-beam"
-                                                            v-for="angle in [35, 125, 215, 305]" :key="angle"
-                                                            :style="`transform: rotate(${angle}deg);`"></div>
-                                                        <div class="visual-node-center">{{ visualGuide.center }}</div>
-                                                        <div v-for="(node, index) in visualGuide.nodes" :key="node"
-                                                            class="visual-node"
-                                                            :data-edge="visualGuide.edges && visualGuide.edges[index]"
-                                                            :style="index === 0 ? 'left: 6%; top: 22%;' : index === 1 ? 'right: 7%; top: 14%;' : index === 2 ? 'right: 6%; bottom: 18%;' : 'left: 14%; bottom: 12%;'">
-                                                            {{ node }}
-                                                        </div>
-                                                    </template>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </transition>
+                                </main>
                             </div>
                         </transition>
 

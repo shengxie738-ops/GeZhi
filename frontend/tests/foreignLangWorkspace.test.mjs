@@ -37,10 +37,9 @@ assert.doesNotMatch(menuBlock, /foreign-lang/, '外语学习不应出现在左�
 assert.match(auth, /VIEW_MENU_ALIASES = \{ 'foreign-lang': 'workspace' \}/, '挂载外语页时菜单信息应回落到工作台');
 
 const index = read('index.html');
-assert.match(index, /currentView = 'foreign-lang'/, '工作台第三入口卡片应跳转外语学习');
-assert.match(index, /进入外语工作台/, '入口卡片文案');
+assert.match(index, /currentView = 'foreign-lang'/, '工作台应包含外语学习入口');
+assert.match(index, /进入外语工作台/, '入口文案');
 assert.match(index, /<foreign-lang-page v-if="currentView === 'foreign-lang'"/, '视图挂载');
-assert.match(index, /md:grid-cols-3/, '三入口卡片网格');
 assert.match(index, /Omni Voice Routing/, '智能体弹窗识别 omni 类别');
 
 const main = read('js/main.js');

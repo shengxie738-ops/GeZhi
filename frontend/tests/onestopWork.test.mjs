@@ -29,3 +29,16 @@ test('Task 2: useChat.js should export model switcher and work mode switcher', (
     assert.match(chatCode, /switchModel/);
     assert.match(chatCode, /switchWorkMode/);
 });
+
+test('Task 3: index.html should contain Codex/TRAE style 一站式 Work workspace structure', () => {
+    const htmlCode = readFileSync('./frontend/index.html', 'utf-8');
+    // 不再有老旧分流提示
+    assert.doesNotMatch(htmlCode, /选择您的工作台模式/);
+    // 包含 Work with 格至 标题
+    assert.match(htmlCode, /Work with 格至/);
+    // 包含 新建任务 按钮
+    assert.match(htmlCode, /新建任务/);
+    // 包含 模型切换选择器与下拉面板
+    assert.match(htmlCode, /toggleModelDropdown/);
+    assert.match(htmlCode, /switchModel/);
+});
