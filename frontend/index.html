@@ -3315,10 +3315,13 @@
 
                                         <!-- 快捷功能导航区 -->
                                         <div class="flex flex-col gap-1 py-1">
-                                            <button type="button" @click="showToast('插件市场：已挂载 WebSearch, Python 沙箱, 图表渲染引擎', 'info')"
+                                            <button type="button" @click="openPluginMarket"
                                                 class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
                                                 <i class="ph ph-puzzle-piece text-base text-indigo-500"></i>
                                                 <span>插件市场</span>
+                                                <span v-if="installedPlugins.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-bold">
+                                                    {{ installedPlugins.length }}
+                                                </span>
                                             </button>
                                             <button type="button" @click="switchWorkMode('rag')"
                                                 class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
@@ -3497,6 +3500,18 @@
 
                                         <!-- 超级 AI 问答输入框卡片 -->
                                         <div class="w-full max-w-3xl bg-white rounded-3xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.06)] p-4 flex flex-col transition-all focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
+                                            <!-- 已挂载插件与 Skills 胶囊标签 -->
+                                            <div v-if="activeInputPlugins.length > 0" class="flex flex-wrap items-center gap-1.5 px-1 pb-2">
+                                                <span v-for="p in activeInputPlugins" :key="p.id"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 text-xs font-bold border border-violet-200/80 shadow-2xs">
+                                                    <i :class="p.icon" class="text-xs"></i>
+                                                    <span>@{{ p.name }}</span>
+                                                    <button type="button" @click="removeActiveInputPlugin(p.id)" class="hover:text-rose-500 ml-0.5" title="移除此插件增强">
+                                                        <i class="ph ph-x text-[10px]"></i>
+                                                    </button>
+                                                </span>
+                                            </div>
+
                                             <textarea v-model="inputText"
                                                 @keydown.enter.exact.prevent="sendMessage"
                                                 rows="4"
@@ -3505,13 +3520,66 @@
 
                                             <!-- 卡片底栏操作区 -->
                                             <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                                                <!-- 左侧多模态与附件工具 -->
+                                                <!-- 左侧多模态与附件/插件菜单 (Codex + 号) -->
                                                 <div class="flex items-center gap-1.5 text-slate-500">
-                                                    <button type="button" @click="triggerFileInput"
-                                                        class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-600 hover:text-slate-900"
-                                                        title="添加附件">
-                                                        <i class="ph ph-plus text-base font-bold"></i>
-                                                    </button>
+                                                    <div class="relative">
+                                                        <button type="button" @click.stop="toggleAddMenu"
+                                                            class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-600 hover:text-slate-900"
+                                                            :class="showAddMenu ? 'bg-violet-100 text-violet-700' : ''"
+                                                            title="添加附件或学术插件与 Skills">
+                                                            <i class="ph ph-plus text-base font-bold"></i>
+                                                        </button>
+
+                                                        <!-- Codex 风格 + 号悬浮扩展菜单 -->
+                                                        <transition name="fade">
+                                                            <div v-if="showAddMenu" @click.stop
+                                                                class="absolute left-0 bottom-full mb-2 w-72 bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-fade-in max-h-80 overflow-y-auto custom-scrollbar">
+                                                                <!-- 基础操作 -->
+                                                                <div class="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">资料附件</div>
+                                                                <button type="button" @click="triggerFileInput(); showAddMenu = false"
+                                                                    class="w-full px-2.5 py-2 rounded-xl text-left transition-all flex items-center gap-2.5 hover:bg-slate-100 text-slate-700 text-xs">
+                                                                    <div class="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                                                        <i class="ph ph-file-plus text-sm"></i>
+                                                                    </div>
+                                                                    <span>上传本地资料/文档</span>
+                                                                </button>
+
+                                                                <!-- 已添加插件与学术 Skills -->
+                                                                <div class="mt-2 pt-2 border-t border-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center">
+                                                                    <span>已挂载插件与 Skills</span>
+                                                                    <span class="text-[9px] text-violet-600 font-normal">({{ installedPlugins.length }})</span>
+                                                                </div>
+                                                                <div class="space-y-0.5">
+                                                                    <button v-for="p in installedPlugins" :key="p.id"
+                                                                        type="button"
+                                                                        @click="insertPluginToInput(p)"
+                                                                        class="w-full px-2.5 py-1.5 rounded-xl text-left transition-all flex items-center justify-between hover:bg-violet-50 text-slate-700 text-xs group">
+                                                                        <div class="flex items-center gap-2 min-w-0">
+                                                                            <div class="w-6 h-6 rounded-lg bg-gradient-to-br flex items-center justify-center text-white shrink-0 text-xs shadow-2xs"
+                                                                                :class="p.colorClass">
+                                                                                <i :class="p.icon"></i>
+                                                                            </div>
+                                                                            <div class="truncate">
+                                                                                <div class="font-bold text-xs truncate">{{ p.name }}</div>
+                                                                                <div class="text-[10px] text-slate-400 truncate">{{ p.tagline }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <i class="ph ph-arrow-elbow-down-right text-violet-500 opacity-0 group-hover:opacity-100 text-xs"></i>
+                                                                    </button>
+                                                                </div>
+
+                                                                <!-- 底部去市场 -->
+                                                                <div class="mt-2 pt-2 border-t border-slate-100">
+                                                                    <button type="button" @click="openPluginMarket(); showAddMenu = false"
+                                                                        class="w-full px-2.5 py-1.5 rounded-xl text-left transition-all flex items-center justify-center gap-1.5 text-xs text-violet-600 font-bold hover:bg-violet-50">
+                                                                        <i class="ph ph-puzzle-piece"></i>
+                                                                        <span>浏览插件市场...</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </transition>
+                                                    </div>
+
                                                     <button type="button" @click="showToast('图像识别多模态已就绪', 'info')"
                                                         class="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all text-slate-500 hover:text-slate-800"
                                                         title="上传图片">
@@ -3686,16 +3754,78 @@
                                         <div class="absolute bottom-0 left-0 w-full pb-6 pt-12 px-6 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent">
                                             <div class="max-w-4xl mx-auto">
                                                 <div class="bg-white rounded-2xl border-2 border-slate-200 focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10 shadow-lg flex flex-col p-2.5 transition-all">
+                                                    <!-- 插件胶囊 -->
+                                                    <div v-if="activeInputPlugins.length > 0" class="flex flex-wrap items-center gap-1.5 px-2 pb-1.5">
+                                                        <span v-for="p in activeInputPlugins" :key="p.id"
+                                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-violet-50 text-violet-700 text-xs font-bold border border-violet-200/80 shadow-2xs">
+                                                            <i :class="p.icon" class="text-xs"></i>
+                                                            <span>@{{ p.name }}</span>
+                                                            <button type="button" @click="removeActiveInputPlugin(p.id)" class="hover:text-rose-500 ml-0.5">
+                                                                <i class="ph ph-x text-[10px]"></i>
+                                                            </button>
+                                                        </span>
+                                                    </div>
+
                                                     <textarea v-model="inputText"
                                                         @keydown.enter.exact.prevent="sendMessage" rows="2"
                                                         class="flex-1 bg-transparent resize-none outline-none py-2 px-3 text-sm max-h-36 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors"
                                                         placeholder="输入追问或新的任务指令..."></textarea>
                                                     <div class="flex items-center justify-between pt-2 border-t border-slate-100 px-2">
                                                         <div class="flex items-center gap-2">
-                                                            <button type="button" @click="triggerFileInput"
-                                                                class="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all" title="上传附件">
-                                                                <i class="ph ph-plus"></i>
-                                                            </button>
+                                                            <!-- Codex + 号插件菜单 -->
+                                                            <div class="relative">
+                                                                <button type="button" @click.stop="toggleAddMenu"
+                                                                    class="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all"
+                                                                    :class="showAddMenu ? 'bg-violet-100 text-violet-700' : ''"
+                                                                    title="添加附件或学术插件与 Skills">
+                                                                    <i class="ph ph-plus"></i>
+                                                                </button>
+                                                                <!-- Codex 风格 + 号悬浮扩展菜单 -->
+                                                                <transition name="fade">
+                                                                    <div v-if="showAddMenu" @click.stop
+                                                                        class="absolute left-0 bottom-full mb-2 w-72 bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-fade-in max-h-80 overflow-y-auto custom-scrollbar">
+                                                                        <div class="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">资料附件</div>
+                                                                        <button type="button" @click="triggerFileInput(); showAddMenu = false"
+                                                                            class="w-full px-2.5 py-2 rounded-xl text-left transition-all flex items-center gap-2.5 hover:bg-slate-100 text-slate-700 text-xs">
+                                                                            <div class="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                                                                <i class="ph ph-file-plus text-sm"></i>
+                                                                            </div>
+                                                                            <span>上传本地资料/文档</span>
+                                                                        </button>
+
+                                                                        <div class="mt-2 pt-2 border-t border-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center">
+                                                                            <span>已挂载插件与 Skills</span>
+                                                                            <span class="text-[9px] text-violet-600 font-normal">({{ installedPlugins.length }})</span>
+                                                                        </div>
+                                                                        <div class="space-y-0.5">
+                                                                            <button v-for="p in installedPlugins" :key="p.id"
+                                                                                type="button"
+                                                                                @click="insertPluginToInput(p)"
+                                                                                class="w-full px-2.5 py-1.5 rounded-xl text-left transition-all flex items-center justify-between hover:bg-violet-50 text-slate-700 text-xs group">
+                                                                                <div class="flex items-center gap-2 min-w-0">
+                                                                                    <div class="w-6 h-6 rounded-lg bg-gradient-to-br flex items-center justify-center text-white shrink-0 text-xs shadow-2xs"
+                                                                                        :class="p.colorClass">
+                                                                                        <i :class="p.icon"></i>
+                                                                                    </div>
+                                                                                    <div class="truncate">
+                                                                                        <div class="font-bold text-xs truncate">{{ p.name }}</div>
+                                                                                        <div class="text-[10px] text-slate-400 truncate">{{ p.tagline }}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <i class="ph ph-arrow-elbow-down-right text-violet-500 opacity-0 group-hover:opacity-100 text-xs"></i>
+                                                                            </button>
+                                                                        </div>
+
+                                                                        <div class="mt-2 pt-2 border-t border-slate-100">
+                                                                            <button type="button" @click="openPluginMarket(); showAddMenu = false"
+                                                                                class="w-full px-2.5 py-1.5 rounded-xl text-left transition-all flex items-center justify-center gap-1.5 text-xs text-violet-600 font-bold hover:bg-violet-50">
+                                                                                <i class="ph ph-puzzle-piece"></i>
+                                                                                <span>浏览插件市场...</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </transition>
+                                                            </div>
                                                             <!-- 模型热切换 -->
                                                             <div class="relative">
                                                                 <button type="button" @click.stop="toggleModelDropdown"
@@ -4677,7 +4807,322 @@
             </div>
         </transition>
 
+        <!-- ==================== 插件市场大模态面板 (Plugin Marketplace Modal) ==================== -->
+        <transition name="fade">
+            <div v-if="showPluginMarketModal" v-cloak
+                class="fixed inset-0 z-[180] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 sm:p-6 md:p-10"
+                @click.self="closePluginMarket">
+                <div class="bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-slate-200/90 w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden animate-scale-up">
+                    <!-- 市场头部 -->
+                    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md">
+                                <i class="ph ph-puzzle-piece text-2xl"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-lg font-bold text-slate-800" style="font-family: 'Noto Serif SC', serif;">格至插件市场</h3>
+                                    <span class="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold border border-violet-200">
+                                        已添加 {{ installedPluginIds.length }} 款
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5">开源学术论文检索工具、科研 Skills 与智能体能力生态</p>
+                            </div>
+                        </div>
 
+                        <!-- 搜索与关闭 -->
+                        <div class="flex items-center gap-3">
+                            <div class="relative w-64">
+                                <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                <input v-model="marketSearchKeyword" type="text" placeholder="搜索学术插件与 Skills..."
+                                    class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10 transition-all" />
+                            </div>
+                            <button type="button" @click="closePluginMarket"
+                                class="w-9 h-9 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all">
+                                <i class="ph ph-x text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 分类 Tab 栏 -->
+                    <div class="px-6 py-2.5 bg-slate-100/50 border-b border-slate-100 flex items-center gap-2 overflow-x-auto">
+                        <button v-for="cat in PLUGIN_CATEGORIES" :key="cat.id"
+                            type="button"
+                            @click="selectedPluginCategory = cat.id"
+                            class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap"
+                            :class="selectedPluginCategory === cat.id ? 'bg-white text-violet-700 shadow-xs border border-slate-200/80' : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'">
+                            <i :class="cat.icon" class="text-sm"></i>
+                            <span>{{ cat.name }}</span>
+                        </button>
+                    </div>
+
+                    <!-- 插件卡片网格 -->
+                    <div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 custom-scrollbar">
+                        <div v-for="plugin in filteredPlugins" :key="plugin.id"
+                            class="bg-white rounded-2xl border border-slate-200/80 hover:border-violet-300 hover:shadow-md p-4 flex flex-col justify-between transition-all duration-200 group relative">
+                            <!-- 卡片顶部 -->
+                            <div>
+                                <div class="flex items-start justify-between gap-3 mb-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm"
+                                            :class="plugin.colorClass">
+                                            <i :class="plugin.icon"></i>
+                                        </div>
+                                        <div>
+                                            <h4 class="text-sm font-bold text-slate-800 group-hover:text-violet-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+                                                @click="openPluginDetail(plugin)">
+                                                <span>{{ plugin.name }}</span>
+                                            </h4>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
+                                                {{ plugin.badge }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button type="button" @click.stop="togglePlugin(plugin.id)"
+                                        class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0"
+                                        :class="isPluginInstalled(plugin.id) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-xs'">
+                                        <i class="ph" :class="isPluginInstalled(plugin.id) ? 'ph-check' : 'ph-plus'"></i>
+                                        <span>{{ isPluginInstalled(plugin.id) ? '已添加' : '添加' }}</span>
+                                    </button>
+                                </div>
+
+                                <p class="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                                    {{ plugin.tagline }}
+                                </p>
+
+                                <!-- 特性标签 -->
+                                <div class="flex flex-wrap gap-1 mb-3">
+                                    <span v-for="(feat, fIdx) in plugin.features.slice(0, 2)" :key="fIdx"
+                                        class="text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md border border-slate-100 truncate max-w-full">
+                                        {{ feat }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 卡片底部快捷操作 -->
+                            <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                                <button type="button" @click="openPluginDetail(plugin)"
+                                    class="text-xs font-bold text-slate-500 hover:text-violet-600 transition-colors flex items-center gap-1">
+                                    <i class="ph ph-info"></i>
+                                    <span>查看详情</span>
+                                </button>
+                                <button v-if="plugin.canSearchLive" type="button" @click="openPaperSearchDrawer(plugin)"
+                                    class="text-xs font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1">
+                                    <i class="ph ph-lightning"></i>
+                                    <span>在线检索试用</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ==================== 插件详情面板 (Plugin Detail Modal) ==================== -->
+        <transition name="fade">
+            <div v-if="selectedPluginDetail" v-cloak
+                class="fixed inset-0 z-[190] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 sm:p-6"
+                @click.self="closePluginDetail">
+                <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scale-up">
+                    <!-- 详情头部 -->
+                    <div class="px-6 py-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/60">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white text-2xl shadow-md"
+                                :class="selectedPluginDetail.colorClass">
+                                <i :class="selectedPluginDetail.icon"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-lg font-bold text-slate-900">{{ selectedPluginDetail.name }}</h3>
+                                    <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
+                                        {{ selectedPluginDetail.version }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-0.5">{{ selectedPluginDetail.tagline }}</p>
+                            </div>
+                        </div>
+                        <button type="button" @click="closePluginDetail"
+                            class="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all">
+                            <i class="ph ph-x text-base"></i>
+                        </button>
+                    </div>
+
+                    <!-- 详情内容滚动区 -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                        <!-- 来源与开源信息 -->
+                        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2 text-slate-600">
+                                <i class="ph ph-github-logo text-base text-slate-800"></i>
+                                <span>维护机构: <strong class="text-slate-800">{{ selectedPluginDetail.author }}</strong></span>
+                            </div>
+                            <a v-if="selectedPluginDetail.githubUrl" :href="selectedPluginDetail.githubUrl" target="_blank"
+                                class="text-violet-600 font-bold hover:underline flex items-center gap-1">
+                                <span>开源主页</span>
+                                <i class="ph ph-arrow-square-out text-xs"></i>
+                            </a>
+                        </div>
+
+                        <!-- 详细介绍 -->
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <i class="ph ph-text-align-left text-violet-500"></i> 功能与背景介绍
+                            </h4>
+                            <p class="text-sm text-slate-700 leading-relaxed bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100">
+                                {{ selectedPluginDetail.detailDescription }}
+                            </p>
+                        </div>
+
+                        <!-- 功能特性列表 -->
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <i class="ph ph-check-circle text-emerald-500"></i> 核心能力特性
+                            </h4>
+                            <div class="grid grid-cols-1 gap-2">
+                                <div v-for="(feat, idx) in selectedPluginDetail.features" :key="idx"
+                                    class="flex items-start gap-2 text-xs text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                                    <i class="ph ph-check-circle-fill text-emerald-500 text-sm shrink-0 mt-0.5"></i>
+                                    <span>{{ feat }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 适用场景 -->
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <i class="ph ph-lightbulb text-amber-500"></i> 推荐适用研究场景
+                            </h4>
+                            <div class="flex flex-wrap gap-2">
+                                <span v-for="(uc, uIdx) in selectedPluginDetail.useCases" :key="uIdx"
+                                    class="px-3 py-1 bg-amber-50 text-amber-800 rounded-lg text-xs font-medium border border-amber-200/70">
+                                    💡 {{ uc }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 详情底部操作栏 -->
+                    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <button v-if="selectedPluginDetail.canSearchLive" type="button"
+                            @click="closePluginDetail(); openPaperSearchDrawer(selectedPluginDetail)"
+                            class="px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
+                            <i class="ph ph-lightning text-sm"></i>
+                            <span>在线检索试用</span>
+                        </button>
+                        <div v-else></div>
+
+                        <div class="flex items-center gap-2">
+                            <button type="button" @click="closePluginDetail"
+                                class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all">
+                                关闭
+                            </button>
+                            <button type="button" @click="togglePlugin(selectedPluginDetail.id)"
+                                class="px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                :class="isPluginInstalled(selectedPluginDetail.id) ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700'">
+                                <i class="ph" :class="isPluginInstalled(selectedPluginDetail.id) ? 'ph-trash' : 'ph-plus'"></i>
+                                <span>{{ isPluginInstalled(selectedPluginDetail.id) ? '移除插件' : '添加此插件' }}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ==================== 即时论文检索交互面板 (Paper Search Drawer) ==================== -->
+        <transition name="fade">
+            <div v-if="activeSearchPlugin" v-cloak
+                class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 sm:p-6"
+                @click.self="closePaperSearchDrawer">
+                <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl h-[85vh] flex flex-col overflow-hidden animate-scale-up">
+                    <!-- 检索面板头部 -->
+                    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm"
+                                :class="activeSearchPlugin.colorClass">
+                                <i :class="activeSearchPlugin.icon"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                                    <span>{{ activeSearchPlugin.name }} 论文实时检索</span>
+                                    <span class="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">API 在线</span>
+                                </h3>
+                                <p class="text-xs text-slate-400">输入主题、作者或技术关键词，直接获取前沿文献与 BibTeX 引用</p>
+                            </div>
+                        </div>
+                        <button type="button" @click="closePaperSearchDrawer"
+                            class="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all">
+                            <i class="ph ph-x text-base"></i>
+                        </button>
+                    </div>
+
+                    <!-- 搜索输入栏 -->
+                    <div class="p-4 border-b border-slate-100 bg-white flex items-center gap-2">
+                        <div class="flex-1 relative">
+                            <i class="ph ph-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input v-model="paperSearchQuery" @keydown.enter.prevent="executePaperSearch()"
+                                type="text" placeholder="例如：DeepSeek, Transformer, Diffusion Models..."
+                                class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/10 transition-all" />
+                        </div>
+                        <button type="button" @click="executePaperSearch()" :disabled="isSearchingPapers"
+                            class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50">
+                            <i class="ph" :class="isSearchingPapers ? 'ph-spinner animate-spin' : 'ph-paper-plane-tilt'"></i>
+                            <span>{{ isSearchingPapers ? '检索中...' : '搜索文献' }}</span>
+                        </button>
+                    </div>
+
+                    <!-- 结果列表 -->
+                    <div class="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar bg-slate-50/40">
+                        <div v-if="isSearchingPapers" class="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                            <i class="ph ph-spinner animate-spin text-3xl text-violet-600"></i>
+                            <span class="text-xs">正在连接 {{ activeSearchPlugin.name }} 获取最新文献...</span>
+                        </div>
+
+                        <div v-else-if="paperSearchResults.length === 0" class="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                            <i class="ph ph-file-dashed text-4xl text-slate-300"></i>
+                            <span class="text-xs">暂无检索结果，请尝试其他关键词</span>
+                        </div>
+
+                        <div v-for="paper in paperSearchResults" :key="paper.id"
+                            class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-violet-300 hover:shadow-xs transition-all flex flex-col justify-between gap-2.5">
+                            <div>
+                                <div class="flex items-start justify-between gap-2 mb-1">
+                                    <h4 class="text-sm font-bold text-slate-900 leading-snug">{{ paper.title }}</h4>
+                                    <span class="text-[10px] px-2 py-0.5 rounded bg-violet-50 text-violet-700 font-bold shrink-0">
+                                        {{ paper.year }} · {{ paper.source }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-500 mb-2">
+                                    <i class="ph ph-users text-slate-400 mr-1"></i>{{ paper.authorsText }}
+                                </p>
+                                <p class="text-xs text-slate-600 leading-relaxed line-clamp-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    {{ paper.abstract }}
+                                </p>
+                            </div>
+
+                            <!-- 底部操作 -->
+                            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                                <div class="flex items-center gap-2">
+                                    <a v-if="paper.pdfUrl" :href="paper.pdfUrl" target="_blank"
+                                        class="px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg font-bold flex items-center gap-1 transition-colors">
+                                        <i class="ph ph-file-pdf"></i>
+                                        <span>PDF 原文</span>
+                                    </a>
+                                    <button type="button" @click="copyBibtexCitation(paper)"
+                                        class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors">
+                                        <i class="ph ph-quotes"></i>
+                                        <span>复制 BibTeX</span>
+                                    </button>
+                                </div>
+                                <button type="button" @click="insertPaperToChat(paper)"
+                                    class="px-3 py-1 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold flex items-center gap-1 transition-colors shadow-2xs">
+                                    <i class="ph ph-chat-circle-dots"></i>
+                                    <span>引入当前对话</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
 
     </div>
 

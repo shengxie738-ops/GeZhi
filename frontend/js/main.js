@@ -35,6 +35,7 @@ import { useAgents } from './hooks/useAgents.js';
 import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
+import { usePlugins } from './hooks/usePlugins.js';
 
 import { courseMindmaps } from './data/mockData.js?v=20260620';
 import { radarOptionTemplate, getLineOptionTemplate } from './config/chartOptions.js';
@@ -128,6 +129,9 @@ const app = createApp({
 
         // 10. 课程库与预览 Hook
         const coursesState = useCourses(chat.files, auth.currentView, showToast);
+
+        // 11. 插件市场与 Codex 输入框联动 Hook
+        const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
 
         // ================== 新增：工作台学习模式分流控制 ==================
         const selectWorkspaceMode = (mode) => {
@@ -740,7 +744,40 @@ const app = createApp({
             saveUserInfo: userCenter.saveUserInfo,
             changePassword: userCenter.changePassword,
             handleAvatarUpload: userCenter.handleAvatarUpload,
-            triggerAvatarInput: userCenter.triggerAvatarInput
+            triggerAvatarInput: userCenter.triggerAvatarInput,
+
+            // 插件市场与 Codex 输入框插件联动
+            ACADEMIC_PLUGINS: pluginsState.ACADEMIC_PLUGINS,
+            PLUGIN_CATEGORIES: pluginsState.PLUGIN_CATEGORIES,
+            installedPluginIds: pluginsState.installedPluginIds,
+            installedPlugins: pluginsState.installedPlugins,
+            showPluginMarketModal: pluginsState.showPluginMarketModal,
+            selectedPluginCategory: pluginsState.selectedCategory,
+            marketSearchKeyword: pluginsState.marketSearchKeyword,
+            selectedPluginDetail: pluginsState.selectedPluginDetail,
+            activeSearchPlugin: pluginsState.activeSearchPlugin,
+            paperSearchQuery: pluginsState.paperSearchQuery,
+            paperSearchResults: pluginsState.paperSearchResults,
+            isSearchingPapers: pluginsState.isSearchingPapers,
+            showAddMenu: pluginsState.showAddMenu,
+            activeInputPlugins: pluginsState.activeInputPlugins,
+            filteredPlugins: pluginsState.filteredPlugins,
+            isPluginInstalled: pluginsState.isPluginInstalled,
+            installPlugin: pluginsState.installPlugin,
+            uninstallPlugin: pluginsState.uninstallPlugin,
+            togglePlugin: pluginsState.togglePlugin,
+            openPluginMarket: pluginsState.openPluginMarket,
+            closePluginMarket: pluginsState.closePluginMarket,
+            openPluginDetail: pluginsState.openPluginDetail,
+            closePluginDetail: pluginsState.closePluginDetail,
+            openPaperSearchDrawer: pluginsState.openPaperSearchDrawer,
+            closePaperSearchDrawer: pluginsState.closePaperSearchDrawer,
+            executePaperSearch: pluginsState.executePaperSearch,
+            copyBibtexCitation: pluginsState.copyBibtexCitation,
+            insertPaperToChat: pluginsState.insertPaperToChat,
+            toggleAddMenu: pluginsState.toggleAddMenu,
+            insertPluginToInput: pluginsState.insertPluginToInput,
+            removeActiveInputPlugin: pluginsState.removeActiveInputPlugin
         };
     }
 });
