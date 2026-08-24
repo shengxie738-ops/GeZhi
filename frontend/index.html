@@ -3354,43 +3354,101 @@
                                             </button>
                                         </div>
 
-                                        <!-- 任务列表 (Task List) -->
+                                        <!-- 任务列表 (Codex 桌面端两级项目任务树) -->
                                         <div class="flex-1 flex flex-col min-h-0 pt-2 border-t border-slate-200/70">
+                                            <!-- 标题与新建大项目按钮 -->
                                             <div class="flex items-center justify-between px-2 pb-1.5 text-[11px] font-bold text-slate-400">
-                                                <span>任务列表</span>
-                                                <div class="flex items-center gap-1 text-slate-400">
-                                                    <button type="button" @click="loadChatHistory(agentMode)" :disabled="historyLoading" class="hover:text-slate-700" title="刷新任务">
+                                                <div class="flex items-center gap-1.5">
+                                                    <span>任务列表</span>
+                                                    <span class="text-[10px] text-slate-400 font-normal">({{ projectTaskTree.reduce((acc, p) => acc + (p.tasks ? p.tasks.length : 0), 0) }})</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 text-slate-400">
+                                                    <button type="button" @click="isCreatingProject = true" class="hover:text-violet-600 transition-colors p-0.5 rounded" title="新建大项目">
+                                                        <i class="ph ph-folder-plus text-sm"></i>
+                                                    </button>
+                                                    <button type="button" @click="loadChatHistory(agentMode)" :disabled="historyLoading" class="hover:text-slate-700 transition-colors p-0.5 rounded" title="刷新任务">
                                                         <i class="ph" :class="historyLoading ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
                                                     </button>
-                                                    <i class="ph ph-caret-up-down"></i>
                                                 </div>
                                             </div>
 
-                                            <div class="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                                                <!-- 默认任务分组/当前空白态 -->
-                                                <div @click="startNewConversation"
-                                                    class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
-                                                    :class="activeConversationId === 'new' || (!activeConversation && conversationList.length === 0) ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-500 hover:bg-slate-200/50 hover:text-slate-800'">
-                                                    <div class="flex items-center gap-2 truncate">
-                                                        <i class="ph ph-cloud text-slate-400"></i>
-                                                        <span class="truncate">默认</span>
-                                                    </div>
-                                                </div>
-
-                                                <!-- 历史对话列表 -->
-                                                <div v-for="conv in conversationList" :key="conv.id"
-                                                    @click="selectConversation(conv.id)"
-                                                    class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
-                                                    :class="conv.id === sidebarActiveConversationId && activeConversationId !== 'new' ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'">
-                                                    <div class="flex items-center gap-2 truncate flex-1 min-w-0" :title="conv.title">
-                                                        <i class="ph ph-folder text-slate-400"></i>
-                                                        <span class="truncate">{{ conv.title }}</span>
-                                                    </div>
-                                                    <button type="button" @click.stop="deleteConversation(conv)"
-                                                        class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-all"
-                                                        title="删除此任务">
-                                                        <i class="ph ph-trash text-xs"></i>
+                                            <!-- 内联新建大项目输入框 -->
+                                            <div v-if="isCreatingProject" class="px-2 py-1 mb-1">
+                                                <div class="flex items-center gap-1 bg-white border border-violet-400 rounded-lg p-1 shadow-xs">
+                                                    <i class="ph ph-folder text-violet-500 text-xs ml-1"></i>
+                                                    <input v-model="newProjectTitle" @keydown.enter.prevent="submitCreateProject" @keydown.esc="isCreatingProject = false"
+                                                        placeholder="输入项目名称..." autofocus
+                                                        class="flex-1 min-w-0 bg-transparent text-xs text-slate-800 outline-none px-1 py-0.5" />
+                                                    <button type="button" @click="submitCreateProject" class="p-1 text-violet-600 hover:bg-violet-50 rounded">
+                                                        <i class="ph ph-check text-xs"></i>
                                                     </button>
+                                                    <button type="button" @click="isCreatingProject = false" class="p-1 text-slate-400 hover:bg-slate-100 rounded">
+                                                        <i class="ph ph-x text-xs"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- 项目与子任务滚动区域 -->
+                                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                                <div v-for="proj in projectTaskTree" :key="proj.id" class="flex flex-col">
+                                                    <!-- 大项目节点头部 -->
+                                                    <div @click="toggleProjectExpand(proj.id)"
+                                                        class="group flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer select-none transition-all hover:bg-slate-200/50"
+                                                        :class="activeProjectId === proj.id ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'">
+                                                        <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                                            <i class="ph text-[11px] text-slate-400 transition-transform duration-200"
+                                                                :class="proj.expanded ? 'ph-caret-down' : 'ph-caret-right'"></i>
+                                                            <i class="ph text-slate-500 text-sm"
+                                                                :class="proj.id === 'proj-default' ? 'ph-cloud' : 'ph-folder'"></i>
+                                                            <span class="truncate text-xs">{{ proj.name }}</span>
+                                                            <span class="text-[10px] text-slate-400 font-normal">({{ proj.tasks.length }})</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button type="button" @click.stop="startNewSubTask(proj.id)"
+                                                                class="p-0.5 hover:text-violet-600 hover:bg-white rounded transition-colors"
+                                                                title="在此项目下新建子任务">
+                                                                <i class="ph ph-plus text-xs"></i>
+                                                            </button>
+                                                            <button v-if="proj.id !== 'proj-default'" type="button" @click.stop="deleteProject(proj.id)"
+                                                                class="p-0.5 hover:text-rose-500 hover:bg-white rounded transition-colors"
+                                                                title="删除项目">
+                                                                <i class="ph ph-trash text-xs"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- 小任务列表 (子任务) -->
+                                                    <div v-show="proj.expanded" class="flex flex-col pl-4 border-l border-slate-200/80 ml-3 mt-0.5 space-y-0.5">
+                                                        <!-- 新建小任务空白态行 (当选定此项目且处于new状态) -->
+                                                        <div v-if="activeProjectId === proj.id && activeConversationId === 'new'"
+                                                            class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs bg-white text-violet-700 font-bold shadow-xs border border-violet-200/60">
+                                                            <i class="ph ph-chat-circle-dots text-violet-600"></i>
+                                                            <span class="truncate">新小任务...</span>
+                                                        </div>
+
+                                                        <!-- 小任务实际列表 -->
+                                                        <div v-for="task in proj.tasks" :key="task.id"
+                                                            @click="activeProjectId = proj.id; selectConversation(task.id)"
+                                                            class="group/task flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+                                                            :class="task.id === sidebarActiveConversationId && activeConversationId !== 'new' ? 'bg-white font-bold text-slate-800 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:bg-slate-200/40 hover:text-slate-900'">
+                                                            <div class="flex items-center gap-2 truncate flex-1 min-w-0" :title="task.title">
+                                                                <i class="ph ph-chat-circle text-slate-400 group-hover/task:text-slate-600 text-xs"></i>
+                                                                <span class="truncate">{{ task.title }}</span>
+                                                            </div>
+                                                            <button type="button" @click.stop="deleteConversation(task)"
+                                                                class="opacity-0 group-hover/task:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition-all rounded"
+                                                                title="删除此小任务">
+                                                                <i class="ph ph-trash text-xs"></i>
+                                                            </button>
+                                                        </div>
+
+                                                        <!-- 若项目下无任务 -->
+                                                        <div v-if="proj.tasks.length === 0 && !(activeProjectId === proj.id && activeConversationId === 'new')"
+                                                            @click="startNewSubTask(proj.id)"
+                                                            class="px-2 py-1 text-[11px] text-slate-400 italic hover:text-violet-600 cursor-pointer flex items-center gap-1">
+                                                            <i class="ph ph-plus text-[10px]"></i> 点击创建小任务
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

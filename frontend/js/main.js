@@ -136,6 +136,18 @@ const app = createApp({
             showToast(mode === 'rag' ? '已开启专属知识库检索模式' : '已进入多智能体协同引导式学习', 'success');
         };
 
+        const isCreatingProject = ref(false);
+        const newProjectTitle = ref('');
+        const submitCreateProject = () => {
+            if (!newProjectTitle.value.trim()) {
+                isCreatingProject.value = false;
+                return;
+            }
+            chat.createProject(newProjectTitle.value.trim());
+            newProjectTitle.value = '';
+            isCreatingProject.value = false;
+        };
+
         // ================== 仪表盘真实数据 Hook（替换原有静态 Mock 数据）==================
         const currentGoal = ref('理解并手写 Vue 3 的 reactive 响应式系统原理');
         const progress = ref(45);
@@ -596,6 +608,17 @@ const app = createApp({
             visualGuide: chat.visualGuide,
             visualGuideImage: chat.visualGuideImage,
             visualGuideHistory: chat.visualGuideHistory,
+            projectList: chat.projectList,
+            activeProjectId: chat.activeProjectId,
+            projectTaskTree: chat.projectTaskTree,
+            createProject: chat.createProject,
+            deleteProject: chat.deleteProject,
+            renameProject: chat.renameProject,
+            toggleProjectExpand: chat.toggleProjectExpand,
+            startNewSubTask: chat.startNewSubTask,
+            isCreatingProject,
+            newProjectTitle,
+            submitCreateProject,
             showVisualGuideViewer: chat.showVisualGuideViewer,
             canOpenVisualGuideViewer: chat.canOpenVisualGuideViewer,
             toggleRAG: chat.toggleRAG,

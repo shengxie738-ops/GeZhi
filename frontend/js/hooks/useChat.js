@@ -5,7 +5,7 @@ import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
 import request from '../utils/request.js';
 import { getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
-import { findConversationForMessage, groupMessagesIntoConversations } from '../utils/conversations.js';
+import { findConversationForMessage, groupMessagesIntoConversations, groupConversationsByProjects, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 
@@ -133,6 +133,105 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const messages = ref(readStoredMessages('tutor'));
+
+    // ================== 大项目与子任务树状体系 (OpenAI Codex 风格) ==================
+    const getProjectsStorageKey = (sessionId) => `task_projects:${sessionId}`;
+    const readStoredProjects = () => {
+        try {
+            const raw = localStorage.getItem(getProjectsStorageKey(getSessionId()));
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) {
+            console.warn('[useChat] Failed to parse stored projects:', e);
+        }
+        return [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, expanded: true, createdAt: Date.now() }];
+    };
+
+    const projectList = ref(readStoredProjects());
+    const activeProjectId = ref(DEFAULT_PROJECT_ID);
+
+    watch(projectList, (newVal) => {
+        try {
+            localStorage.setItem(getProjectsStorageKey(getSessionId()), JSON.stringify(newVal));
+        } catch (e) {
+            console.warn('[useChat] Failed to save projects to localStorage:', e);
+        }
+    }, { deep: true });
+
+    // 大项目与小任务两级聚合树
+    const projectTaskTree = computed(() => {
+        return groupConversationsByProjects(messages.value, projectList.value);
+    });
+
+    const createProject = (name) => {
+        const cleanName = String(name || '').trim();
+        if (!cleanName) {
+            showToast('请输入项目名称', 'error');
+            return null;
+        }
+        const newProj = {
+            id: `proj-${Date.now()}`,
+            name: cleanName,
+            expanded: true,
+            createdAt: Date.now()
+        };
+        projectList.value.push(newProj);
+        activeProjectId.value = newProj.id;
+        activeConversationId.value = 'new';
+        showToast(`已创建大项目「${cleanName}」`, 'success');
+        return newProj;
+    };
+
+    const deleteProject = (projectId) => {
+        if (projectId === DEFAULT_PROJECT_ID) {
+            showToast('默认项目不能删除', 'info');
+            return;
+        }
+        const target = projectList.value.find(p => p.id === projectId);
+        const name = target?.name || '该项目';
+        const confirmed = window.confirm(`确认删除大项目「${name}」？其下的小任务将自动归入默认项目。`);
+        if (!confirmed) return;
+
+        // 迁移该项目下的消息到默认项目
+        messages.value.forEach(msg => {
+            if (msg.projectId === projectId) {
+                msg.projectId = DEFAULT_PROJECT_ID;
+            }
+        });
+        projectList.value = projectList.value.filter(p => p.id !== projectId);
+        if (activeProjectId.value === projectId) {
+            activeProjectId.value = DEFAULT_PROJECT_ID;
+        }
+        showToast(`项目「${name}」已删除`, 'success');
+    };
+
+    const renameProject = (projectId, newName) => {
+        const cleanName = String(newName || '').trim();
+        if (!cleanName) return;
+        const target = projectList.value.find(p => p.id === projectId);
+        if (target) {
+            target.name = cleanName;
+            showToast('项目已重命名', 'success');
+        }
+    };
+
+    const toggleProjectExpand = (projectId) => {
+        const target = projectList.value.find(p => p.id === projectId);
+        if (target) {
+            target.expanded = !target.expanded;
+        }
+    };
+
+    const startNewSubTask = (projectId) => {
+        activeProjectId.value = projectId || DEFAULT_PROJECT_ID;
+        const targetProj = projectList.value.find(p => p.id === activeProjectId.value);
+        if (targetProj) {
+            targetProj.expanded = true;
+        }
+        startNewConversation();
+    };
 
     // ================== 伪会话模型：把线性消息流按用户提问切分为对话 ==================
     // activeConversationId: null = 当前最新对话；'new' = 新增对话的空白态；'conv-xxx' = 查看历史对话
@@ -839,6 +938,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         activeConversationMessages,
         isViewingHistory,
         sidebarActiveConversationId,
+        projectList,
+        activeProjectId,
+        projectTaskTree,
+        createProject,
+        deleteProject,
+        renameProject,
+        toggleProjectExpand,
+        startNewSubTask,
         currentModel,
         modelOptions,
         currentModelInfo,
