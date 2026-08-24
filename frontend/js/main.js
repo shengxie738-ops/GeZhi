@@ -69,6 +69,7 @@ const app = createApp({
 
         // 2. 预声明 chat 变量以供闭包动态引用
         let chat = null;
+        const workspaceMode = ref(null);
 
         // 3. 登录/登出回调逻辑
         const onLoginSuccess = (username, role) => {
@@ -129,7 +130,6 @@ const app = createApp({
         const coursesState = useCourses(chat.files, auth.currentView, showToast);
 
         // ================== 新增：工作台学习模式分流控制 ==================
-        const workspaceMode = ref(null);
         const selectWorkspaceMode = (mode) => {
             workspaceMode.value = mode;
             chat.setAgentMode(mode);
