@@ -3292,17 +3292,15 @@
                                 <aside class="w-64 min-w-[250px] max-w-[270px] bg-slate-50/90 border-r border-slate-200/80 flex flex-col justify-between p-3.5 backdrop-blur-md shrink-0 h-full">
                                     <!-- 顶部模式选择与主操作 -->
                                     <div class="flex flex-col gap-3 min-h-0 flex-1">
-                                        <!-- 顶部标签切换组 -->
-                                        <div class="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl text-xs font-semibold text-slate-600">
-                                            <button type="button" class="flex-1 py-1 px-2 rounded-lg bg-white text-slate-800 shadow-xs flex items-center justify-center gap-1">
-                                                <i class="ph ph-book-open text-sm"></i> Work
-                                            </button>
-                                            <button type="button" @click="currentView = 'coding'" class="flex-1 py-1 px-2 rounded-lg hover:text-slate-900 transition-colors flex items-center justify-center gap-1 text-slate-500">
-                                                <i class="ph ph-code text-sm"></i> Code
-                                            </button>
-                                            <button type="button" @click="currentView = 'pathway'" class="flex-1 py-1 px-2 rounded-lg hover:text-slate-900 transition-colors flex items-center justify-center gap-1 text-slate-500">
-                                                <i class="ph ph-paint-brush text-sm"></i> Design
-                                            </button>
+                                        <!-- 顶部工作空间标识 (已删除 Code / Design) -->
+                                        <div class="flex items-center justify-between px-1.5 py-1">
+                                            <div class="flex items-center gap-2 text-slate-800 font-bold text-sm">
+                                                <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-[#1c2b38] to-[#2d4356] text-white flex items-center justify-center shadow-xs">
+                                                    <i class="ph ph-book-open text-sm"></i>
+                                                </div>
+                                                <span style="font-family: 'Noto Serif SC', serif;">格至 Work</span>
+                                            </div>
+                                            <span class="text-[10px] bg-slate-200/80 text-slate-600 px-2 py-0.5 rounded-md font-medium tracking-wide">Workspace</span>
                                         </div>
 
                                         <!-- + 新建任务 按钮 -->
