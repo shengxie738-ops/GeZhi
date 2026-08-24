@@ -3,7 +3,7 @@ import { ref, reactive, computed, watch } from 'vue';
 const studentMenus = [
     { id: 'dashboard', name: '仪表盘', icon: 'ph-squares-four', title: '学习数据总览', desc: '您的专属智能学习进度报表' },
     { id: 'pathway', name: '图谱', icon: 'ph-git-branch', title: '动态知识图谱', desc: 'AI 生成的学习路线与能力树' },
-    { id: 'workspace', name: '工作台', icon: 'ph-chat-teardrop', title: '协同核心枢纽', desc: '与多智能体集群实时互动对话' },
+    { id: 'workspace', name: '一站式 Work', icon: 'ph-chat-teardrop', title: '一站式 Work', desc: '基于多智能体与大模型的一站式工作台' },
     { id: 'learning-diagnosis', name: '学习诊断', icon: 'ph-chart-line-up', title: '编程学习诊断', desc: '基于学习证据生成动态路径与分级训练' },
     { id: 'knowledge', name: '知识库', icon: 'ph-database', title: '个人私有库', desc: '专属资料 RAG 检索解析' },
     { id: 'mistakes', name: '错题本', icon: 'ph-warning-diamond', title: '错题本', desc: '汇总测试错题与 AI 错因分析' },
