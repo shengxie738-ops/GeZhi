@@ -28,15 +28,16 @@ export function getHistoryPanelTitle(agentMode = 'tutor') {
     return normalizeAgentMode(agentMode) === 'rag' ? '知识库检索历史记录' : '引导式学习历史记录';
 }
 
-export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null }) {
+export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, model = '' }) {
     const normalizedMode = normalizeAgentMode(agentMode);
+    const resolvedModel = (model && model !== 'Auto Mode') ? model : agent?.model;
     const payload = {
         message,
         force_rag: forceRAG || normalizedMode === 'rag',
         sessionId,
         agent_mode: normalizedMode,
         agent_id: agent?.id,
-        agent_model: agent?.model,
+        agent_model: resolvedModel,
         agent_prompt: agent?.prompt
     };
     if (repositoryId) {

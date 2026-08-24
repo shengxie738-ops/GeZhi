@@ -7,6 +7,7 @@ import request from '../utils/request.js';
 import { getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
 import { findConversationForMessage, groupMessagesIntoConversations } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
+import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 
 export function useChat(currentUser, showToast, agentResolver = null) {
     const inputText = ref('');
@@ -17,6 +18,79 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const historyLoading = ref(false);
     const historyError = ref('');
     const activeConversationId = ref(null);
+
+    // AI 模型热切换状态与选项
+    const currentModel = ref(localStorage.getItem('preferred_chat_model') || 'Auto Mode');
+    const modelOptions = ref([
+        { id: 'Auto Mode', label: 'Auto Mode', provider: '系统自适应', hint: '智能推荐' },
+        ...TEXT_MODEL_OPTIONS
+    ]);
+    const showModelDropdown = ref(false);
+
+    const loadChatModelOptions = async () => {
+        try {
+            const payload = await request('/ai/models');
+            const data = payload?.data || {};
+            if (Array.isArray(data.text) && data.text.length) {
+                const backendModels = data.text.map(m => ({
+                    id: m.id,
+                    label: m.label || m.id,
+                    provider: m.provider || '',
+                    baseUrl: m.base_url || m.baseUrl || '',
+                    apiModel: m.api_model || m.apiModel || '',
+                    hint: m.hint || ''
+                }));
+                const merged = mergeModelOptions(backendModels, TEXT_MODEL_OPTIONS);
+                modelOptions.value = [
+                    { id: 'Auto Mode', label: 'Auto Mode', provider: '系统自适应', hint: '智能推荐' },
+                    ...merged
+                ];
+            }
+        } catch (e) {
+            console.info('[Chat] Backend model registry unavailable, using fallback list.', e);
+        }
+    };
+    loadChatModelOptions();
+
+    const switchModel = (modelId) => {
+        currentModel.value = modelId;
+        localStorage.setItem('preferred_chat_model', modelId);
+        showModelDropdown.value = false;
+        if (typeof showToast === 'function') {
+            showToast(`已切换至模型：${modelId}`, 'success');
+        }
+    };
+
+    const toggleModelDropdown = () => {
+        showModelDropdown.value = !showModelDropdown.value;
+    };
+
+    const currentModelInfo = computed(() => {
+        return modelOptions.value.find(m => m.id === currentModel.value) || {
+            id: currentModel.value,
+            label: currentModel.value,
+            provider: '自定义',
+            hint: ''
+        };
+    });
+
+    const switchWorkMode = (mode) => {
+        if (mode === 'rag') {
+            agentMode.value = 'rag';
+            forceRAG.value = true;
+            loadChatHistory('rag');
+            if (typeof showToast === 'function') showToast('已切换至「知识库检索」模式', 'info');
+        } else if (mode === 'tutor') {
+            agentMode.value = 'tutor';
+            forceRAG.value = false;
+            loadChatHistory('tutor');
+            if (typeof showToast === 'function') showToast('已切换至「引导式学习」导师点拨模式', 'info');
+        } else {
+            agentMode.value = 'tutor';
+            forceRAG.value = false;
+            if (typeof showToast === 'function') showToast('已切换至「一站式通用」模式', 'info');
+        }
+    };
     const createEmptyVisualGuide = () => ({
         title: 'AI 引导图生成师',
         caption: '可将问题转为可视化图片。',
@@ -722,9 +796,23 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         }
         const repositoryId = agentMode.value === 'rag' ? selectedRepositoryId.value : '';
         const courseDatasetIds = agentMode.value === 'rag' ? [...selectedCourseDatasetIds.value] : null;
-        sendStreamingMessage(prompt, messages, thinkingAgent, inputText, chatContainer, forceRAG.value, sessionId, agentMode.value, repositoryId, getActiveChatAgent(), courseDatasetIds, (modelId) => {
-            showToast(`模型 ${modelId} 当前不可用，请更换模型`, 'error');
-        });
+        sendStreamingMessage(
+            prompt,
+            messages,
+            thinkingAgent,
+            inputText,
+            chatContainer,
+            forceRAG.value,
+            sessionId,
+            agentMode.value,
+            repositoryId,
+            getActiveChatAgent(),
+            courseDatasetIds,
+            (modelId) => {
+                showToast(`模型 ${modelId} 当前不可用，请更换模型`, 'error');
+            },
+            currentModel.value
+        );
     };
 
     watch(messages, (newVal) => {
@@ -751,6 +839,13 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         activeConversationMessages,
         isViewingHistory,
         sidebarActiveConversationId,
+        currentModel,
+        modelOptions,
+        currentModelInfo,
+        showModelDropdown,
+        switchModel,
+        toggleModelDropdown,
+        switchWorkMode,
         messages,
         files,
         knowledgeRepositories,

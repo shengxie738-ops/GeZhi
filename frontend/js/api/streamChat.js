@@ -24,7 +24,7 @@ export const throttledScroll = throttle(async (chatContainer) => {
     }
 }, 120);
 
-export async function sendStreamingMessage(msg, messages, thinkingAgent, inputText, chatContainer, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, onModelUnavailable = null) {
+export async function sendStreamingMessage(msg, messages, thinkingAgent, inputText, chatContainer, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, onModelUnavailable = null, model = '') {
     if (!msg.trim() || thinkingAgent.value) return;
     const normalizedMode = normalizeAgentMode(agentMode);
     const currentTime = formatChatTimestamp();
@@ -58,7 +58,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         try {
             response = await request('/chat/stream', {
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds })),
+                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model })),
                 isStream: true
             });
             if (!response.ok) throw new Error('Stream API failed');
@@ -68,7 +68,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             // Use non-streaming endpoint as fallback
             const chatResponse = await request('/chat', {
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds }))
+                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model }))
             });
             // Simulate streaming response
             if (chatResponse && chatResponse.reply) {
