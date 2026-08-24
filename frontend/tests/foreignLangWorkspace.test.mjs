@@ -191,6 +191,44 @@ for (const article of BASIC_LONG_ARTICLES) {
     assert.ok(words >= 200 && words <= 330, `${article.id} 长篇词数应在 200~330，实际 ${words}`);
 }
 
+// ---- 口语跟读文章库：动态校验数量、词数区间与字段 ----
+const speakingData = read('js/data/speakingArticles.js');
+assert.match(speakingData, /export const SPEAKING_TIERS/, '需导出口语等级定义');
+assert.match(speakingData, /export const SPEAKING_ARTICLES/, '需导出口语文章数组');
+assert.match(langHook, /speakingArticles\.js\?v=/, 'hook 需版本号导入口语文章库');
+assert.match(langHook, /import \{ SPEAKING_ARTICLES \} from '\.\.\/data\/speakingArticles\.js/, 'hook 需导入 SPEAKING_ARTICLES');
+const { SPEAKING_ARTICLES: SPK_ARTICLES, SPEAKING_TIERS } = await import('../js/data/speakingArticles.js');
+assert.equal(SPEAKING_TIERS.length, 3, '口语等级应为 3 级（入门/中等/进阶）');
+assert.ok(SPK_ARTICLES.length === 30, `口语文章应共 30 篇，实际 ${SPK_ARTICLES.length}`);
+const SPK_TIER_WORD_RANGE = { beginner: [60, 100], intermediate: [100, 150], advanced: [120, 180] };
+const seenSpkIds = new Set();
+for (const article of SPK_ARTICLES) {
+    assert.ok(article.id && article.tier && article.title && article.cefr && article.theme && article.source && article.text,
+        `${article.id || '(no id)'} 字段应完整（id/tier/title/cefr/theme/source/text）`);
+    assert.ok(!seenSpkIds.has(article.id), `口语文章 id 应唯一：${article.id}`);
+    seenSpkIds.add(article.id);
+    assert.ok(['beginner', 'intermediate', 'advanced'].includes(article.tier), `${article.id} tier 应为三级之一`);
+}
+for (const tier of ['beginner', 'intermediate', 'advanced']) {
+    const list = SPK_ARTICLES.filter((article) => article.tier === tier);
+    assert.equal(list.length, 10, `${tier} 等级应恰好 10 篇，实际 ${list.length}`);
+    const [minWords, maxWords] = SPK_TIER_WORD_RANGE[tier];
+    for (const article of list) {
+        const words = countWords(article.text);
+        assert.ok(words >= minWords && words <= maxWords, `${article.id} ${tier} 词数应在 ${minWords}~${maxWords}，实际 ${words}`);
+    }
+}
+
+// ---- 静态断言：口语文章库 UI 结构 ----
+const speakingDataComp = read('js/components/foreign-lang/LanguageSpeaking.js');
+assert.match(speakingDataComp, /speakingArticles\.js\?v=/, '口语组件需版本号导入文章库');
+assert.match(speakingDataComp, /SPEAKING_ARTICLES,\s*SPEAKING_TIERS/, '口语组件需导入文章与等级定义');
+assert.match(speakingDataComp, /lat-speak-tier/, '口语需有等级 tab');
+assert.match(speakingDataComp, /lat-speak-art/, '口语需有文章卡片');
+assert.match(speakingDataComp, /REFERENCE LIBRARY/, '口语需展示文章库标题');
+assert.match(foreignPage, /\.lat-speak-art-active/, '口语文章选中态需有独立样式');
+assert.match(foreignPage, /\.lat-speak-art-done/, '口语已练徽章需有样式');
+
 // ---- 写作历史 + 已读标记：端点与交互 ----
 for (const endpoint of [
     '/language/writing/history',

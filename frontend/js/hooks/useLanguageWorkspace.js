@@ -3,6 +3,7 @@ import { languageApi } from '../api/language.js?v=20260823_5';
 import { encodeWavBase64, resampleToMono16k } from '../utils/wav.js?v=20260823_4';
 import { CET4_ARTICLES, CET6_ARTICLES } from '../data/cetReadingArticles.js?v=20260823_4';
 import { BASIC_SHORT_ARTICLES, BASIC_LONG_ARTICLES } from '../data/basicArticles.js?v=20260823_4';
+import { SPEAKING_ARTICLES } from '../data/speakingArticles.js?v=20260824_5';
 
 const MAX_RECORD_SECONDS = 120;
 
@@ -23,12 +24,6 @@ export const SPEAKING_TOPICS = [
     { id: 'topic-book', title: 'Recommend a book you enjoyed and explain why.', hintZh: '书名、内容一句话、推荐理由' },
     { id: 'topic-skill', title: 'What skill do you want to learn this year?', hintZh: '技能、学习计划、预期收获' },
     { id: 'topic-change', title: 'One change that would improve your school.', hintZh: '提出一个改变并说明影响' }
-];
-
-export const READ_ALOUD_TEXTS = [
-    'Technology has significantly changed the way we communicate. Ideas that once took months to travel now cross the world in seconds, and communities that once felt distant now share a single conversation.',
-    'Reading is a conversation with the wisest people who ever lived. A good book asks patient questions and rewards those who stop to think before turning the page.',
-    'Small habits shape great outcomes. Ten focused minutes a day outweighs three distracted hours, because attention, not time, is the true currency of learning.'
 ];
 
 function tokenizeArticle(text, keyWords) {
@@ -471,13 +466,18 @@ export function useLanguageWorkspace(showToast) {
     // ---------------- 口语训练（带本地偏好持久化） ----------------
     const SPEAKING_MODE_KEY = 'lat_speaking_mode';
     const SPEAKING_TOPIC_ID_KEY = 'lat_speaking_topic_id';
+    const SPEAKING_ARTICLE_ID_KEY = 'lat_speaking_article_id';
+    const SPOKEN_ARTICLE_IDS_KEY = 'lat_spoken_article_ids';
     const storedSpeakingMode = localStorage.getItem(SPEAKING_MODE_KEY) || 'read_aloud';
     const storedTopicId = localStorage.getItem(SPEAKING_TOPIC_ID_KEY);
+    const storedArticleId = localStorage.getItem(SPEAKING_ARTICLE_ID_KEY);
     const initialTopic = SPEAKING_TOPICS.find((t) => t.id === storedTopicId) || SPEAKING_TOPICS[0];
+    const initialArticle = SPEAKING_ARTICLES.find((a) => a.id === storedArticleId) || SPEAKING_ARTICLES[0];
 
     const speaking = reactive({
         mode: storedSpeakingMode, // read_aloud | free
-        referenceText: READ_ALOUD_TEXTS[0],
+        referenceText: initialArticle.text,
+        referenceArticleId: initialArticle.id,
         topic: initialTopic,
         recording: false,
         elapsed: 0,
@@ -494,6 +494,28 @@ export function useLanguageWorkspace(showToast) {
     watch(() => speaking.topic, (topic) => {
         if (topic?.id) localStorage.setItem(SPEAKING_TOPIC_ID_KEY, topic.id);
     });
+
+    // 跟读文章库：切换选文（含本地持久化），并记录已练习篇目（localStorage 轻量标记，无需后端）
+    const selectSpeakingArticle = (article) => {
+        if (!article?.id) return;
+        speaking.referenceArticleId = article.id;
+        speaking.referenceText = article.text;
+        localStorage.setItem(SPEAKING_ARTICLE_ID_KEY, article.id);
+    };
+    const spokenArticleIds = ref([]);
+    const loadSpokenArticleIds = () => {
+        try {
+            spokenArticleIds.value = JSON.parse(localStorage.getItem(SPOKEN_ARTICLE_IDS_KEY)) || [];
+        } catch {
+            spokenArticleIds.value = [];
+        }
+    };
+    const markArticleSpoken = (articleId) => {
+        if (!articleId || spokenArticleIds.value.includes(articleId)) return;
+        spokenArticleIds.value = [...spokenArticleIds.value, articleId];
+        localStorage.setItem(SPOKEN_ARTICLE_IDS_KEY, JSON.stringify(spokenArticleIds.value));
+    };
+    loadSpokenArticleIds();
 
     let mediaStream = null;
     let mediaRecorder = null;
@@ -624,6 +646,7 @@ export function useLanguageWorkspace(showToast) {
                 topic: speaking.mode === 'free' ? speaking.topic.title : '',
                 durationSec: speaking.elapsed
             });
+            if (speaking.mode === 'read_aloud') markArticleSpoken(speaking.referenceArticleId);
             loadOverview();
         } catch (error) {
             speaking.error = error?.message || '口语评测失败，请稍后重试';
@@ -829,7 +852,7 @@ export function useLanguageWorkspace(showToast) {
         reading, readingTokens, quizCorrect, startReading, answerQuiz, submitQuiz, backToReadingStudy, resetReading,
         writing, analyzeWriting, optimizeWriting, acceptWritingFix,
         writingHistory, loadWritingHistory, openWritingHistory, closeWritingHistory, openWritingHistoryEntry, deleteWritingHistoryEntry, loadWritingToEditor,
-        speaking, startRecording, stopRecording, analyzeSpeaking,
+        speaking, startRecording, stopRecording, analyzeSpeaking, selectSpeakingArticle, spokenArticleIds,
         wordbook, wordbookLoading, loadWordbook, addWord, removeWord, setProficiency,
         review, currentReviewWord, startReview, gradeReviewWord, endReview,
         tutor, speakText, explainWord, showGrammarCard, showSpeakingWordCard, resetTutor, addTutorWordToBook,

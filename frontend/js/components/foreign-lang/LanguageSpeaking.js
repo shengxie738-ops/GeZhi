@@ -1,5 +1,6 @@
-import { ref, onUnmounted, nextTick } from 'vue';
-import { SPEAKING_TOPICS, READ_ALOUD_TEXTS } from '../../hooks/useLanguageWorkspace.js?v=20260823_7';
+import { ref, computed, onUnmounted, nextTick } from 'vue';
+import { SPEAKING_TOPICS } from '../../hooks/useLanguageWorkspace.js?v=20260824_5';
+import { SPEAKING_ARTICLES, SPEAKING_TIERS } from '../../data/speakingArticles.js?v=20260824_5';
 
 export default {
     name: 'LanguageSpeaking',
@@ -9,7 +10,14 @@ export default {
     },
     setup(props) {
         const topics = SPEAKING_TOPICS;
-        const texts = READ_ALOUD_TEXTS;
+        const tiers = SPEAKING_TIERS;
+        const activeTier = ref(SPEAKING_TIERS[0].id);
+        const tierArticles = computed(() => SPEAKING_ARTICLES.filter((a) => a.tier === activeTier.value));
+        const currentArticle = computed(() =>
+            SPEAKING_ARTICLES.find((a) => a.id === props.lang.speaking.referenceArticleId) || null
+        );
+        const wordCount = (text) => String(text || '').trim().split(/\s+/).length;
+        const selectArticle = (article) => props.lang.selectSpeakingArticle(article);
         const canvasRef = ref(null);
 
         const start = async () => {
@@ -25,7 +33,7 @@ export default {
         const scoreKeys = ['pronunciation', 'fluency', 'accuracy', 'intonation'];
         const scoreLabels = { pronunciation: 'PRONUNCIATION', fluency: 'FLUENCY', accuracy: 'ACCURACY', intonation: 'INTONATION' };
 
-        return { topics, texts, canvasRef, start, statusLabel, scoreKeys, scoreLabels };
+        return { topics, SPEAKING_ARTICLES, tiers, activeTier, tierArticles, currentArticle, wordCount, selectArticle, canvasRef, start, statusLabel, scoreKeys, scoreLabels };
     },
     template: `
         <div class="lat-section" data-testid="lat-speaking">
@@ -42,17 +50,45 @@ export default {
                             @click="lang.speaking.mode = 'free'">FREE SPEAKING 自由表达</button>
                     </div>
 
-                    <div v-if="lang.speaking.mode === 'read_aloud'" class="lat-card lat-mini">
-                        <span class="lat-eyebrow">REFERENCE TEXT</span>
-                        <div class="lat-speak-texts">
-                            <button v-for="(text, ti) in texts" :key="ti" type="button"
-                                class="lat-chip lat-chip-click" :class="{ 'lat-chip-solid': lang.speaking.referenceText === text }"
-                                @click="lang.speaking.referenceText = text">Passage {{ ti + 1 }}</button>
+                    <div v-if="lang.speaking.mode === 'read_aloud'" class="lat-card lat-mini lat-speak-lib">
+                        <div class="lat-speak-lib-head">
+                            <span class="lat-eyebrow">REFERENCE LIBRARY</span>
+                            <span class="lat-mono lat-dim">{{ SPEAKING_ARTICLES.length }} 篇 · BBC 等权威来源 · 三级分类</span>
                         </div>
-                        <p class="lat-speak-ref">{{ lang.speaking.referenceText }}</p>
-                        <button class="lat-btn lat-btn-ghost" type="button" @click="lang.speakText(lang.speaking.referenceText)">
-                            <i class="ph ph-speaker-high"></i> 听参考朗读
-                        </button>
+
+                        <div class="lat-speak-tiers">
+                            <button v-for="tier in tiers" :key="tier.id" type="button" class="lat-speak-tier"
+                                :class="{ 'lat-speak-tier-active': activeTier === tier.id }"
+                                @click="activeTier = tier.id">
+                                {{ tier.label }}<small>{{ tier.en }} · {{ tier.cefr }}</small>
+                            </button>
+                        </div>
+
+                        <div class="lat-speak-artlist">
+                            <button v-for="article in tierArticles" :key="article.id" type="button" class="lat-speak-art"
+                                :class="{ 'lat-speak-art-active': lang.speaking.referenceArticleId === article.id }"
+                                @click="selectArticle(article)">
+                                <span class="lat-speak-art-tag">{{ article.cefr }}</span>
+                                <span class="lat-speak-art-main">
+                                    <span class="lat-speak-art-title">{{ article.title }}</span>
+                                    <span class="lat-speak-art-meta">{{ article.source }} · {{ wordCount(article.text) }} 词</span>
+                                </span>
+                                <span v-if="lang.spokenArticleIds.includes(article.id)" class="lat-speak-art-done"
+                                    title="已练习过这篇">✓</span>
+                                <i class="ph ph-arrow-right"></i>
+                            </button>
+                        </div>
+
+                        <div v-if="currentArticle" class="lat-speak-current">
+                            <div class="lat-speak-current-head">
+                                <strong>{{ currentArticle.title }}</strong>
+                                <span class="lat-mono lat-dim">{{ currentArticle.source }} · {{ wordCount(currentArticle.text) }} words</span>
+                            </div>
+                            <p class="lat-speak-ref">{{ lang.speaking.referenceText }}</p>
+                            <button class="lat-btn lat-btn-ghost" type="button" @click="lang.speakText(lang.speaking.referenceText)">
+                                <i class="ph ph-speaker-high"></i> 听参考朗读
+                            </button>
+                        </div>
                     </div>
 
                     <div v-else class="lat-card lat-mini">

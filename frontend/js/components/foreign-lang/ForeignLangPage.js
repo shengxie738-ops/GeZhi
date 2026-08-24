@@ -1,8 +1,8 @@
 import { reactive, computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useLanguageWorkspace } from '../../hooks/useLanguageWorkspace.js?v=20260824_2';
+import { useLanguageWorkspace } from '../../hooks/useLanguageWorkspace.js?v=20260824_5';
 import LanguageReading from './LanguageReading.js?v=20260824_4';
 import LanguageWriting from './LanguageWriting.js?v=20260824_3';
-import LanguageSpeaking from './LanguageSpeaking.js?v=20260823_5';
+import LanguageSpeaking from './LanguageSpeaking.js?v=20260824_5';
 import LanguageVocabulary from './LanguageVocabulary.js?v=20260823_4';
 import LanguageInsights from './LanguageInsights.js?v=20260823_4';
 import LanguageTutor from './LanguageTutor.js?v=20260823_4';
@@ -439,6 +439,36 @@ const ATELIER_CSS = `
 .lat-plan-list{list-style:none;display:flex;flex-direction:column;gap:8px}
 .lat-plan-list li{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.6}
 .lat-plan-list i{margin-top:3px;color:#FF4D00}
+
+/* Speaking 跟读文章库（三级分类） */
+.lat-speak-lib-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.lat-speak-tiers{display:flex;gap:8px;margin:12px 0 14px}
+.lat-speak-tier{flex:1;padding:9px 8px;border:2px solid #15161A;background:#fff;cursor:pointer;text-align:center;
+  font-weight:600;font-size:12.5px;line-height:1.3;transition:background .14s,color .14s,transform .14s}
+.lat-speak-tier:hover{transform:translateY(-1px);background:#FFC40022}
+.lat-speak-tier small{display:block;font-family:'IBM Plex Mono',Consolas,monospace;font-size:9px;font-weight:700;
+  letter-spacing:.08em;opacity:.6;margin-top:2px}
+.lat-speak-tier-active{background:#15161A;color:#fff}
+.lat-speak-tier-active small{opacity:.8}
+.lat-speak-artlist{display:flex;flex-direction:column;gap:8px;max-height:264px;overflow-y:auto;padding-right:4px;margin-bottom:14px}
+.lat-speak-artlist::-webkit-scrollbar{width:8px}
+.lat-speak-artlist::-webkit-scrollbar-thumb{background:#15161A33;border:2px solid #fff}
+.lat-speak-art{display:flex;align-items:center;gap:10px;padding:9px 11px;border:2px solid #15161A;background:#fff;
+  cursor:pointer;text-align:left;transition:background .13s,transform .13s}
+.lat-speak-art:hover{transform:translateX(3px);background:#FFC40022}
+.lat-speak-art-active{background:#002FA7;color:#fff}
+.lat-speak-art-active:hover{background:#002FA7}
+.lat-speak-art-tag{flex-shrink:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;font-weight:700;
+  padding:3px 6px;border:2px solid #15161A;background:#FFC400;color:#15161A}
+.lat-speak-art-main{flex:1;min-width:0}
+.lat-speak-art-title{display:block;font-weight:600;font-size:12.8px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lat-speak-art-meta{display:block;font-family:'IBM Plex Mono',Consolas,monospace;font-size:10px;opacity:.6;margin-top:1px}
+.lat-speak-art-done{flex-shrink:0;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;background:#002FA7;color:#fff;font-size:10px;font-weight:700}
+.lat-speak-art-active .lat-speak-art-done{background:#FFC400;color:#15161A}
+.lat-speak-current{border-top:2px solid #15161A1a;padding-top:12px}
+.lat-speak-current-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.lat-speak-current-head strong{font-family:'Fraunces',Georgia,serif;font-size:15px;line-height:1.4}
 
 /* ---------- Vocabulary ---------- */
 .lat-vocab-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}

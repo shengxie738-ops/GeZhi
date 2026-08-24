@@ -1,5 +1,5 @@
 import { computed, reactive, ref, onUnmounted } from 'vue';
-import { SAMPLE_ARTICLES } from '../../hooks/useLanguageWorkspace.js?v=20260823_7';
+import { SAMPLE_ARTICLES } from '../../hooks/useLanguageWorkspace.js?v=20260824_5';
 
 export default {
     name: 'LanguageReading',
