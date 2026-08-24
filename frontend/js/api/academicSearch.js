@@ -49,48 +49,66 @@ export async function searchArxivPapers(query, maxResults = 8) {
     try {
         const response = await fetch(apiUrl);
         if (!response.ok) throw new Error(`arXiv HTTP ${response.status}`);
-        const xmlText = await response.text();
-        
-        // 简单 XML 解析
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        const entries = xmlDoc.querySelectorAll('entry');
-        
+        // 环境兼容 XML 解析
         const papers = [];
-        entries.forEach(entry => {
-            const title = entry.querySelector('title')?.textContent || '';
-            const abstract = entry.querySelector('summary')?.textContent || '';
-            const published = entry.querySelector('published')?.textContent || '';
-            const year = published ? new Date(published).getFullYear() : 2026;
+        if (typeof DOMParser !== 'undefined') {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+            const entries = xmlDoc.querySelectorAll('entry');
             
-            const authorNodes = entry.querySelectorAll('author name');
-            const authors = [];
-            authorNodes.forEach(a => authors.push(a.textContent.trim()));
-            
-            let pdfUrl = '';
-            const links = entry.querySelectorAll('link');
-            links.forEach(l => {
-                if (l.getAttribute('title') === 'pdf' || l.getAttribute('type') === 'application/pdf') {
-                    pdfUrl = l.getAttribute('href');
+            entries.forEach(entry => {
+                const title = entry.querySelector('title')?.textContent || '';
+                const abstract = entry.querySelector('summary')?.textContent || '';
+                const published = entry.querySelector('published')?.textContent || '';
+                const year = published ? new Date(published).getFullYear() : 2026;
+                
+                const authorNodes = entry.querySelectorAll('author name');
+                const authors = [];
+                authorNodes.forEach(a => authors.push(a.textContent.trim()));
+                
+                let pdfUrl = '';
+                const links = entry.querySelectorAll('link');
+                links.forEach(l => {
+                    if (l.getAttribute('title') === 'pdf' || l.getAttribute('type') === 'application/pdf') {
+                        pdfUrl = l.getAttribute('href');
+                    }
+                });
+                if (!pdfUrl) {
+                    const idNode = entry.querySelector('id')?.textContent || '';
+                    if (idNode.includes('arxiv.org/abs/')) {
+                        pdfUrl = idNode.replace('/abs/', '/pdf/') + '.pdf';
+                    }
                 }
-            });
-            if (!pdfUrl) {
-                const idNode = entry.querySelector('id')?.textContent || '';
-                if (idNode.includes('arxiv.org/abs/')) {
-                    pdfUrl = idNode.replace('/abs/', '/pdf/') + '.pdf';
-                }
-            }
 
-            papers.push(normalizePaperItem({
-                title,
-                authors,
-                year,
-                venue: 'arXiv',
-                abstract,
-                pdfUrl,
-                url: entry.querySelector('id')?.textContent || pdfUrl
-            }, 'arXiv'));
-        });
+                papers.push(normalizePaperItem({
+                    title,
+                    authors,
+                    year,
+                    venue: 'arXiv',
+                    abstract,
+                    pdfUrl,
+                    url: entry.querySelector('id')?.textContent || pdfUrl
+                }, 'arXiv'));
+            });
+        } else {
+            // Node.js 正则保底匹配
+            const entryMatches = xmlText.match(/<entry>[\s\S]*?<\/entry>/g) || [];
+            entryMatches.forEach(entryStr => {
+                const title = (entryStr.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '').trim();
+                const abstract = (entryStr.match(/<summary>([\s\S]*?)<\/summary>/)?.[1] || '').trim();
+                const year = 2026;
+                const pdfMatch = entryStr.match(/href="([^"]+?\.pdf)"/);
+                const pdfUrl = pdfMatch ? pdfMatch[1] : '';
+                papers.push(normalizePaperItem({
+                    title,
+                    authors: ['arXiv Researcher'],
+                    year,
+                    venue: 'arXiv',
+                    abstract,
+                    pdfUrl
+                }, 'arXiv'));
+            });
+        }
 
         return papers;
     } catch (e) {

@@ -152,6 +152,13 @@ const app = createApp({
             isCreatingProject.value = false;
         };
 
+        if (typeof window !== 'undefined') {
+            window.addEventListener('click', () => {
+                if (chat.showModelDropdown.value) chat.showModelDropdown.value = false;
+                if (pluginsState.showAddMenu.value) pluginsState.showAddMenu.value = false;
+            });
+        }
+
         // ================== 仪表盘真实数据 Hook（替换原有静态 Mock 数据）==================
         const currentGoal = ref('理解并手写 Vue 3 的 reactive 响应式系统原理');
         const progress = ref(45);
