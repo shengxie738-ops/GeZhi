@@ -34,14 +34,23 @@ const DEFAULT_AGENTS = [
     { id: 'agent_visual_guide', name: 'Mira', role: 'AI引导图生成师', avatar: '', icon: 'ph-flow-arrow', colorClass: 'bg-white', avatarShellClass: 'bg-white shadow-[0_10px_24px_rgba(28,43,56,0.10)] border border-white/80', iconTextClass: 'text-[#1c2b38] text-[18px]', isThinking: false, isActive: true, modelCategory: 'image', model: 'qwen-image-2.0-pro', prompt: '把左侧问题转译成概念图与步骤图。你负责根据学习问题生成通俗易懂的 AI 引导图，帮助学生理解抽象知识结构。' },
     { id: 'agent_ranked_coach', name: '排位赛AI教练', role: '排位诊断与冲分策略教练', avatar: '', icon: 'ph-robot', colorClass: 'bg-orange-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是排位赛 AI 教练。请基于学生的排位积分、段位、对战记录、错题现象和知识点薄弱项，给出具体的错题诊断、补强训练、限时刷题、连胜/连败管理和赛季冲分计划。回答要具体、可执行，并优先服务于提升竞技排位赛表现。' },
     { id: 'agent_foreign_language', name: 'Lexa', role: '外语学习导师 · 阅读 / 写作 / 词汇', avatar: '', icon: 'ph-book-open-text', colorClass: 'bg-indigo-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是外语学习导师 Lexa，负责英语阅读理解、写作批改与词汇讲解。你的所有输出必须是严格的结构化 JSON（字段与个数以请求中的 schema 为准），禁止输出 JSON 之外的任何解释性文字。讲解用中文，示例与例句用英文。文本类任务只允许使用文本模型。' },
-    { id: 'agent_speaking', name: 'Echo', role: '口语教练 · 全模态语音评测', avatar: '', icon: 'ph-microphone-stage', colorClass: 'bg-fuchsia-500', isThinking: false, isActive: true, modelCategory: 'omni', model: 'qwen3.5-omni-flash', prompt: '你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。' }
+    { id: 'agent_speaking', name: 'Echo', role: '口语教练 · 全模态语音评测', avatar: '', icon: 'ph-microphone-stage', colorClass: 'bg-fuchsia-500', isThinking: false, isActive: true, modelCategory: 'omni', model: 'qwen3.5-omni-flash', prompt: '你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。' },
+    { id: 'agent_paper', name: 'PaperBot', role: '学术文献与前沿论文研读专家', avatar: '', icon: 'ph-article', colorClass: 'bg-sky-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是一位资深学术文献与前沿论文研读专家 PaperBot。专注于核心创新点提炼、研究背景与方法论拆解、实验对比分析与 BibTeX 规范引用生成。' }
 ];
 
 const savedAgentsStr = localStorage.getItem('agents_config');
 let initialAgents = DEFAULT_AGENTS;
 if (savedAgentsStr) {
     try {
-        initialAgents = JSON.parse(savedAgentsStr);
+        const parsed = JSON.parse(savedAgentsStr);
+        if (Array.isArray(parsed)) {
+            const hasPaper = parsed.some(a => a.id === 'agent_paper');
+            if (!hasPaper) {
+                const paperDef = DEFAULT_AGENTS.find(a => a.id === 'agent_paper');
+                if (paperDef) parsed.push(paperDef);
+            }
+            initialAgents = parsed;
+        }
     } catch (e) {
         console.error('Failed to parse agents from localStorage', e);
     }

@@ -135,6 +135,7 @@ DEFAULT_AGENT_MODELS = {
     "agent_coder": "kimi-k2.7-code",
     "agent_visual_guide": "qwen-image-2.0-pro",
     "agent_foreign_language": "qwen3.7-plus",
+    "agent_paper": "qwen3.7-plus",
 }
 
 # 向下兼容引用，供画像分析和普通检索缺省调用。
@@ -172,7 +173,39 @@ def resolve_runtime_model_id(config: RunnableConfig | dict | None, last_user_mes
     return DEFAULT_AGENT_MODELS["agent_tutor"]
 
 
-def build_system_prompt(custom_prompt: str | None = None) -> SystemMessage:
+from app.services.default_agents import DEFAULT_AGENTS
+
+
+def get_agent_default_prompt(agent_id: str) -> str:
+    for agent in DEFAULT_AGENTS:
+        if agent["id"] == agent_id:
+            return agent.get("prompt", "")
+    return ""
+
+
+def build_system_prompt(
+    custom_prompt: str | None = None,
+    *,
+    agent_id: str = "agent_tutor",
+    agent_mode: str = "tutor"
+) -> SystemMessage:
+    # 显式传入自定义 prompt 时直接采用
+    if custom_prompt and custom_prompt.strip():
+        return SystemMessage(content=custom_prompt.strip())
+
+    # 学术论文查询专属学术系统提示词
+    if agent_id == "agent_paper" or agent_mode == "paper":
+        paper_prompt = get_agent_default_prompt("agent_paper")
+        if paper_prompt:
+            return SystemMessage(content=paper_prompt)
+
+    # 知识库检索专属系统提示词
+    if agent_id == "agent_researcher" or agent_mode == "rag":
+        rag_prompt = get_agent_default_prompt("agent_researcher")
+        if rag_prompt:
+            return SystemMessage(content=rag_prompt)
+
+    # 引导式教学 / 数据结构启发式私教提示词
     prompt = (
         "你是一个专业的《数据结构与算法》智能私教，采用严苛的“苏格拉底启发式教学法（Socratic Method）”与“支架式教学（Scaffolding）”模式引导学生。你同时协同多个智能体角色（Alina 规划师、Prof.X 启发式导师、CodeNinja 代码精灵）来与学生互动。\n\n"
         "你必须死守以下核心教学铁律，如有违反将被严厉惩罚：\n"
@@ -190,15 +223,18 @@ def build_system_prompt(custom_prompt: str | None = None) -> SystemMessage:
         "   - 讲解中如需对比，请用 Markdown Table 进行美化输出。\n\n"
         "请严格根据学生目前的实际反馈，分步执行上述脚手架流程，每次回复必须以引导提问或挖空收尾，控制在 200 字内。"
     )
-    if custom_prompt:
-        prompt += f"\n\n当前激活 Agent 的自定义系统指令如下，请在不违反教学铁律的前提下优先体现该角色设定：\n{custom_prompt}"
     return SystemMessage(content=prompt)
 
 
 def call_model(state: State, config: RunnableConfig | None = None):
     configurable = _get_configurable(config)
-    system_prompt = SystemMessage(
-        content=build_system_prompt(configurable.get("agent_prompt")).content
+    agent_id = configurable.get("agent_id") or "agent_tutor"
+    agent_mode = configurable.get("agent_mode") or "tutor"
+    custom_prompt = configurable.get("agent_prompt") or configurable.get("system_prompt")
+    system_prompt = build_system_prompt(
+        custom_prompt,
+        agent_id=agent_id,
+        agent_mode=agent_mode,
     )
     messages = [system_prompt] + list(state["messages"])
     

@@ -442,17 +442,27 @@ const app = createApp({
         const quizStates = ref({});
 
         const parseQuiz = (content) => {
-            const lines = content.split('\n');
+            const raw = String(content || '');
+            const lines = raw.split('\n');
             let question = '';
             const options = [];
             let answer = '';
-            lines.forEach(line => {
-                if (line.startsWith('[QUIZ]')) {
-                    question = line.replace('[QUIZ]', '').trim();
-                } else if (line.match(/^[A-D]\./)) {
-                    options.push(line.trim());
-                } else if (line.startsWith('[ANSWER]')) {
-                    answer = line.replace('[ANSWER]', '').trim();
+            lines.forEach(rawLine => {
+                const line = rawLine.trim();
+                if (!line) return;
+                if (line.includes('[QUIZ]')) {
+                    question = line.substring(line.indexOf('[QUIZ]') + 6).trim();
+                } else if (/^[A-D][.、:：\s]/.test(line)) {
+                    // 标准化选项为 A. 内容
+                    const letter = line.charAt(0).toUpperCase();
+                    const text = line.substring(1).replace(/^[.、:：\s]+/, '').trim();
+                    options.push(`${letter}. ${text}`);
+                } else if (line.includes('[ANSWER]')) {
+                    const ansText = line.substring(line.indexOf('[ANSWER]') + 8).trim();
+                    const match = ansText.match(/[A-D]/i);
+                    if (match) {
+                        answer = match[0].toUpperCase();
+                    }
                 }
             });
             return { question, options, answer };
@@ -460,10 +470,12 @@ const app = createApp({
 
         const checkQuizAnswer = (msgId, opt, correctOpt) => {
             if (quizStates.value[msgId]?.answered) return;
-            const isCorrect = opt === correctOpt;
+            const optLetter = String(opt || '').match(/[A-D]/i)?.[0]?.toUpperCase() || '';
+            const ansLetter = String(correctOpt || '').match(/[A-D]/i)?.[0]?.toUpperCase() || '';
+            const isCorrect = optLetter && ansLetter && optLetter === ansLetter;
             quizStates.value[msgId] = {
                 answered: true,
-                selected: opt,
+                selected: optLetter || opt,
                 correct: isCorrect
             };
 
@@ -474,11 +486,13 @@ const app = createApp({
                 category: '概念自测',
                 status: isCorrect ? 'passed' : 'failed',
                 difficulty: 'Easy',
-                error_msg: isCorrect ? null : `自测选择错误: 选了 ${opt}, 正确是 ${correctOpt}`
+                error_msg: isCorrect ? null : `自测选择错误: 选了 ${optLetter || opt}, 正确是 ${ansLetter || correctOpt}`
             }).then(() => {
-                profileState.fetchProfile();
+                if (typeof profileState?.fetchProfile === 'function') {
+                    profileState.fetchProfile();
+                }
                 showToast(isCorrect ? '自测正确，知识分值提升！' : '自测错误，已为您记入错题集', isCorrect ? 'success' : 'error');
-            }).catch(e => console.error(e));
+            }).catch(e => console.error('[Quiz] Profile record error:', e));
         };
 
         const getQuizOptClass = (msgId, opt, correctOpt) => {
@@ -769,6 +783,8 @@ const app = createApp({
             showAddMenu: pluginsState.showAddMenu,
             activeInputPlugins: pluginsState.activeInputPlugins,
             filteredPlugins: pluginsState.filteredPlugins,
+            getCategoryCount: pluginsState.getCategoryCount,
+            clearMarketSearch: pluginsState.clearMarketSearch,
             isPluginInstalled: pluginsState.isPluginInstalled,
             installPlugin: pluginsState.installPlugin,
             uninstallPlugin: pluginsState.uninstallPlugin,

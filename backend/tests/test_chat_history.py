@@ -35,21 +35,36 @@ class ChatHistoryTest(unittest.TestCase):
             save_chat_message(db, user_id="alice", agent_mode="tutor", role="user", content="learn dfs")
             save_chat_message(db, user_id="alice", agent_mode="tutor", role="assistant", content="start with nodes")
             save_chat_message(db, user_id="alice", agent_mode="rag", role="user", content="search bfs")
+            save_chat_message(db, user_id="alice", agent_mode="chat", role="user", content="hello ai chat")
+            save_chat_message(db, user_id="alice", agent_mode="chat", role="assistant", content="hi there!")
+            save_chat_message(db, user_id="alice", agent_mode="paper", role="user", content="query attention is all you need")
+            save_chat_message(db, user_id="alice", agent_mode="paper", role="assistant", content="Transformer architecture review...")
             save_chat_message(db, user_id="bob", agent_mode="tutor", role="user", content="other user")
 
             tutor_history = list_chat_history(db, user_id="alice", agent_mode="tutor")
             rag_history = list_chat_history(db, user_id="alice", agent_mode="rag")
+            chat_history = list_chat_history(db, user_id="alice", agent_mode="chat")
+            paper_history = list_chat_history(db, user_id="alice", agent_mode="paper")
 
             self.assertEqual([item["content"] for item in tutor_history], ["learn dfs", "start with nodes"])
             self.assertEqual([item["content"] for item in rag_history], ["search bfs"])
-            self.assertTrue(all(item["agent_mode"] == "tutor" for item in tutor_history))
-            self.assertTrue(all(item["created_at"] for item in tutor_history))
+            self.assertEqual([item["content"] for item in chat_history], ["hello ai chat", "hi there!"])
+            self.assertEqual([item["content"] for item in paper_history], ["query attention is all you need", "Transformer architecture review..."])
+            self.assertTrue(all(item["agent_mode"] == "paper" for item in paper_history))
+            self.assertTrue(all(item["created_at"] for item in paper_history))
         finally:
             db.close()
 
     def test_agent_mode_normalization_and_thread_ids_are_stable(self):
         self.assertEqual(normalize_agent_mode("rag"), "rag")
+        self.assertEqual(normalize_agent_mode("chat"), "chat")
+        self.assertEqual(normalize_agent_mode("default"), "chat")
+        self.assertEqual(normalize_agent_mode("general"), "chat")
+        self.assertEqual(normalize_agent_mode("paper"), "paper")
+        self.assertEqual(normalize_agent_mode("academic"), "paper")
         self.assertEqual(normalize_agent_mode("anything-else"), "tutor")
+        self.assertEqual(build_agent_thread_id("alice", "chat"), "alice:chat")
+        self.assertEqual(build_agent_thread_id("alice", "paper"), "alice:paper")
         self.assertEqual(build_agent_thread_id("alice", "rag"), "alice:rag")
         self.assertEqual(build_agent_thread_id("", "tutor"), "guest_user:tutor")
 

@@ -5,7 +5,7 @@ import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
 import request from '../utils/request.js';
 import { getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
-import { findConversationForMessage, groupMessagesIntoConversations, groupConversationsByProjects, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME } from '../utils/conversations.js';
+import { findConversationForMessage, groupMessagesIntoConversations, groupConversationsByProjects, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 
@@ -75,34 +75,47 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     });
 
     const switchWorkMode = (mode) => {
-        if (mode === 'rag') {
+        activeConversationId.value = null;
+        showModelDropdown.value = false;
+        if (showVisualGuideViewer) showVisualGuideViewer.value = false;
+        if (mode === 'paper') {
+            agentMode.value = 'paper';
+            forceRAG.value = false;
+            activeProjectId.value = PROJECT_PAPER_ID;
+            loadChatHistory('paper');
+            if (typeof showToast === 'function') showToast('已切换至「论文查询」学术文献研读模式', 'info');
+        } else if (mode === 'rag') {
             agentMode.value = 'rag';
             forceRAG.value = true;
+            activeProjectId.value = PROJECT_RAG_ID;
             loadChatHistory('rag');
             if (typeof showToast === 'function') showToast('已切换至「知识库检索」模式', 'info');
         } else if (mode === 'tutor') {
             agentMode.value = 'tutor';
             forceRAG.value = false;
+            activeProjectId.value = PROJECT_TUTOR_ID;
             loadChatHistory('tutor');
             if (typeof showToast === 'function') showToast('已切换至「引导式学习」导师点拨模式', 'info');
         } else {
-            agentMode.value = 'tutor';
+            agentMode.value = 'chat';
             forceRAG.value = false;
-            if (typeof showToast === 'function') showToast('已切换至「一站式通用」模式', 'info');
+            activeProjectId.value = PROJECT_DEFAULT_ID;
+            loadChatHistory('chat');
+            if (typeof showToast === 'function') showToast('已切换至「AI 对话」全能问答模式', 'info');
         }
     };
     const createEmptyVisualGuide = () => ({
         title: 'AI 引导图生成师',
-        caption: '可将问题转为可视化图片。',
+        caption: '可将问题转为可视化步骤架构图。',
         center: '等待问题',
         nodes: [],
         edges: [],
-        type: 'concept',
+        type: 'steps',
         source: 'empty',
         generatedAt: ''
     });
     const visualGuidePrompt = ref('');
-    const visualGuideType = ref('concept');
+    const visualGuideType = ref('steps');
     const visualGuideStatus = ref('ready');
     const visualGuideImage = ref(null);
     const showVisualGuideViewer = ref(false);
@@ -114,7 +127,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const getSessionId = () => currentUser.value?.username || 'guest_user';
     const getAgentById = (id) => (typeof agentResolver === 'function' ? agentResolver(id) : null);
     const getActiveChatAgent = () => {
-        const agentId = normalizeAgentMode(agentMode.value) === 'rag' ? 'agent_researcher' : 'agent_tutor';
+        const mode = normalizeAgentMode(agentMode.value);
+        const agentId = mode === 'paper' ? 'agent_paper' : (mode === 'rag' ? 'agent_researcher' : 'agent_tutor');
         return getAgentById(agentId);
     };
     const getVisualGuideAgent = () => getAgentById('agent_visual_guide');
@@ -141,16 +155,24 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             const raw = localStorage.getItem(getProjectsStorageKey(getSessionId()));
             if (raw) {
                 const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const hasTutor = parsed.some(p => p.id === PROJECT_TUTOR_ID);
+                    const hasRag = parsed.some(p => p.id === PROJECT_RAG_ID);
+                    const hasPaper = parsed.some(p => p.id === PROJECT_PAPER_ID);
+                    if (!hasTutor || !hasRag || !hasPaper) {
+                        return [...INITIAL_SYSTEM_PROJECTS, ...parsed.filter(p => p.id !== 'proj-default' && p.id !== PROJECT_TUTOR_ID && p.id !== PROJECT_RAG_ID && p.id !== PROJECT_PAPER_ID)];
+                    }
+                    return parsed;
+                }
             }
         } catch (e) {
             console.warn('[useChat] Failed to parse stored projects:', e);
         }
-        return [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, expanded: true, createdAt: Date.now() }];
+        return [...INITIAL_SYSTEM_PROJECTS];
     };
 
     const projectList = ref(readStoredProjects());
-    const activeProjectId = ref(DEFAULT_PROJECT_ID);
+    const activeProjectId = ref(agentMode.value === 'rag' ? PROJECT_RAG_ID : PROJECT_TUTOR_ID);
 
     watch(projectList, (newVal) => {
         try {
@@ -174,35 +196,37 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const newProj = {
             id: `proj-${Date.now()}`,
             name: cleanName,
+            icon: 'ph-folder',
             expanded: true,
+            isSystem: false,
             createdAt: Date.now()
         };
         projectList.value.push(newProj);
         activeProjectId.value = newProj.id;
         activeConversationId.value = 'new';
-        showToast(`已创建大项目「${cleanName}」`, 'success');
+        showToast(`已创建项目「${cleanName}」`, 'success');
         return newProj;
     };
 
     const deleteProject = (projectId) => {
-        if (projectId === DEFAULT_PROJECT_ID) {
-            showToast('默认项目不能删除', 'info');
+        if (projectId === PROJECT_TUTOR_ID || projectId === PROJECT_RAG_ID || projectId === PROJECT_PAPER_ID || projectId === 'proj-default') {
+            showToast('系统任务分组不能删除', 'info');
             return;
         }
         const target = projectList.value.find(p => p.id === projectId);
         const name = target?.name || '该项目';
-        const confirmed = window.confirm(`确认删除大项目「${name}」？其下的小任务将自动归入默认项目。`);
+        const confirmed = window.confirm(`确认删除项目「${name}」？其下的小任务将自动归入对应系统分组。`);
         if (!confirmed) return;
 
-        // 迁移该项目下的消息到默认项目
+        // 迁移该项目下的消息到对应系统分组
         messages.value.forEach(msg => {
             if (msg.projectId === projectId) {
-                msg.projectId = DEFAULT_PROJECT_ID;
+                msg.projectId = msg.mode === 'paper' ? PROJECT_PAPER_ID : (msg.mode === 'rag' ? PROJECT_RAG_ID : PROJECT_TUTOR_ID);
             }
         });
         projectList.value = projectList.value.filter(p => p.id !== projectId);
         if (activeProjectId.value === projectId) {
-            activeProjectId.value = DEFAULT_PROJECT_ID;
+            activeProjectId.value = agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : PROJECT_TUTOR_ID);
         }
         showToast(`项目「${name}」已删除`, 'success');
     };
@@ -221,16 +245,32 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const target = projectList.value.find(p => p.id === projectId);
         if (target) {
             target.expanded = !target.expanded;
+        } else {
+            // 如果尚未在 projectList 中，添加并设置
+            const sys = INITIAL_SYSTEM_PROJECTS.find(p => p.id === projectId);
+            if (sys) {
+                projectList.value.push({ ...sys, expanded: false });
+            }
         }
     };
 
     const startNewSubTask = (projectId) => {
-        activeProjectId.value = projectId || DEFAULT_PROJECT_ID;
+        activeProjectId.value = projectId || (agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : (agentMode.value === 'tutor' ? PROJECT_TUTOR_ID : PROJECT_DEFAULT_ID)));
         const targetProj = projectList.value.find(p => p.id === activeProjectId.value);
         if (targetProj) {
             targetProj.expanded = true;
         }
-        startNewConversation();
+        if (projectId === PROJECT_PAPER_ID && agentMode.value !== 'paper') {
+            switchWorkMode('paper');
+        } else if (projectId === PROJECT_TUTOR_ID && agentMode.value !== 'tutor') {
+            switchWorkMode('tutor');
+        } else if (projectId === PROJECT_RAG_ID && agentMode.value !== 'rag') {
+            switchWorkMode('rag');
+        } else if (projectId === PROJECT_DEFAULT_ID && agentMode.value !== 'chat') {
+            switchWorkMode('chat');
+        } else {
+            startNewConversation();
+        }
     };
 
     // ================== 伪会话模型：把线性消息流按用户提问切分为对话 ==================
@@ -267,9 +307,27 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const selectConversation = async (conversationId) => {
-        // 最新对话即「当前对话」，点击它等同于回到当前
         const isLatest = conversationList.value[0]?.id === conversationId;
         const nextId = isLatest ? null : conversationId;
+
+        // 智能联动切换工作模式
+        const conv = conversationList.value.find(c => c.id === conversationId);
+        if (conv) {
+            if (conv.mode === 'paper' && agentMode.value !== 'paper') {
+                agentMode.value = 'paper';
+                forceRAG.value = false;
+            } else if (conv.mode === 'rag' && agentMode.value !== 'rag') {
+                agentMode.value = 'rag';
+                forceRAG.value = true;
+            } else if (conv.mode === 'tutor' && agentMode.value !== 'tutor') {
+                agentMode.value = 'tutor';
+                forceRAG.value = false;
+            } else if (conv.mode === 'chat' && agentMode.value !== 'chat') {
+                agentMode.value = 'chat';
+                forceRAG.value = false;
+            }
+        }
+
         if (activeConversationId.value === nextId) return;
         activeConversationId.value = nextId;
         await nextTick();
@@ -291,6 +349,11 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const startNewConversation = async () => {
         activeConversationId.value = 'new';
+        activeProjectId.value = agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : (agentMode.value === 'tutor' ? PROJECT_TUTOR_ID : PROJECT_DEFAULT_ID));
+        const targetProj = projectList.value.find(p => p.id === activeProjectId.value);
+        if (targetProj) {
+            targetProj.expanded = true;
+        }
         if (normalizeAgentMode(agentMode.value) !== 'rag') {
             resetVisualGuideForNewConversation();
         }
@@ -393,7 +456,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             showToast('当前没有可清空的历史记录', 'info');
             return;
         }
-        const label = normalizedMode === 'rag' ? '知识库检索' : '引导式学习';
+        const label = normalizedMode === 'paper' ? '论文查询' : (normalizedMode === 'rag' ? '知识库检索' : (normalizedMode === 'chat' ? 'AI 对话' : '引导式学习'));
         const confirmed = window.confirm(`确认清空全部「${label}」历史对话？此操作不可恢复。`);
         if (!confirmed) return;
 
@@ -561,7 +624,6 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const visualGuideTypes = [
-        { id: 'concept', label: '概念图', icon: 'ph-graph' },
         { id: 'steps', label: '步骤图', icon: 'ph-list-checks' }
     ];
 
@@ -887,10 +949,10 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const sessionId = getSessionId();
         const prompt = inputText.value;
         if (!prompt.trim() || thinkingAgent.value) return;
-        // 发送永远追加到消息流末尾：从历史对话或空白态发送时，自动回到当前对话
+        // 发送永远追加到消息流末尾：重置活跃历史会话态，自动切回主工作流视图
         activeConversationId.value = null;
-        if (agentMode.value !== 'rag' && shouldTriggerVisualGuideGeneration(prompt)) {
-            visualGuideType.value = 'concept';
+        if (agentMode.value === 'tutor') {
+            visualGuideType.value = 'steps';
             generateVisualGuide(prompt, { reason: 'student-question', force: true });
         }
         const repositoryId = agentMode.value === 'rag' ? selectedRepositoryId.value : '';
