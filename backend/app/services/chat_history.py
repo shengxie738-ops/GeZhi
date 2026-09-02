@@ -3,11 +3,20 @@ from sqlalchemy.orm import Session
 from app.models.chat_message import ChatMessage
 
 
-VALID_AGENT_MODES = {"tutor", "rag"}
+VALID_AGENT_MODES = {"tutor", "rag", "chat", "paper"}
 
 
 def normalize_agent_mode(agent_mode: str | None) -> str:
-    return agent_mode if agent_mode in VALID_AGENT_MODES else "tutor"
+    cleaned = (agent_mode or "").strip().lower()
+    if cleaned in ("chat", "default", "general"):
+        return "chat"
+    if cleaned in ("paper", "academic", "scholar", "agent_paper"):
+        return "paper"
+    if cleaned in ("rag", "researcher", "agent_researcher"):
+        return "rag"
+    if cleaned in ("tutor", "agent_tutor"):
+        return "tutor"
+    return cleaned if cleaned in VALID_AGENT_MODES else "tutor"
 
 
 def normalize_user_id(user_id: str | None) -> str:
@@ -35,10 +44,14 @@ def save_chat_message(
         content=content or "",
         sender_id=sender_id,
     )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
-    return record
+    try:
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return record
+    except Exception:
+        db.rollback()
+        raise
 
 
 def list_chat_history(db: Session, *, user_id: str, agent_mode: str, limit: int = 200) -> list[dict]:
@@ -78,19 +91,28 @@ def delete_chat_message(db: Session, *, user_id: str, message_id: int) -> bool:
     )
     if not record:
         return False
-    db.delete(record)
-    db.commit()
-    return True
+    try:
+        db.delete(record)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
 
 
 def clear_chat_history(db: Session, *, user_id: str, agent_mode: str) -> int:
-    deleted = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.user_id == normalize_user_id(user_id),
-            ChatMessage.agent_mode == normalize_agent_mode(agent_mode),
+    try:
+        deleted = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.user_id == normalize_user_id(user_id),
+                ChatMessage.agent_mode == normalize_agent_mode(agent_mode),
+            )
+            .delete(synchronize_session=False)
         )
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-    return int(deleted or 0)
+        db.commit()
+        return int(deleted or 0)
+    except Exception:
+        db.rollback()
+        raise
+

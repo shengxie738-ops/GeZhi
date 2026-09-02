@@ -160,6 +160,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         const snippet = `\n> 📚 **参考论文：${paper.title}** (${paper.year}, ${paper.source})\n> 作者: ${paper.authorsText}\n> 摘要: ${paper.abstract.slice(0, 160)}...\n\n请针对以上论文，结合我的问题进行深度分析：`;
         inputTextRef.value = (inputTextRef.value || '') + snippet;
         closePluginMarket();
+        closePaperSearchDrawer();
         if (showToast) showToast('论文已引入当前任务输入框！', 'success');
     };
 
@@ -183,6 +184,15 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         activeInputPlugins.value = activeInputPlugins.value.filter(p => p.id !== pluginId);
     };
 
+    const getCategoryCount = (catId) => {
+        if (catId === 'all') return ACADEMIC_PLUGINS.length;
+        return ACADEMIC_PLUGINS.filter(p => p.category === catId).length;
+    };
+
+    const clearMarketSearch = () => {
+        marketSearchKeyword.value = '';
+    };
+
     return {
         ACADEMIC_PLUGINS,
         PLUGIN_CATEGORIES,
@@ -199,6 +209,8 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         showAddMenu,
         activeInputPlugins,
         filteredPlugins,
+        getCategoryCount,
+        clearMarketSearch,
         isPluginInstalled,
         installPlugin,
         uninstallPlugin,

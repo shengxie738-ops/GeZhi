@@ -3292,7 +3292,7 @@
                                 <aside class="w-64 min-w-[250px] max-w-[270px] bg-slate-50/90 border-r border-slate-200/80 flex flex-col justify-between p-3.5 backdrop-blur-md shrink-0 h-full">
                                     <!-- 顶部模式选择与主操作 -->
                                     <div class="flex flex-col gap-3 min-h-0 flex-1">
-                                        <!-- 顶部工作空间标识 (已删除 Code / Design) -->
+                                        <!-- 顶部工作空间标识 -->
                                         <div class="flex items-center justify-between px-1.5 py-1">
                                             <div class="flex items-center gap-2 text-slate-800 font-bold text-sm">
                                                 <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-[#1c2b38] to-[#2d4356] text-white flex items-center justify-center shadow-xs">
@@ -3323,6 +3323,12 @@
                                                     {{ installedPlugins.length }}
                                                 </span>
                                             </button>
+                                            <button type="button" @click="switchWorkMode('chat')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
+                                                :class="agentMode === 'chat' ? 'bg-violet-600/10 text-violet-700 font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
+                                                <i class="ph ph-chats-circle text-base text-violet-600"></i>
+                                                <span>AI 对话</span>
+                                            </button>
                                             <button type="button" @click="switchWorkMode('rag')"
                                                 class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
                                                 :class="agentMode === 'rag' ? 'bg-[#1c2b38]/10 text-[#1c2b38] font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
@@ -3335,15 +3341,11 @@
                                                 <i class="ph ph-graduation-cap text-base text-[#b91c1c]"></i>
                                                 <span>引导式学习</span>
                                             </button>
-                                            <button type="button" @click="showToast('自动化工作流助手已在后台就绪', 'info')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
-                                                <i class="ph ph-timer text-base text-amber-500"></i>
-                                                <span>自动化</span>
-                                            </button>
-                                            <button type="button" @click="showToast('办公助理已连接，支持文档与格式化处理', 'info')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
-                                                <i class="ph ph-briefcase text-base text-blue-500"></i>
-                                                <span>办公助理</span>
+                                            <button type="button" @click="switchWorkMode('paper')"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
+                                                :class="agentMode === 'paper' ? 'bg-sky-500/10 text-sky-700 font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
+                                                <i class="ph ph-article text-base text-sky-600"></i>
+                                                <span>论文查询</span>
                                             </button>
                                             <button type="button" @click="showToast('模板库已准备就绪', 'info')"
                                                 class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
@@ -3356,7 +3358,6 @@
                                                 <span>进入外语工作台</span>
                                             </button>
                                         </div>
-
                                         <!-- 任务列表 (Codex 桌面端两级项目任务树) -->
                                         <div class="flex-1 flex flex-col min-h-0 pt-2 border-t border-slate-200/70">
                                             <!-- 标题与新建大项目按钮 -->
@@ -3391,28 +3392,29 @@
                                                 </div>
                                             </div>
 
-                                            <!-- 项目与子任务滚动区域 -->
+                                            <!-- 项目与子任务滚动区域 (引导式学习与知识库检索可折叠树) -->
                                             <div class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                                                 <div v-for="proj in projectTaskTree" :key="proj.id" class="flex flex-col">
-                                                    <!-- 大项目节点头部 -->
+                                                    <!-- 大项目节点头部 (支持折叠展开) -->
                                                     <div @click="toggleProjectExpand(proj.id)"
                                                         class="group flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer select-none transition-all hover:bg-slate-200/50"
-                                                        :class="activeProjectId === proj.id ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'">
+                                                        :class="activeProjectId === proj.id ? 'text-slate-900 font-bold bg-slate-200/30' : 'text-slate-600 font-medium'">
                                                         <div class="flex items-center gap-1.5 min-w-0 flex-1">
                                                             <i class="ph text-[11px] text-slate-400 transition-transform duration-200"
                                                                 :class="proj.expanded ? 'ph-caret-down' : 'ph-caret-right'"></i>
-                                                            <i class="ph text-slate-500 text-sm"
-                                                                :class="proj.id === 'proj-default' ? 'ph-cloud' : 'ph-folder'"></i>
+                                                            <i class="ph text-sm"
+                                                                :class="proj.id === 'proj-paper' ? 'ph-article text-sky-600' : proj.id === 'proj-tutor' ? 'ph-graduation-cap text-[#b91c1c]' : proj.id === 'proj-rag' ? 'ph-database text-emerald-600' : (proj.icon || 'ph-folder text-slate-500')"></i>
                                                             <span class="truncate text-xs">{{ proj.name }}</span>
                                                             <span class="text-[10px] text-slate-400 font-normal">({{ proj.tasks.length }})</span>
                                                         </div>
                                                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button type="button" @click.stop="startNewSubTask(proj.id)"
                                                                 class="p-0.5 hover:text-violet-600 hover:bg-white rounded transition-colors"
-                                                                title="在此项目下新建子任务">
+                                                                :title="`在「${proj.name}」下新建任务`">
                                                                 <i class="ph ph-plus text-xs"></i>
                                                             </button>
-                                                            <button v-if="proj.id !== 'proj-default'" type="button" @click.stop="deleteProject(proj.id)"
+                                                            <button v-if="!proj.isSystem && proj.id !== 'proj-paper' && proj.id !== 'proj-tutor' && proj.id !== 'proj-rag' && proj.id !== 'proj-default'"
+                                                                type="button" @click.stop="deleteProject(proj.id)"
                                                                 class="p-0.5 hover:text-rose-500 hover:bg-white rounded transition-colors"
                                                                 title="删除项目">
                                                                 <i class="ph ph-trash text-xs"></i>
@@ -3426,7 +3428,7 @@
                                                         <div v-if="activeProjectId === proj.id && activeConversationId === 'new'"
                                                             class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs bg-white text-violet-700 font-bold shadow-xs border border-violet-200/60">
                                                             <i class="ph ph-chat-circle-dots text-violet-600"></i>
-                                                            <span class="truncate">新小任务...</span>
+                                                            <span class="truncate">新任务进行中...</span>
                                                         </div>
 
                                                         <!-- 小任务实际列表 -->
@@ -3465,9 +3467,9 @@
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-bold text-slate-400">当前模式:</span>
                                             <span class="text-xs px-2.5 py-0.5 rounded-full font-bold shadow-xs flex items-center gap-1"
-                                                :class="agentMode === 'rag' ? 'bg-[#1c2b38] text-white' : 'bg-[#b91c1c]/10 text-[#b91c1c] border border-[#b91c1c]/20'">
-                                                <i :class="agentMode === 'rag' ? 'ph ph-database' : 'ph ph-graduation-cap'"></i>
-                                                {{ agentMode === 'rag' ? '知识库检索' : '一站式协同' }}
+                                                :class="agentMode === 'paper' ? 'bg-sky-500/10 text-sky-700 border border-sky-300/40' : (agentMode === 'rag' ? 'bg-[#1c2b38] text-white' : (agentMode === 'tutor' ? 'bg-[#b91c1c]/10 text-[#b91c1c] border border-[#b91c1c]/20' : 'bg-violet-600/10 text-violet-700 border border-violet-200'))">
+                                                <i :class="agentMode === 'paper' ? 'ph ph-article text-sky-600' : (agentMode === 'rag' ? 'ph ph-database text-white' : (agentMode === 'tutor' ? 'ph ph-graduation-cap text-[#b91c1c]' : 'ph ph-chats-circle text-violet-600'))"></i>
+                                                {{ agentMode === 'paper' ? '论文查询' : (agentMode === 'rag' ? '知识库检索' : (agentMode === 'tutor' ? '引导式学习' : 'AI 对话')) }}
                                             </span>
                                             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-medium flex items-center gap-1">
                                                 <i class="ph ph-cpu text-violet-500"></i>
@@ -3490,11 +3492,11 @@
                                         <div class="text-center mb-6 select-none">
                                             <div class="inline-flex items-center gap-2.5 text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight"
                                                 style="font-family: 'Noto Serif SC', serif;">
-                                                <i class="ph ph-book-open-text text-violet-600"></i>
-                                                <span>Work with 格至</span>
+                                                <i class="ph" :class="agentMode === 'paper' ? 'ph-article text-sky-600' : (agentMode === 'tutor' ? 'ph-graduation-cap text-[#b91c1c]' : (agentMode === 'rag' ? 'ph-database text-emerald-600' : 'ph-chats-circle text-violet-600'))"></i>
+                                                <span>{{ agentMode === 'paper' ? '论文查询 · 学术文献与前沿综述' : (agentMode === 'tutor' ? '引导式学习 · AI 导师点拨' : (agentMode === 'rag' ? '知识库检索 · 深度研读' : 'AI 对话 · 自由问答助手')) }}</span>
                                             </div>
                                             <p class="text-sm text-slate-400 mt-2.5 tracking-wide">
-                                                帮您整理论文综述、编写 PPT、分析 Excel 等日常工作，输出专业级工作成果。
+                                                {{ agentMode === 'paper' ? '权威学术文献检索与研读专家，支持核心创新提炼、技术框架拆解、实验基准对比与 BibTeX 引用生成。' : (agentMode === 'tutor' ? '基于费曼学习法与苏格拉底提问机制，助您深入理解复杂概念、推导算法与攻克难点。' : (agentMode === 'rag' ? '基于课程专属与个人挂载知识库，精准定位文档出处并进行溯源回答。' : '全能型通用大模型对话助手，支持自由问答、多场景交互与专业分析。')) }}
                                             </p>
                                         </div>
 
@@ -3516,7 +3518,7 @@
                                                 @keydown.enter.exact.prevent="sendMessage"
                                                 rows="4"
                                                 class="w-full bg-transparent resize-none outline-none p-2 text-sm text-slate-800 placeholder-slate-400 transition-colors leading-relaxed"
-                                                placeholder="帮您整理论文综述、编写 PPT、分析 Excel 等日常工作，输出专业级工作成果。"></textarea>
+                                                :placeholder="agentMode === 'paper' ? '输入论文题目、学术关键词（如 Transformer, GNN, RAG）、DOI 或文献综述需求...' : (agentMode === 'tutor' ? '向导师提问概念理论、算法原理、推导步骤或解题思路...' : (agentMode === 'rag' ? '输入知识库检索或文献问答问题...' : '输入任何问题、代码或想法，AI 助手将为您解答...'))"></textarea>
 
                                             <!-- 卡片底栏操作区 -->
                                             <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
@@ -3769,7 +3771,7 @@
                                                     <textarea v-model="inputText"
                                                         @keydown.enter.exact.prevent="sendMessage" rows="2"
                                                         class="flex-1 bg-transparent resize-none outline-none py-2 px-3 text-sm max-h-36 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors"
-                                                        placeholder="输入追问或新的任务指令..."></textarea>
+                                                        :placeholder="agentMode === 'paper' ? '输入论文题目、学术关键词、DOI 或文献综述需求...' : (agentMode === 'tutor' ? '向导师提问概念理论、算法原理、推导步骤或解题思路...' : (agentMode === 'rag' ? '输入知识库检索或文献问答问题...' : '输入追问或新的任务指令...'))"></textarea>
                                                     <div class="flex items-center justify-between pt-2 border-t border-slate-100 px-2">
                                                         <div class="flex items-center gap-2">
                                                             <!-- Codex + 号插件菜单 -->
@@ -3865,6 +3867,243 @@
                                         </div>
                                     </div>
                                 </main>
+
+                                <!-- 右侧 Mira 引导图面板 (tutor 模式专属三栏体验) -->
+                                <aside v-if="agentMode === 'tutor'" class="visual-guide-panel border-l border-slate-200/80 bg-slate-50/90 backdrop-blur-md flex flex-col h-full w-[370px] shrink-0 p-4 overflow-y-auto custom-scrollbar">
+                                    <div class="flex items-start justify-between gap-3 mb-3">
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <div class="w-9 h-9 rounded-xl bg-white/90 text-[#1c2b38] flex items-center justify-center text-lg shadow-xs border border-slate-200/80 relative overflow-hidden">
+                                                <span class="absolute inset-0.5 rounded-lg bg-gradient-to-br from-[#b91c1c]/10 via-amber-300/20 to-sky-400/20"></span>
+                                                <i class="ph ph-flow-arrow relative z-10 text-violet-600"></i>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-1.5">
+                                                    <h3 class="text-xs font-bold text-slate-800" style="font-family: 'Noto Serif SC', serif;">Mira</h3>
+                                                    <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[#b91c1c]/8 text-[#b91c1c] border border-[#b91c1c]/10 font-bold">AI步骤图生成师</span>
+                                                </div>
+                                                <p class="text-[10px] text-slate-400 mt-0.5 truncate">将对话问题转译为步骤架构图</p>
+                                            </div>
+                                        </div>
+                                        <span class="flex items-center gap-1 text-[10px] text-emerald-600 font-bold shrink-0">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            在线
+                                        </span>
+                                    </div>
+
+                                    <!-- 当前问题提示卡片 -->
+                                    <div class="rounded-xl bg-white/70 border border-slate-200/60 px-3 py-2 mb-2.5 shadow-2xs">
+                                        <div class="text-[9px] text-slate-400 font-bold mb-0.5">当前学习问题</div>
+                                        <p class="text-[11px] text-slate-700 font-semibold leading-relaxed line-clamp-2">
+                                            {{ visualGuidePrompt || '在左侧对话框输入学习问题自动生成' }}
+                                        </p>
+                                    </div>
+
+                                    <div class="flex items-center justify-between px-1 mb-1.5">
+                                        <span class="text-[10px] text-slate-400 font-bold">步骤图预览</span>
+                                        <span class="text-[9px] px-2 py-0.5 rounded-full border font-bold"
+                                            :class="visualGuideImage ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-[#b91c1c] border-[#b91c1c]/20'">
+                                            {{ getVisualGuideSourceLabel(visualGuideImage) }}
+                                        </span>
+                                    </div>
+
+                                    <!-- 引导图画布 -->
+                                    <div class="visual-guide-canvas mb-3 relative min-h-[240px] rounded-2xl overflow-hidden border border-slate-200/80 bg-white flex flex-col justify-center items-center shadow-xs">
+                                        <button v-if="canOpenVisualGuideViewer"
+                                            @click="openVisualGuideViewer"
+                                            class="visual-guide-expand-btn">
+                                            <i class="ph ph-arrows-out-simple"></i>全图查看
+                                        </button>
+
+                                        <div v-if="visualGuideStatus === 'generating'"
+                                            class="visual-guide-loading flex flex-col items-center justify-center p-6 text-center">
+                                            <div class="w-7 h-7 rounded-full border-2 border-violet-600 border-t-transparent animate-spin mb-2.5"></div>
+                                            <p class="text-xs font-bold text-slate-700">
+                                                Prof. X 正在生成知识结构步骤图...
+                                            </p>
+                                            <p class="text-[10px] text-slate-400 mt-1">
+                                                使用结构化模型，构建知识节点与依赖
+                                            </p>
+                                        </div>
+
+                                        <div v-else-if="!visualGuidePrompt.trim()"
+                                            class="visual-guide-image-shell p-4 text-center flex flex-col items-center justify-center">
+                                            <div class="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center text-xl mb-2.5 shadow-2xs">
+                                                <i class="ph ph-sparkle"></i>
+                                            </div>
+                                            <h4 class="text-xs font-extrabold text-slate-800">AI 步骤图生成师</h4>
+                                            <p class="text-[10px] text-slate-400 leading-relaxed mt-1">
+                                                在对话框输入问题后，Mira 会自动生成步骤架构图。
+                                            </p>
+                                        </div>
+
+                                        <div v-else-if="visualGuideImage?.renderedSvg || visualGuideImage?.treeText || visualGuideImage?.mermaid"
+                                            class="visual-guide-image-shell architecture-guide-shell w-full h-full p-2 overflow-auto">
+                                            <div v-if="visualGuideImage?.renderedSvg"
+                                                class="architecture-guide-svg-layer w-full h-full flex items-center justify-center"
+                                                v-html="visualGuideImage.renderedSvg"></div>
+                                            <pre v-else-if="visualGuideImage?.treeText"
+                                                class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
+                                            <div v-else class="architecture-render-failed">
+                                                <i class="ph ph-warning-circle"></i>
+                                                <p class="architecture-render-failed-title">渲染失败，请点击重新生成</p>
+                                                <p class="architecture-render-failed-desc">步骤图数据已生成，但图表引擎未能绘制，可点击下方「重新生成」重试</p>
+                                            </div>
+                                        </div>
+
+                                        <div v-else-if="visualGuideImage?.svg || visualGuideImage?.backgroundUrl || visualGuideImage?.backgroundBase64"
+                                            class="visual-guide-image-shell w-full h-full">
+                                            <img v-if="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
+                                                :src="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
+                                                alt=""
+                                                class="visual-guide-bg-layer">
+                                            <div v-if="visualGuideImage?.svg"
+                                                class="visual-guide-svg-layer w-full h-full flex items-center justify-center"
+                                                v-html="visualGuideImage.svg"></div>
+                                        </div>
+
+                                        <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
+                                            class="visual-guide-image-shell w-full h-full">
+                                            <img :src="visualGuideImage.imageUrl || visualGuideImage.imageBase64"
+                                                :alt="visualGuideImage.alt"
+                                                class="w-full h-full object-contain">
+                                        </div>
+
+                                        <template v-else>
+                                            <div class="visual-guide-beam" v-for="angle in [35, 125, 215, 305]"
+                                                :key="angle" :style="`transform: rotate(${angle}deg);`"></div>
+                                            <div class="visual-node-center">{{ visualGuide.center }}</div>
+                                            <div v-for="(node, index) in visualGuide.nodes" :key="node"
+                                                class="visual-node"
+                                                :data-edge="visualGuide.edges && visualGuide.edges[index]"
+                                                :style="index === 0 ? 'left: 6%; top: 22%;' : index === 1 ? 'right: 7%; top: 14%;' : index === 2 ? 'right: 6%; bottom: 18%;' : 'left: 14%; bottom: 12%;'">
+                                                {{ node }}
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- 重新生成 / 下载图 -->
+                                    <div class="flex gap-2 mb-3">
+                                        <button @click="regenerateVisualGuide"
+                                            :disabled="!visualGuidePrompt.trim() || visualGuideStatus === 'generating'"
+                                            class="flex-1 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 hover:text-violet-700 transition-all flex items-center justify-center gap-1 shadow-2xs disabled:opacity-40">
+                                            <i class="ph ph-arrows-clockwise"></i>重新生成
+                                        </button>
+                                        <button @click="downloadVisualGuide"
+                                            :disabled="!visualGuidePrompt.trim()"
+                                            class="flex-1 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 hover:text-violet-700 transition-all flex items-center justify-center gap-1 shadow-2xs disabled:opacity-40">
+                                            <i class="ph ph-download-simple"></i>下载图
+                                        </button>
+                                    </div>
+
+                                    <!-- 最近生成历史 -->
+                                    <div class="border-t border-slate-200/70 pt-2.5 mt-auto">
+                                        <div class="flex justify-between items-center mb-1.5">
+                                            <span class="text-[10px] text-slate-400 font-bold">生成历史</span>
+                                            <span class="text-[10px] text-slate-400 font-medium">{{ visualGuideHistory.length }} 张</span>
+                                        </div>
+                                        <div v-if="visualGuideHistory.length === 0"
+                                            class="rounded-xl bg-slate-100/70 border border-slate-200/60 p-2.5 text-center text-[10px] font-medium text-slate-400">
+                                            暂无生成历史
+                                        </div>
+                                        <div v-else class="grid grid-cols-3 gap-1.5">
+                                            <button v-for="item in visualGuideHistory" :key="item.id"
+                                                @click="selectVisualGuideHistory(item)"
+                                                class="rounded-xl bg-white border border-slate-200/80 p-1.5 text-left hover:border-violet-300 hover:shadow-xs transition-all min-h-[58px]">
+                                                <div class="text-[9px] font-bold mb-0.5"
+                                                    :class="item.source === 'backend' ? 'text-emerald-600' : 'text-violet-600'">
+                                                    {{ getVisualGuideTypeMeta(item.type).label }}
+                                                </div>
+                                                <p class="text-[9px] text-slate-600 leading-snug line-clamp-2">
+                                                    {{ item.prompt }}
+                                                </p>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </aside>
+                            </div>
+                        </transition>
+
+                        <!-- 全屏大图查看器弹窗 (与用户截图完全一致) -->
+                        <transition name="uc-fade">
+                            <div v-if="showVisualGuideViewer" class="visual-guide-viewer-backdrop"
+                                @click.self="closeVisualGuideViewer">
+                                <div class="visual-guide-viewer-modal">
+                                    <div class="visual-guide-viewer-header">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2 mb-1.5">
+                                                <span class="text-[10px] px-2.5 py-0.5 rounded-full border font-bold"
+                                                    :class="visualGuideImage ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-[#b91c1c] border-[#b91c1c]/20'">
+                                                    {{ getVisualGuideSourceLabel(visualGuideImage) }}
+                                                </span>
+                                                <span class="text-[10px] text-slate-400 font-bold">
+                                                    {{ getVisualGuideTypeMeta(visualGuideType).label }}
+                                                </span>
+                                            </div>
+                                            <h3 class="text-base md:text-lg font-extrabold text-slate-800 truncate">
+                                                {{ visualGuide.title }}
+                                            </h3>
+                                            <p class="text-xs md:text-sm text-slate-500 mt-0.5 leading-relaxed">
+                                                {{ visualGuide.caption }}
+                                            </p>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <button @click="downloadVisualGuide"
+                                                class="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 hover:text-violet-700 transition-all flex items-center gap-1 shadow-xs">
+                                                <i class="ph ph-download-simple"></i>下载图
+                                            </button>
+                                            <button @click="closeVisualGuideViewer"
+                                                class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-all">
+                                                <i class="ph ph-x text-base"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="visual-guide-viewer-stage">
+                                        <div class="visual-guide-viewer-canvas">
+                                            <div v-if="visualGuideImage?.renderedSvg || visualGuideImage?.treeText || visualGuideImage?.mermaid"
+                                                class="visual-guide-image-shell architecture-guide-shell">
+                                                <div v-if="visualGuideImage?.renderedSvg"
+                                                    class="architecture-guide-svg-layer"
+                                                    v-html="visualGuideImage.renderedSvg"></div>
+                                                <pre v-else-if="visualGuideImage?.treeText"
+                                                    class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
+                                                <div v-else class="architecture-render-failed">
+                                                    <i class="ph ph-warning-circle"></i>
+                                                    <p class="architecture-render-failed-title">渲染失败，请点击重新生成</p>
+                                                    <p class="architecture-render-failed-desc">步骤图数据已生成，但图表引擎未能绘制，可点击重新生成重试</p>
+                                                </div>
+                                            </div>
+                                            <div v-else-if="visualGuideImage?.svg || visualGuideImage?.backgroundUrl || visualGuideImage?.backgroundBase64"
+                                                class="visual-guide-image-shell">
+                                                <img v-if="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
+                                                    :src="visualGuideImage.backgroundUrl || visualGuideImage.backgroundBase64"
+                                                    alt=""
+                                                    class="visual-guide-bg-layer">
+                                                <div v-if="visualGuideImage?.svg"
+                                                    class="visual-guide-svg-layer"
+                                                    v-html="visualGuideImage.svg"></div>
+                                            </div>
+                                            <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
+                                                class="visual-guide-image-shell">
+                                                <img :src="visualGuideImage.imageUrl || visualGuideImage.imageBase64"
+                                                    :alt="visualGuideImage.alt"
+                                                    class="w-full h-full object-contain">
+                                            </div>
+                                            <template v-else>
+                                                <div class="visual-guide-beam"
+                                                    v-for="angle in [35, 125, 215, 305]" :key="angle"
+                                                    :style="`transform: rotate(${angle}deg);`"></div>
+                                                <div class="visual-node-center">{{ visualGuide.center }}</div>
+                                                <div v-for="(node, index) in visualGuide.nodes" :key="node"
+                                                    class="visual-node"
+                                                    :data-edge="visualGuide.edges && visualGuide.edges[index]"
+                                                    :style="index === 0 ? 'left: 6%; top: 22%;' : index === 1 ? 'right: 7%; top: 14%;' : index === 2 ? 'right: 6%; bottom: 18%;' : 'left: 14%; bottom: 12%;'">
+                                                    {{ node }}
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </transition>
 
@@ -4814,14 +5053,14 @@
                 @click.self="closePluginMarket">
                 <div class="bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-slate-200/90 w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden animate-scale-up">
                     <!-- 市场头部 -->
-                    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div class="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
                         <div class="flex items-center gap-3">
-                            <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md">
-                                <i class="ph ph-puzzle-piece text-2xl"></i>
+                            <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md shadow-violet-500/10">
+                                <i class="ph ph-puzzle-piece text-xl"></i>
                             </div>
                             <div>
                                 <div class="flex items-center gap-2">
-                                    <h3 class="text-lg font-bold text-slate-800" style="font-family: 'Noto Serif SC', serif;">格至插件市场</h3>
+                                    <h3 class="text-base sm:text-lg font-bold text-slate-800" style="font-family: 'Noto Serif SC', serif;">格至插件市场</h3>
                                     <span class="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold border border-violet-200">
                                         已添加 {{ installedPluginIds.length }} 款
                                     </span>
@@ -4832,20 +5071,24 @@
 
                         <!-- 搜索与关闭 -->
                         <div class="flex items-center gap-3">
-                            <div class="relative w-64">
+                            <div class="relative w-56 sm:w-64">
                                 <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                 <input v-model="marketSearchKeyword" type="text" placeholder="搜索学术插件与 Skills..."
-                                    class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10 transition-all" />
+                                    class="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10 transition-all" />
+                                <button v-if="marketSearchKeyword" @click="clearMarketSearch ? clearMarketSearch() : (marketSearchKeyword = '')"
+                                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs transition-colors">
+                                    <i class="ph ph-x-circle-fill"></i>
+                                </button>
                             </div>
                             <button type="button" @click="closePluginMarket"
-                                class="w-9 h-9 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all">
+                                class="w-9 h-9 rounded-xl hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all">
                                 <i class="ph ph-x text-lg"></i>
                             </button>
                         </div>
                     </div>
 
                     <!-- 分类 Tab 栏 -->
-                    <div class="px-6 py-2.5 bg-slate-100/50 border-b border-slate-100 flex items-center gap-2 overflow-x-auto">
+                    <div class="px-6 py-2 bg-slate-100/60 border-b border-slate-100 flex items-center gap-2 overflow-x-auto">
                         <button v-for="cat in PLUGIN_CATEGORIES" :key="cat.id"
                             type="button"
                             @click="selectedPluginCategory = cat.id"
@@ -4853,64 +5096,89 @@
                             :class="selectedPluginCategory === cat.id ? 'bg-white text-violet-700 shadow-xs border border-slate-200/80' : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'">
                             <i :class="cat.icon" class="text-sm"></i>
                             <span>{{ cat.name }}</span>
+                            <span class="text-[10px] px-1.5 py-0.2 rounded-full font-medium"
+                                :class="selectedPluginCategory === cat.id ? 'bg-violet-50 text-violet-600' : 'bg-slate-200/80 text-slate-500'">
+                                {{ getCategoryCount ? getCategoryCount(cat.id) : '' }}
+                            </span>
                         </button>
                     </div>
 
-                    <!-- 插件卡片网格 -->
-                    <div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 custom-scrollbar">
-                        <div v-for="plugin in filteredPlugins" :key="plugin.id"
-                            class="bg-white rounded-2xl border border-slate-200/80 hover:border-violet-300 hover:shadow-md p-4 flex flex-col justify-between transition-all duration-200 group relative">
-                            <!-- 卡片顶部 -->
-                            <div>
-                                <div class="flex items-start justify-between gap-3 mb-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm"
-                                            :class="plugin.colorClass">
-                                            <i :class="plugin.icon"></i>
+                    <!-- 插件卡片网格容器：锁定顶部紧凑流式对齐，防止单行或单个卡片纵向拉伸 -->
+                    <div class="flex-1 overflow-y-auto p-6 min-h-[380px] custom-scrollbar bg-slate-50/40"
+                        style="align-content: flex-start;">
+                        <!-- 空搜索与无结果状态 -->
+                        <div v-if="filteredPlugins.length === 0" class="h-64 flex flex-col items-center justify-center text-center p-6">
+                            <div class="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3 shadow-inner">
+                                <i class="ph ph-magnifying-glass-plus text-2xl"></i>
+                            </div>
+                            <h4 class="text-sm font-bold text-slate-700 mb-1">未找到匹配的学术插件</h4>
+                            <p class="text-xs text-slate-400 max-w-sm mb-4">没有找到与当前筛选条件相关的插件或技能，请尝试其他关键词</p>
+                            <button type="button" @click="clearMarketSearch ? clearMarketSearch() : (marketSearchKeyword = ''); selectedPluginCategory = 'all'"
+                                class="px-4 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl text-xs font-bold transition-all">
+                                清空筛选条件
+                            </button>
+                        </div>
+
+                        <!-- 正常卡片网格：卡片使用 self-start 与自然高度，完全与图2保持统一的精致尺寸 -->
+                        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                            style="align-content: flex-start; align-items: flex-start; grid-auto-rows: max-content;">
+                            <div v-for="plugin in filteredPlugins" :key="plugin.id"
+                                class="bg-white rounded-2xl border border-slate-200/80 hover:border-violet-300 hover:shadow-lg hover:-translate-y-0.5 p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 group relative self-start w-full">
+                                <!-- 卡片主要信息 -->
+                                <div>
+                                    <div class="flex items-start justify-between gap-2.5 mb-2.5">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm shrink-0"
+                                                :class="plugin.colorClass">
+                                                <i :class="plugin.icon"></i>
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <h4 class="text-sm font-bold text-slate-800 group-hover:text-violet-600 transition-colors flex items-center gap-1.5 cursor-pointer truncate"
+                                                    :title="plugin.name"
+                                                    @click="openPluginDetail(plugin)">
+                                                    <span class="truncate">{{ plugin.name }}</span>
+                                                </h4>
+                                                <span class="inline-block text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium truncate max-w-full">
+                                                    {{ plugin.badge }}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h4 class="text-sm font-bold text-slate-800 group-hover:text-violet-600 transition-colors flex items-center gap-1.5 cursor-pointer"
-                                                @click="openPluginDetail(plugin)">
-                                                <span>{{ plugin.name }}</span>
-                                            </h4>
-                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
-                                                {{ plugin.badge }}
-                                            </span>
-                                        </div>
+                                        <button type="button" @click.stop="togglePlugin(plugin.id)"
+                                            class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                                            :class="isPluginInstalled(plugin.id) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-xs'">
+                                            <i class="ph" :class="isPluginInstalled(plugin.id) ? 'ph-check' : 'ph-plus'"></i>
+                                            <span>{{ isPluginInstalled(plugin.id) ? '已添加' : '添加' }}</span>
+                                        </button>
                                     </div>
-                                    <button type="button" @click.stop="togglePlugin(plugin.id)"
-                                        class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0"
-                                        :class="isPluginInstalled(plugin.id) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-xs'">
-                                        <i class="ph" :class="isPluginInstalled(plugin.id) ? 'ph-check' : 'ph-plus'"></i>
-                                        <span>{{ isPluginInstalled(plugin.id) ? '已添加' : '添加' }}</span>
+
+                                    <p class="text-xs text-slate-500 leading-relaxed line-clamp-2 my-2.5"
+                                        :title="plugin.tagline">
+                                        {{ plugin.tagline }}
+                                    </p>
+
+                                    <!-- 特性标签 -->
+                                    <div class="flex flex-wrap gap-1.5 mb-3">
+                                        <span v-for="(feat, fIdx) in plugin.features.slice(0, 2)" :key="fIdx"
+                                            class="text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md border border-slate-100/80 truncate max-w-full"
+                                            :title="feat">
+                                            {{ feat }}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- 卡片底部快捷操作 -->
+                                <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                                    <button type="button" @click="openPluginDetail(plugin)"
+                                        class="text-xs font-bold text-slate-500 hover:text-violet-600 transition-colors flex items-center gap-1 cursor-pointer">
+                                        <i class="ph ph-info"></i>
+                                        <span>查看详情</span>
+                                    </button>
+                                    <button v-if="plugin.canSearchLive" type="button" @click="openPaperSearchDrawer(plugin)"
+                                        class="text-xs font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100/90 border border-violet-100/80 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer">
+                                        <i class="ph ph-lightning"></i>
+                                        <span>在线检索试用</span>
                                     </button>
                                 </div>
-
-                                <p class="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
-                                    {{ plugin.tagline }}
-                                </p>
-
-                                <!-- 特性标签 -->
-                                <div class="flex flex-wrap gap-1 mb-3">
-                                    <span v-for="(feat, fIdx) in plugin.features.slice(0, 2)" :key="fIdx"
-                                        class="text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md border border-slate-100 truncate max-w-full">
-                                        {{ feat }}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <!-- 卡片底部快捷操作 -->
-                            <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
-                                <button type="button" @click="openPluginDetail(plugin)"
-                                    class="text-xs font-bold text-slate-500 hover:text-violet-600 transition-colors flex items-center gap-1">
-                                    <i class="ph ph-info"></i>
-                                    <span>查看详情</span>
-                                </button>
-                                <button v-if="plugin.canSearchLive" type="button" @click="openPaperSearchDrawer(plugin)"
-                                    class="text-xs font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1">
-                                    <i class="ph ph-lightning"></i>
-                                    <span>在线检索试用</span>
-                                </button>
                             </div>
                         </div>
                     </div>

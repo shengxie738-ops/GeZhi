@@ -33,6 +33,7 @@ from app.services.chat_history import (
     save_chat_message,
 )
 from app.services.agent_workflow import agent_graph, resolve_runtime_model_id
+from app.services.default_agents import get_default_agent_prompt
 from app.services.model_registry import build_chat_model, has_model, list_public_models
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
@@ -42,6 +43,11 @@ router = APIRouter()
 def resolve_agent_mode(request: ChatRequest) -> str:
     if request.agent_mode:
         return normalize_agent_mode(request.agent_mode)
+    if request.agent_id:
+        if request.agent_id in ("agent_paper", "paper"):
+            return "paper"
+        if request.agent_id in ("agent_researcher", "rag"):
+            return "rag"
     return "rag" if request.force_rag else "tutor"
 
 
@@ -60,15 +66,22 @@ def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
         return request.agent_id
     if request.is_diagnosis or "【用户当前代码】" in (request.message or ""):
         return "agent_coder"
-    return "agent_researcher" if agent_mode == "rag" else "agent_tutor"
+    if agent_mode == "paper":
+        return "agent_paper"
+    if agent_mode == "rag":
+        return "agent_researcher"
+    return "agent_tutor"
 
 
 def build_agent_runtime_config(request: ChatRequest, *, thread_id: str, agent_mode: str, message: str) -> dict:
+    agent_id = resolve_request_agent_id(request, agent_mode)
+    agent_prompt = request.agent_prompt or get_default_agent_prompt(agent_id)
     configurable = {
         "thread_id": thread_id,
-        "agent_id": resolve_request_agent_id(request, agent_mode),
+        "agent_id": agent_id,
+        "agent_mode": agent_mode,
         "agent_model": request.agent_model,
-        "agent_prompt": request.agent_prompt,
+        "agent_prompt": agent_prompt,
     }
     selected_model = resolve_runtime_model_id({"configurable": configurable}, message)
     configurable["agent_model"] = selected_model
@@ -261,8 +274,12 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     cleaned_msg = clean_message_content(request.message)
     save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="user", content=cleaned_msg)
     
-    # 寒暄检测：如果是寒暄，则不检索知识库
-    if not is_greeting(cleaned_msg):
+    # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
+    should_search_knowledge = (
+        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        and not is_greeting(cleaned_msg)
+    )
+    if should_search_knowledge:
         try:
             all_chunks = retrieve_chunks_for_user(
                 db,
@@ -328,8 +345,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             elif isinstance(msg, AIMessage) and msg.content:
                 history_list.append(f"AI: {msg.content}")
     except Exception as e:
-        rag_result = query_data_structure_knowledge.invoke({"query": request.message})
-        final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，已直接为您调用本地 RAGFlow 检索】\n\n{rag_result}"
+        try:
+            rag_result = query_data_structure_knowledge.invoke({"query": request.message})
+            final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，已直接为您调用本地 RAGFlow 检索】\n\n{rag_result}"
+        except Exception as rag_err:
+            final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，本地检索不可用，请稍后重试】"
         if is_model_invocation_error(e):
             final_reply = build_model_unavailable_notice(config["configurable"]["agent_model"]) + "\n\n" + final_reply
         final_reply = strip_reference_source_block(final_reply)
@@ -452,8 +472,12 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     cleaned_msg = clean_message_content(request.message)
     save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="user", content=cleaned_msg)
     
-    # 寒暄检测：如果是寒暄，则不检索知识库
-    if not is_greeting(cleaned_msg):
+    # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
+    should_search_knowledge = (
+        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        and not is_greeting(cleaned_msg)
+    )
+    if should_search_knowledge:
         try:
             yield f"data: {json.dumps({'type': 'progress', 'agent': 'DataBot', 'status': '正在检索本地课件知识库...'})}\n\n"
             await asyncio.sleep(0.05)
@@ -523,7 +547,12 @@ async def stream_chat_events(request: ChatRequest, db: Session):
         return
 
     # Normal Agent flow: LangGraph
-    yield f"data: {json.dumps({'type': 'progress', 'agent': 'Alina', 'status': 'Alina 正在规划您的学习路径并协同导师...'})}\n\n"
+    if agent_mode == "paper":
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'PaperBot', 'status': 'PaperBot 正在检索学术文献与研读分析...'})}\n\n"
+    elif agent_mode == "chat":
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'AI助手', 'status': 'AI 助手正在组织回答...'})}\n\n"
+    else:
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'Alina', 'status': 'Alina 正在规划您的学习路径并协同导师...'})}\n\n"
     await asyncio.sleep(0.05)
     initial_state = {"messages": [HumanMessage(content=user_content)]}
     
@@ -582,7 +611,7 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             fallback_reply = strip_reference_source_block(fallback_reply)
             yield f"data: {json.dumps({'type': 'token', 'content': fallback_reply})}\n\n"
             from app.services.profile_extractor import extract_and_update_profile
-            save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=fallback_reply, sender_id="agent_researcher")
+            save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=fallback_reply, sender_id=get_runtime_agent_id(config))
             asyncio.create_task(extract_and_update_profile(user_id, request.message, fallback_reply))
         except Exception as ex:
             yield f"data: {json.dumps({'type': 'error', 'message': f'系统出错: {str(ex)}'})}\n\n"

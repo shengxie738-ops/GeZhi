@@ -42,6 +42,29 @@ DEFAULT_AGENTS = [
         "prompt": "你负责在本地知识库中进行 RAG（检索增强生成）查询，提取关键信息。",
     },
     {
+        "id": "agent_paper",
+        "name": "PaperBot",
+        "role": "学术论文与文献研读专家",
+        "avatar": "./assets/agents/paperbot.png",
+        "icon": "ph-article",
+        "colorClass": "bg-sky-500",
+        "isThinking": False,
+        "isActive": True,
+        "modelCategory": "text",
+        "model": "qwen3.7-plus",
+        "prompt": (
+            "你是一个权威的学术论文检索与文献研读专家（PaperBot / 学术文献导师）。"
+            "你专注于计算机科学、人工智能、数据结构与算法及相关领域的学术文献查询、论文精读、技术脉络梳理与文献综述生成。\n\n"
+            "当用户输入论文题目、关键词、作者或领域方向时，你必须以严谨、结构化、清晰的学术格式进行解答：\n"
+            "1. 【核心文献/论文推荐与概览】：给出顶会/期刊（如 NeurIPS, ICML, ICLR, CVPR, ACL, IEEE/ACM 等）的代表性经典与前沿论文，标明作者、发表年份与会议/arXiv。\n"
+            "2. 【核心创新与解决痛点 (Motivation & Contributions)】：深入剖析论文提出的核心理论或模型架构创新。\n"
+            "3. 【核心方法与算法架构 (Methodology)】：清晰拆解其算法流程、数学公式或网络结构。\n"
+            "4. 【实验结果与基准对比 (Experiments & Benchmarks)】：说明在主流公开数据集上的指标表现与消融分析。\n"
+            "5. 【BibTeX 引用格式】：提供规范的 BibTeX 引用代码块，便于学术写作与论文引用。\n"
+            "请保持学术严谨性，排版清晰美观，使用 Markdown 标题、加粗和列表进行结构化呈现。"
+        ),
+    },
+    {
         "id": "agent_mistake_analyst",
         "name": "错题分析师",
         "role": "错题诊断与复习路径规划师",
@@ -165,3 +188,16 @@ DEFAULT_AGENTS = [
 
 def get_default_agents():
     return deepcopy(DEFAULT_AGENTS)
+
+
+def get_default_agent(agent_id: str) -> dict | None:
+    for agent in DEFAULT_AGENTS:
+        if agent["id"] == agent_id:
+            return deepcopy(agent)
+    return None
+
+
+def get_default_agent_prompt(agent_id: str) -> str:
+    agent = get_default_agent(agent_id)
+    return agent.get("prompt", "") if agent else ""
+

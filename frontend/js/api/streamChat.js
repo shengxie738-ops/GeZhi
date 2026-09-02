@@ -30,21 +30,23 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
     const currentTime = formatChatTimestamp();
 
     const userMsgId = Date.now();
-    messages.value.push({ id: userMsgId, senderType: 'user', content: msg, time: currentTime, createdAt: currentTime });
+    messages.value.push({ id: userMsgId, senderType: 'user', content: msg, time: currentTime, createdAt: currentTime, mode: normalizedMode });
     parsedHtmlCache[userMsgId] = safeParse(msg);
 
     inputText.value = '';
     throttledScroll(chatContainer);
 
-    thinkingAgent.value = normalizedMode === 'rag' ? 'agent_researcher' : 'agent_tutor';
+    const resolvedAgentId = normalizedMode === 'paper' ? 'agent_paper' : (normalizedMode === 'rag' ? 'agent_researcher' : 'agent_tutor');
+    thinkingAgent.value = resolvedAgentId;
     const streamMessageId = Date.now() + 1;
     const agentTime = formatChatTimestamp();
     const newAgentMsg = reactive({
         id: streamMessageId,
         senderType: 'agent',
-        senderId: normalizedMode === 'rag' ? 'agent_researcher' : 'agent_tutor',
+        senderId: resolvedAgentId,
         time: agentTime,
         createdAt: agentTime,
+        mode: normalizedMode,
         content: ''
     });
     messages.value.push(newAgentMsg);
@@ -105,14 +107,23 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
                             newAgentMsg.content += data.content;
                             throttledParse(streamMessageId, newAgentMsg.content);
                             throttledScroll(chatContainer);
-                        } else if (data.type === 'progress') {
                             const agentMap = {
                                 'Alina': 'agent_planner',
+                                '首席规划师': 'agent_planner',
                                 'Prof. X': 'agent_tutor',
+                                'Prof.X': 'agent_tutor',
+                                '知识讲授导师': 'agent_tutor',
+                                '导师': 'agent_tutor',
                                 'DataBot': 'agent_researcher',
-                                'CodeNinja': 'agent_coder'
+                                '数据检索助手': 'agent_researcher',
+                                'CodeNinja': 'agent_coder',
+                                '代码演示助手': 'agent_coder',
+                                'PaperBot': 'agent_paper',
+                                '论文研读助手': 'agent_paper',
+                                '学术文献与前沿论文研读专家': 'agent_paper',
+                                'agent_paper': 'agent_paper'
                             };
-                            const agentId = agentMap[data.agent] || 'agent_tutor';
+                            const agentId = agentMap[data.agent] || newAgentMsg.senderId || resolvedAgentId;
                             thinkingAgent.value = agentId;
                             newAgentMsg.senderId = agentId; // 动态变更消息发送者头像
 
@@ -152,7 +163,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             try {
                 const chatResponse = await request('/chat', {
                     method: 'POST',
-                    body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds }))
+                    body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model }))
                 });
                 if (chatResponse && chatResponse.reply) {
                     newAgentMsg.content = chatResponse.reply;
@@ -166,7 +177,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         throttledScroll(chatContainer);
 
     } catch (error) {
-        thinkingAgent.value = 'agent_tutor';
+        thinkingAgent.value = resolvedAgentId;
         const fallback = `[格至 智能体响应 (在线演示)]
 
 您刚才输入了："**${msg}**"。
