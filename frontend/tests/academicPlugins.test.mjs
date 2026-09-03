@@ -48,6 +48,15 @@ test('academicPlugins: every marketplace plugin should provide an existing gener
 
         const iconPath = path.resolve(__dirname, '..', plugin.iconImage.slice(2));
         assert.ok(fs.existsSync(iconPath), `${plugin.id} 的图标文件应存在: ${iconPath}`);
+
+        const iconBytes = fs.readFileSync(iconPath);
+        assert.equal(
+            iconBytes.subarray(0, 8).toString('hex'),
+            '89504e470d0a1a0a',
+            `${plugin.id} 的图标应为真实 PNG 文件`
+        );
+        assert.equal(iconBytes.readUInt32BE(16), 256, `${plugin.id} 的图标宽度应为 256px`);
+        assert.equal(iconBytes.readUInt32BE(20), 256, `${plugin.id} 的图标高度应为 256px`);
     }
 });
 

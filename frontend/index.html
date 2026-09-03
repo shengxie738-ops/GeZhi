@@ -5322,9 +5322,12 @@
                                 <div>
                                     <div class="flex items-start justify-between gap-2.5 mb-2.5">
                                         <div class="flex items-center gap-3 min-w-0">
-                                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm shrink-0"
-                                                :class="plugin.colorClass">
-                                                <i :class="plugin.icon"></i>
+                                            <div class="relative w-10 h-10 rounded-xl bg-[#f5f1e8] border border-[#e7dfcf] flex items-center justify-center text-slate-500 text-lg shadow-sm overflow-hidden shrink-0">
+                                                <i :class="plugin.icon" aria-hidden="true"></i>
+                                                <img :src="plugin.iconImage" alt="" aria-hidden="true"
+                                                    data-plugin-icon="market-card"
+                                                    class="absolute inset-0 w-full h-full object-contain p-1"
+                                                    @error="$event.currentTarget.remove()">
                                             </div>
                                             <div class="min-w-0 flex-1">
                                                 <h4 class="text-sm font-bold text-slate-800 group-hover:text-violet-600 transition-colors flex items-center gap-1.5 cursor-pointer truncate"
@@ -5389,9 +5392,12 @@
                     <!-- 详情头部 -->
                     <div class="px-6 py-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/60">
                         <div class="flex items-center gap-3.5">
-                            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white text-2xl shadow-md"
-                                :class="selectedPluginDetail.colorClass">
-                                <i :class="selectedPluginDetail.icon"></i>
+                            <div class="relative w-12 h-12 rounded-2xl bg-[#f5f1e8] border border-[#e7dfcf] flex items-center justify-center text-slate-500 text-2xl shadow-sm overflow-hidden shrink-0">
+                                <i :class="selectedPluginDetail.icon" aria-hidden="true"></i>
+                                <img :src="selectedPluginDetail.iconImage" alt="" aria-hidden="true"
+                                    data-plugin-icon="plugin-detail"
+                                    class="absolute inset-0 w-full h-full object-contain p-1"
+                                    @error="$event.currentTarget.remove()">
                             </div>
                             <div>
                                 <div class="flex items-center gap-2">
@@ -5498,9 +5504,12 @@
                     <!-- 检索面板头部 -->
                     <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-lg shadow-sm"
-                                :class="activeSearchPlugin.colorClass">
-                                <i :class="activeSearchPlugin.icon"></i>
+                            <div class="relative w-10 h-10 rounded-xl bg-[#f5f1e8] border border-[#e7dfcf] flex items-center justify-center text-slate-500 text-lg shadow-sm overflow-hidden shrink-0">
+                                <i :class="activeSearchPlugin.icon" aria-hidden="true"></i>
+                                <img :src="activeSearchPlugin.iconImage" alt="" aria-hidden="true"
+                                    data-plugin-icon="search-drawer"
+                                    class="absolute inset-0 w-full h-full object-contain p-1"
+                                    @error="$event.currentTarget.remove()">
                             </div>
                             <div>
                                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
