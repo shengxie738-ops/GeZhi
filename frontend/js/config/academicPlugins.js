@@ -15,8 +15,9 @@ export const ACADEMIC_PLUGINS = [
         id: 'plugin_arxiv',
         name: 'arXiv Paper Hunter',
         category: 'paper_search',
-        tagline: '计算机与人工智能前沿预印本文献秒级检索',
+        tagline: '计算机与人工智能前沿预印本文献检索',
         icon: 'ph-newspaper-clipping',
+        iconImage: './assets/plugin-icons/arxiv-paper-hunter.png',
         colorClass: 'from-rose-500 to-red-600',
         badge: 'arXiv.org',
         author: 'arXiv Open Access & Community',
@@ -25,11 +26,11 @@ export const ACADEMIC_PLUGINS = [
         defaultInstalled: true,
         features: [
             '支持计算机科学 (CS)、人工智能 (AI)、物理与数学最新预印本检索',
-            '一键直接获取官方 PDF 原文链接与全文摘要',
-            '支持按年份、分类 (cs.AI, cs.CL, cs.CV) 过滤排序',
-            '支持一键生成并复制标准 BibTeX / APA 学术引用'
+            '获取官方论文页面、开放全文链接与来源摘要',
+            '支持按题名、关键词、作者与预印本标识检索',
+            '支持导出与复制类型正确的 BibTeX / RIS 学术引用'
         ],
-        detailDescription: 'arXiv Paper Hunter 是基于 arXiv 官方 REST API 与 Open Access 协议开发的学术论文检索插件。它为格至协同工作台提供毫秒级的预印本文献追踪能力，无论是最新的大语言模型研究还是前沿算法突破，均可实时提取摘要与全文 PDF。',
+        detailDescription: 'arXiv Paper Hunter 是基于 arXiv 官方 REST API 与 Open Access 协议开发的学术论文检索插件。它为格至协同工作台提供可信的预印本文献追踪能力，无论是最新的大语言模型研究还是前沿算法突破，均可实时获取来源摘要与开放全文链接。',
         useCases: ['调研最新前沿大模型论文', '查阅算法与模型实验对比', '导出论文 BibTeX 引用'],
         permissions: ['联网学术检索 (export.arxiv.org)', 'PDF 链接解析'],
         canSearchLive: true,
@@ -39,8 +40,9 @@ export const ACADEMIC_PLUGINS = [
         id: 'plugin_openalex',
         name: 'OpenAlex Global Scholar',
         category: 'paper_search',
-        tagline: '全球 2.5 亿+ 开放获取多学科全域学术知识图谱',
+        tagline: '多学科全域学术文献知识图谱',
         icon: 'ph-globe-hemisphere-east',
+        iconImage: './assets/plugin-icons/openalex-global-scholar.png',
         colorClass: 'from-blue-500 to-indigo-600',
         badge: 'OpenAlex API',
         author: 'OurResearch & Open Source',
@@ -48,10 +50,10 @@ export const ACADEMIC_PLUGINS = [
         githubUrl: 'https://github.com/aiming-lab/AutoResearchClaw',
         defaultInstalled: true,
         features: [
-            '涵盖全学科、全领域跨机构 2.5 亿+ 学术成果',
-            '作者学者、大学高校与科研机构学术图谱关联',
-            '跨学科文献影响力与引用频次多维统计',
-            '完全开放获取，无需任何 API 密钥'
+            '涵盖多学科期刊与会议学术成果',
+            '展示文献作者、发表年份与出版来源元数据',
+            '提供官方被引频次与开放获取链接',
+            '完全开放获取，支持多来源元数据融合'
         ],
         detailDescription: 'OpenAlex 是完全开放的跨学科文献大数据库。通过本插件，格至智能协同平台能够跨越单一学科边界，检索工程、医学、人文社科等多领域的权威期刊与会议论文，提供立体的文献知识网络。',
         useCases: ['跨学科综合课题文献调研', '学者与机构学术产出分析', '高引经典论文发掘'],
@@ -63,8 +65,9 @@ export const ACADEMIC_PLUGINS = [
         id: 'plugin_crossref',
         name: 'Crossref DOI Resolver',
         category: 'paper_search',
-        tagline: '权威 DOI 精准元数据解析与期刊会议文献定位',
+        tagline: '权威 DOI 元数据解析与期刊会议文献检索',
         icon: 'ph-link-simple-horizontal',
+        iconImage: './assets/plugin-icons/crossref-doi-resolver.png',
         colorClass: 'from-amber-500 to-orange-600',
         badge: 'Crossref REST',
         author: 'Crossref Community',
@@ -72,9 +75,9 @@ export const ACADEMIC_PLUGINS = [
         githubUrl: 'https://github.com/fabiobatalha/crossrefapi',
         defaultInstalled: true,
         features: [
-            '支持通过 DOI 号秒级解析出发表刊物、卷期页码与官方元数据',
-            '支持学术期刊 (IEEE/ACM/Nature/Elsevier等) 标题模糊检索',
-            '精准生成 GB/T 7714、APA、IEEE、BibTeX 格式引文'
+            '支持通过 DOI 与题名词条解析出版刊物与官方元数据',
+            '支持学术期刊 (IEEE/ACM/Nature/Elsevier等) 标题检索',
+            '导出标准 BibTeX 与 RIS 格式文献引文'
         ],
         detailDescription: 'Crossref 是全球学术出版界通用的数字对象标识符 (DOI) 注册管理机构。本插件专为学术规范化设计，可精准校验论文发表真实性，自动格式化引文，免去手动核对参考文献的繁琐。',
         useCases: ['DOI 编号一键反查论文元数据', '毕业论文与学术小论文参考文献自动整理'],
@@ -88,6 +91,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'paper_search',
         tagline: '生命科学、生物医学与临床前沿开放文献库',
         icon: 'ph-dna',
+        iconImage: './assets/plugin-icons/europe-pmc-life-sciences.png',
         colorClass: 'from-emerald-500 to-teal-600',
         badge: 'Europe PMC',
         author: 'EMBL-EBI & Europe PMC',
@@ -95,9 +99,9 @@ export const ACADEMIC_PLUGINS = [
         githubUrl: 'https://github.com/jannisborn/paperscraper',
         defaultInstalled: false,
         features: [
-            '覆盖 PubMed、PMC 全文、生物医学预印本 (bioRxiv/medRxiv)',
-            '支持开源 XML/PDF 全文挖掘与临床试验关联',
-            '基因、蛋白质与生物实体智能提取'
+            '覆盖生物医学与生命科学领域开放文献',
+            '获取官方文献页面、开放全文链接与来源摘要',
+            '支持导出与复制标准 BibTeX / RIS 学术引文'
         ],
         detailDescription: 'Europe PMC 由欧洲生物信息学研究所 (EMBL-EBI) 主导，是全球生命科学领域最权威的开放知识库之一。本插件支持从海量生物医学、临床研究中抽取文献证据。',
         useCases: ['生物信息学与医学课题调研', '临床试验与前沿生物预印本追踪'],
@@ -111,6 +115,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'academic_skills',
         tagline: 'AI 驱动的学术引用影响力分析与文献关系网络',
         icon: 'ph-brain',
+        iconImage: './assets/plugin-icons/semantic-scholar-insight.png',
         colorClass: 'from-violet-500 to-purple-600',
         badge: 'Semantic Scholar',
         author: 'Allen Institute for AI (AI2)',
@@ -118,11 +123,11 @@ export const ACADEMIC_PLUGINS = [
         githubUrl: 'https://github.com/mcp-labs/scholar-search-mcp',
         defaultInstalled: true,
         features: [
-            '智能辨识「高影响力引用 (Highly Influential Citations)」',
-            '自动梳理论文发展脉络与演进谱系图',
-            '相关工作与前置知识智能推荐'
+            '辨识高影响力引用文献',
+            '梳理论文发展脉络与演进谱系图',
+            '相关工作与前置知识展示'
         ],
-        detailDescription: 'Semantic Scholar Insight 利用先进的自然语言处理与引用分析模型，帮助学生和科研人员穿透论文列表，直观掌握某篇论文的学术分量与前因后果。',
+        detailDescription: 'Semantic Scholar Insight 利用引用分析模型，帮助学生和科研人员掌握某篇论文的学术分量与前因后果。',
         useCases: ['快速辨析某篇论文是否为领域开山之作', '寻找论文的演进分支与后继改良工作'],
         permissions: ['AI 学术图谱分析'],
         canSearchLive: false
@@ -133,6 +138,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'academic_skills',
         tagline: '个人文献管理软件联动与学术笔记知识资产库',
         icon: 'ph-books',
+        iconImage: './assets/plugin-icons/zotero-knowledge-bridge.png',
         colorClass: 'from-red-500 to-rose-600',
         badge: 'Zotero MCP',
         author: 'Open Source Community',
@@ -155,6 +161,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'academic_skills',
         tagline: '论文结构精读、同行评审意见生成与学术英语润色',
         icon: 'ph-feather',
+        iconImage: './assets/plugin-icons/academic-reviewer-refiner.png',
         colorClass: 'from-cyan-500 to-blue-600',
         badge: 'Academic Skill',
         author: 'Gezhi Academic Core',
@@ -177,6 +184,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'dev_tools',
         tagline: '浏览器端安全 Python 沙箱执行与算法即时验算',
         icon: 'ph-terminal-window',
+        iconImage: './assets/plugin-icons/python-code-sandbox.png',
         colorClass: 'from-emerald-500 to-teal-600',
         badge: 'Pyodide / WASM',
         author: 'Python Software Foundation',
@@ -199,6 +207,7 @@ export const ACADEMIC_PLUGINS = [
         category: 'data_analysis',
         tagline: '学术雷达图、实验折线图与知识网络拓扑图实时渲染',
         icon: 'ph-chart-line-up',
+        iconImage: './assets/plugin-icons/echarts-visual-engine.png',
         colorClass: 'from-amber-500 to-yellow-600',
         badge: 'Apache ECharts',
         author: 'Apache Software Foundation',
@@ -223,4 +232,38 @@ export function getPluginById(id) {
 
 export function getDefaultInstalledPluginIds() {
     return ACADEMIC_PLUGINS.filter(p => p.defaultInstalled).map(p => p.id);
+}
+
+/**
+ * 解析可检索的学术来源 keys
+ * 优先级: 显式传入 plugin > 输入框挂载插件 > 已安装插件
+ * 绝不隐式回退到默认来源
+ */
+export function resolvePaperSourceKeys(plugin, activeInputPlugins = [], installedPlugins = []) {
+    if (plugin?.canSearchLive && plugin.searchSourceKey) {
+        return [plugin.searchSourceKey];
+    }
+    const mounted = (activeInputPlugins || []).filter(item => item?.canSearchLive && item?.searchSourceKey);
+    if (mounted.length > 0) {
+        return [...new Set(mounted.map(item => item.searchSourceKey))];
+    }
+    const installed = (installedPlugins || []).filter(item => item?.canSearchLive && item?.searchSourceKey);
+    return [...new Set(installed.map(item => item.searchSourceKey))];
+}
+
+/**
+ * 从存储中安全读取已安装插件 ID 列表
+ * 仅在 storage key 不存在时返回默认值；用户明确保存的空数组 [] 原样保留
+ */
+export function readInstalledPluginIdsSafe(storage, storageKey) {
+    try {
+        const raw = storage ? storage.getItem(storageKey) : null;
+        if (raw !== null && raw !== undefined) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[academicPlugins] Failed to parse installed plugins from storage:', e);
+    }
+    return getDefaultInstalledPluginIds();
 }

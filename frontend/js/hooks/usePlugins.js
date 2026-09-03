@@ -1,25 +1,37 @@
 /**
- * usePlugins.js - 插件市场与输入框 Codex 风格联动 Hook
+ * usePlugins.js - 插件市场与论文检索控制器 Hook
  */
 import { ref, computed, watch } from 'vue';
-import { ACADEMIC_PLUGINS, PLUGIN_CATEGORIES, getPluginById, getDefaultInstalledPluginIds } from '../config/academicPlugins.js';
-import { searchAcademicPapers, formatBibtex } from '../api/academicSearch.js';
+import {
+    ACADEMIC_PLUGINS,
+    PLUGIN_CATEGORIES,
+    getPluginById,
+    getDefaultInstalledPluginIds,
+    resolvePaperSourceKeys,
+    readInstalledPluginIdsSafe
+} from '../config/academicPlugins.js';
+import {
+    searchAcademicPapers,
+    formatBibtex,
+    formatRis,
+    copyCitation,
+    downloadCitation
+} from '../api/academicSearch.js';
+
+const SOURCE_LABELS = {
+    arxiv: 'arXiv',
+    openalex: 'OpenAlex',
+    crossref: 'Crossref',
+    europepmc: 'Europe PMC'
+};
 
 export function usePlugins(currentUser, showToast, inputTextRef) {
     const getSessionId = () => currentUser?.value?.username || 'guest';
     const getStorageKey = () => `installed_plugins:${getSessionId()}`;
 
     const readInstalledIds = () => {
-        try {
-            const raw = localStorage.getItem(getStorageKey());
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) return parsed;
-            }
-        } catch (e) {
-            console.warn('[usePlugins] Failed to parse installed plugins from storage:', e);
-        }
-        return getDefaultInstalledPluginIds();
+        if (typeof localStorage === 'undefined') return getDefaultInstalledPluginIds();
+        return readInstalledPluginIdsSafe(localStorage, getStorageKey());
     };
 
     const installedPluginIds = ref(readInstalledIds());
@@ -28,19 +40,28 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const marketSearchKeyword = ref('');
     const selectedPluginDetail = ref(null);
 
-    // 在线论文即时检索抽屉状态
+    // 论文检索状态与控制器
     const activeSearchPlugin = ref(null);
     const paperSearchQuery = ref('');
     const paperSearchResults = ref([]);
     const isSearchingPapers = ref(false);
+    const paperSearchStatus = ref('idle'); // 'idle' | 'searching' | 'success' | 'partial' | 'empty' | 'error'
+    const paperSourceStatuses = ref([]);
+    const paperSearchSummary = ref({ totalBeforeMerge: 0, totalAfterMerge: 0 });
+    const paperSearchError = ref('');
+    const selectedPaper = ref(null);
 
     // 输入框左侧 + 号 Codex 风格悬浮菜单状态
     const showAddMenu = ref(false);
     const activeInputPlugins = ref([]);
 
+    let currentPaperSearchController = null;
+
     watch(installedPluginIds, (newVal) => {
         try {
-            localStorage.setItem(getStorageKey(), JSON.stringify(newVal));
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(getStorageKey(), JSON.stringify(newVal));
+            }
         } catch (e) {
             console.warn('[usePlugins] Failed to save installed plugins to storage:', e);
         }
@@ -54,6 +75,10 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         return installedPluginIds.value
             .map(id => getPluginById(id))
             .filter(Boolean);
+    });
+
+    const selectedPaperSourceKeys = computed(() => {
+        return resolvePaperSourceKeys(activeSearchPlugin.value, activeInputPlugins.value, installedPlugins.value);
     });
 
     const isPluginInstalled = (pluginId) => {
@@ -118,46 +143,146 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         activeSearchPlugin.value = plugin;
         paperSearchQuery.value = '';
         paperSearchResults.value = [];
-        // 默认执行一次热点词检索
-        executePaperSearch('DeepSeek');
+        executePaperSearch('DeepSeek', plugin);
     };
 
     const closePaperSearchDrawer = () => {
         activeSearchPlugin.value = null;
     };
 
-    const executePaperSearch = async (overrideQuery = null) => {
-        const query = (overrideQuery || paperSearchQuery.value).trim();
+    /**
+     * 执行真实学术文献检索，支持实时增量状态、多来源聚合与取消
+     * @param {string|null} overrideQuery
+     * @param {object|null} pluginOverride
+     * @returns {Promise<boolean>}
+     */
+    const executePaperSearch = async (overrideQuery = null, pluginOverride = null) => {
+        const query = (overrideQuery !== null ? overrideQuery : paperSearchQuery.value).trim();
         if (!query) {
             if (showToast) showToast('请输入检索关键词', 'error');
-            return;
+            return false;
         }
         paperSearchQuery.value = query;
-        isSearchingPapers.value = true;
-        try {
-            const sourceKey = activeSearchPlugin.value?.searchSourceKey || 'arxiv';
-            const results = await searchAcademicPapers(query, sourceKey);
-            paperSearchResults.value = results;
-        } catch (error) {
-            if (showToast) showToast('检索服务暂时繁忙，已切换至离线智能推荐结果', 'warning');
-        } finally {
+
+        const targetPlugin = pluginOverride || activeSearchPlugin.value;
+        const sourceKeys = resolvePaperSourceKeys(targetPlugin, activeInputPlugins.value, installedPlugins.value);
+
+        if (!sourceKeys || sourceKeys.length === 0) {
+            paperSearchError.value = '请先添加至少一个可实时检索的论文来源';
+            paperSearchStatus.value = 'error';
+            paperSearchResults.value = [];
+            paperSourceStatuses.value = [];
             isSearchingPapers.value = false;
+            if (showToast) showToast('请先添加至少一个可实时检索的论文来源', 'warning');
+            return false;
+        }
+
+        // 取消旧搜索
+        if (currentPaperSearchController) {
+            currentPaperSearchController.abort();
+        }
+        const thisController = new AbortController();
+        currentPaperSearchController = thisController;
+
+        isSearchingPapers.value = true;
+        paperSearchError.value = '';
+        paperSearchStatus.value = 'searching';
+
+        // 预填 searching 状态
+        paperSourceStatuses.value = sourceKeys.map(key => ({
+            key,
+            label: SOURCE_LABELS[key] || key,
+            status: 'searching',
+            count: 0,
+            durationMs: 0,
+            error: ''
+        }));
+
+        try {
+            const res = await searchAcademicPapers(query, {
+                sourceKeys,
+                signal: thisController.signal,
+                onSourceStatus: (event) => {
+                    if (thisController !== currentPaperSearchController) return;
+                    const idx = paperSourceStatuses.value.findIndex(s => s.key === event.key);
+                    if (idx !== -1) {
+                        paperSourceStatuses.value[idx] = {
+                            ...paperSourceStatuses.value[idx],
+                            ...event
+                        };
+                    } else {
+                        paperSourceStatuses.value.push({ ...event });
+                    }
+                }
+            });
+
+            if (thisController === currentPaperSearchController) {
+                paperSearchResults.value = res.items || [];
+                paperSearchStatus.value = res.status;
+                paperSearchSummary.value = {
+                    totalBeforeMerge: res.totalBeforeMerge,
+                    totalAfterMerge: res.totalAfterMerge
+                };
+                return true;
+            }
+            return false;
+        } catch (err) {
+            if (thisController === currentPaperSearchController) {
+                if (err?.name === 'AbortError') {
+                    return false;
+                }
+                paperSearchStatus.value = 'error';
+                paperSearchError.value = err?.message || '检索失败';
+                if (showToast) showToast(paperSearchError.value, 'error');
+                return false;
+            }
+            return false;
+        } finally {
+            if (thisController === currentPaperSearchController) {
+                isSearchingPapers.value = false;
+            }
         }
     };
 
-    const copyBibtexCitation = async (paper) => {
+    /**
+     * 论文模式主输入框分流检索入口
+     * @param {string} query
+     * @returns {Promise<boolean>}
+     */
+    const searchFromPaperMode = async (query) => {
+        return await executePaperSearch(query);
+    };
+
+    const openPaperDetail = (paper) => {
+        selectedPaper.value = paper;
+    };
+
+    const closePaperDetail = () => {
+        selectedPaper.value = null;
+    };
+
+    const copyPaperCitation = async (paper) => {
+        if (!paper) return;
         const bib = formatBibtex(paper);
-        try {
-            await navigator.clipboard.writeText(bib);
-            if (showToast) showToast('BibTeX 引用已复制到剪贴板！', 'success');
-        } catch (e) {
-            if (showToast) showToast('复制失败，请手动复制', 'error');
+        const success = await copyCitation(bib);
+        if (success && showToast) {
+            showToast('BibTeX 引用已复制到剪贴板！', 'success');
+        } else if (!success && showToast) {
+            showToast('复制失败，请手动复制', 'error');
+        }
+    };
+
+    const downloadPaperCitation = (paper, format = 'bib') => {
+        if (!paper) return;
+        downloadCitation(paper, format);
+        if (showToast) {
+            showToast(`已开始下载 .${format} 引用文件`, 'success');
         }
     };
 
     const insertPaperToChat = (paper) => {
         if (!inputTextRef) return;
-        const snippet = `\n> 📚 **参考论文：${paper.title}** (${paper.year}, ${paper.source})\n> 作者: ${paper.authorsText}\n> 摘要: ${paper.abstract.slice(0, 160)}...\n\n请针对以上论文，结合我的问题进行深度分析：`;
+        const snippet = `\n> 📚 **参考论文：${paper.title}** (${paper.year || ''}, ${paper.sources?.map(s => s.label).join('/') || ''})\n> 作者: ${paper.authorsText}\n> 摘要: ${(paper.abstract || '').slice(0, 160)}...\n\n请针对以上论文，结合我的问题进行深度分析：`;
         inputTextRef.value = (inputTextRef.value || '') + snippet;
         closePluginMarket();
         closePaperSearchDrawer();
@@ -206,6 +331,12 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         paperSearchQuery,
         paperSearchResults,
         isSearchingPapers,
+        paperSearchStatus,
+        paperSourceStatuses,
+        paperSearchSummary,
+        paperSearchError,
+        selectedPaper,
+        selectedPaperSourceKeys,
         showAddMenu,
         activeInputPlugins,
         filteredPlugins,
@@ -222,10 +353,16 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         openPaperSearchDrawer,
         closePaperSearchDrawer,
         executePaperSearch,
-        copyBibtexCitation,
+        searchFromPaperMode,
+        openPaperDetail,
+        closePaperDetail,
+        copyPaperCitation,
+        copyBibtexCitation: copyPaperCitation, // 向后兼容
+        downloadPaperCitation,
         insertPaperToChat,
         toggleAddMenu,
         insertPluginToInput,
-        removeActiveInputPlugin
+        removeActiveInputPlugin,
+        resolvePaperSourceKeys
     };
 }
