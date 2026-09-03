@@ -60,6 +60,8 @@ assert.deepEqual(
     content: 'answer',
     time: '2026-06-30 23:35:25',
     createdAt: '2026-06-30 23:35:25',
+    mode: 'tutor',
+    projectId: 'proj-tutor',
   },
 );
 

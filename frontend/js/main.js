@@ -36,6 +36,7 @@ import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
 import { usePlugins } from './hooks/usePlugins.js';
+import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
 
 import { courseMindmaps } from './data/mockData.js?v=20260620';
 import { radarOptionTemplate, getLineOptionTemplate } from './config/chartOptions.js';
@@ -132,6 +133,16 @@ const app = createApp({
 
         // 11. 插件市场与 Codex 输入框联动 Hook
         const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
+
+        // 12. 工作台消息分流控制器 (论文检索与普通对话解耦)
+        const workspaceSendMessage = createWorkspaceMessageSender({
+            getMode: () => chat.agentMode.value,
+            getInput: () => chat.inputText.value,
+            isPaperSearching: () => pluginsState.isSearchingPapers.value,
+            sendChat: chat.sendMessage,
+            searchPapers: pluginsState.searchFromPaperMode,
+            clearInput: () => { chat.inputText.value = ''; }
+        });
 
         // ================== 新增：工作台学习模式分流控制 ==================
         const selectWorkspaceMode = (mode) => {
@@ -665,7 +676,7 @@ const app = createApp({
             downloadVisualGuide: chat.downloadVisualGuide,
             triggerFileInput: () => chat.triggerFileInput(auth.isLoggedIn.value),
             handleFileUpload: chat.handleFileUpload,
-            sendMessage: chat.sendMessage,
+            sendMessage: workspaceSendMessage,
             parsedHtmlCache: chat.parsedHtmlCache,
 
 
@@ -796,7 +807,18 @@ const app = createApp({
             openPaperSearchDrawer: pluginsState.openPaperSearchDrawer,
             closePaperSearchDrawer: pluginsState.closePaperSearchDrawer,
             executePaperSearch: pluginsState.executePaperSearch,
+            searchFromPaperMode: pluginsState.searchFromPaperMode,
+            paperSearchStatus: pluginsState.paperSearchStatus,
+            paperSourceStatuses: pluginsState.paperSourceStatuses,
+            paperSearchSummary: pluginsState.paperSearchSummary,
+            paperSearchError: pluginsState.paperSearchError,
+            selectedPaper: pluginsState.selectedPaper,
+            selectedPaperSourceKeys: pluginsState.selectedPaperSourceKeys,
+            openPaperDetail: pluginsState.openPaperDetail,
+            closePaperDetail: pluginsState.closePaperDetail,
+            copyPaperCitation: pluginsState.copyPaperCitation,
             copyBibtexCitation: pluginsState.copyBibtexCitation,
+            downloadPaperCitation: pluginsState.downloadPaperCitation,
             insertPaperToChat: pluginsState.insertPaperToChat,
             toggleAddMenu: pluginsState.toggleAddMenu,
             insertPluginToInput: pluginsState.insertPluginToInput,

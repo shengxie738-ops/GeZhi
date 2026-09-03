@@ -1,0 +1,129 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createWorkspaceMessageSender } from '../js/controllers/workspaceSendRouter.js';
+
+function createSpy(implementation = () => {}) {
+    const fn = async (...args) => {
+        fn.calls.push(args);
+        return await implementation(...args);
+    };
+    fn.calls = [];
+    return fn;
+}
+
+test('paperSearchFlow: paper mode invokes searchPapers once and never invokes sendChat', async () => {
+    const sendChatSpy = createSpy();
+    const searchPapersSpy = createSpy(async () => true);
+    let inputValue = 'Attention Is All You Need';
+    const clearInputSpy = createSpy(() => { inputValue = ''; });
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => inputValue,
+        isPaperSearching: () => false,
+        sendChat: sendChatSpy,
+        searchPapers: searchPapersSpy,
+        clearInput: clearInputSpy
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, true);
+    assert.equal(searchPapersSpy.calls.length, 1, 'searchPapers 应恰好调用 1 次');
+    assert.equal(searchPapersSpy.calls[0][0], 'Attention Is All You Need');
+    assert.equal(sendChatSpy.calls.length, 0, 'sendChat 绝不得被调用');
+    assert.equal(clearInputSpy.calls.length, 1, '成功检索后应清空输入');
+    assert.equal(inputValue, '');
+});
+
+test('paperSearchFlow: chat, tutor, and rag modes invoke sendChat once and never invoke searchPapers', async () => {
+    const modes = ['chat', 'tutor', 'rag'];
+
+    for (const mode of modes) {
+        const sendChatSpy = createSpy();
+        const searchPapersSpy = createSpy();
+        const clearInputSpy = createSpy();
+
+        const sendMessage = createWorkspaceMessageSender({
+            getMode: () => mode,
+            getInput: () => `Query for ${mode}`,
+            isPaperSearching: () => false,
+            sendChat: sendChatSpy,
+            searchPapers: searchPapersSpy,
+            clearInput: clearInputSpy
+        });
+
+        await sendMessage();
+
+        assert.equal(sendChatSpy.calls.length, 1, `${mode} 模式下 sendChat 应恰好调用 1 次`);
+        assert.equal(sendChatSpy.calls[0][0], `Query for ${mode}`);
+        assert.equal(searchPapersSpy.calls.length, 0, `${mode} 模式下 searchPapers 绝不得被调用`);
+    }
+});
+
+test('paperSearchFlow: empty query does not trigger any search or chat and does not clear input', async () => {
+    const sendChatSpy = createSpy();
+    const searchPapersSpy = createSpy();
+    const clearInputSpy = createSpy();
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => '   \n  ',
+        isPaperSearching: () => false,
+        sendChat: sendChatSpy,
+        searchPapers: searchPapersSpy,
+        clearInput: clearInputSpy
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, false);
+    assert.equal(searchPapersSpy.calls.length, 0, '空查询不触发 searchPapers');
+    assert.equal(sendChatSpy.calls.length, 0, '空查询不触发 sendChat');
+    assert.equal(clearInputSpy.calls.length, 0, '空查询不应清空输入');
+});
+
+test('paperSearchFlow: does not resubmit when paper search is already in progress', async () => {
+    const sendChatSpy = createSpy();
+    const searchPapersSpy = createSpy();
+    const clearInputSpy = createSpy();
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => 'transformer model',
+        isPaperSearching: () => true, // 正在搜索中
+        sendChat: sendChatSpy,
+        searchPapers: searchPapersSpy,
+        clearInput: clearInputSpy
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, false);
+    assert.equal(searchPapersSpy.calls.length, 0, '进行中的检索不应重复提交');
+    assert.equal(sendChatSpy.calls.length, 0);
+    assert.equal(clearInputSpy.calls.length, 0);
+});
+
+test('paperSearchFlow: only clears input when searchPapers returns true', async () => {
+    const sendChatSpy = createSpy();
+    const searchPapersFailSpy = createSpy(async () => false); // 失败或由于无插件被拦截
+    let inputValue = 'failed query';
+    const clearInputSpy = createSpy(() => { inputValue = ''; });
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => inputValue,
+        isPaperSearching: () => false,
+        sendChat: sendChatSpy,
+        searchPapers: searchPapersFailSpy,
+        clearInput: clearInputSpy
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, false);
+    assert.equal(searchPapersFailSpy.calls.length, 1);
+    assert.equal(clearInputSpy.calls.length, 0, '检索未成功时不应清空输入');
+    assert.equal(inputValue, 'failed query', '输入内容必须保留方便用户修改或重试');
+});
