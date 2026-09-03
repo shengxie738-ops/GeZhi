@@ -74,7 +74,7 @@ export const request = async (url, options = {}) => {
         return data;
     } catch (error) {
         if (error instanceof TypeError && /fetch/i.test(error.message || '')) {
-            error.message = `无法连接学习诊断服务（${fullUrl}）。请确认后端 8516 端口正在运行，并检查浏览器跨域设置。`;
+            error.message = `无法连接后端服务（${fullUrl}）。请确认服务正在运行，并检查浏览器跨域设置。`;
         }
         console.error(`[API Request Error] ${fullUrl}:`, error);
         throw error;

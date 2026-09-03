@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import agents, analytics, auth, chat, code_repository, dashboard, evaluator, exams, forum, gitea_accounts, homework, journal, language, profile, ranked, team_git, user_center, user_knowledge, visual_guide, learning_diagnosis, teacher_learning_diagnosis, teacher_lesson_prep
+from app.api.endpoints import academic, agents, analytics, auth, chat, code_repository, dashboard, evaluator, exams, forum, gitea_accounts, homework, journal, language, profile, ranked, team_git, user_center, user_knowledge, visual_guide, learning_diagnosis, teacher_learning_diagnosis, teacher_lesson_prep
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="", tags=["auth"])
+api_router.include_router(academic.router, prefix="", tags=["academic"])
 api_router.include_router(agents.router, prefix="", tags=["agents"])
 api_router.include_router(chat.router, prefix="", tags=["chat"])
 api_router.include_router(profile.router, prefix="", tags=["profile"])

@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8516
     BACKEND_CORS_ORIGINS: str = ""
 
+    # Academic search
+    OPENALEX_API_KEY: str = ""
+    CROSSREF_MAILTO: str = ""
+    ACADEMIC_CACHE_TTL_SECONDS: int = 600
+    ARXIV_CACHE_TTL_SECONDS: int = 86400
+    ARXIV_MIN_INTERVAL_SECONDS: float = 3.0
+
     # RAGFlow
     RAGFLOW_API_KEY: str
     RAGFLOW_BASE_URL: str
