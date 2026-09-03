@@ -127,3 +127,22 @@ test('paperSearchFlow: only clears input when searchPapers returns true', async 
     assert.equal(clearInputSpy.calls.length, 0, '检索未成功时不应清空输入');
     assert.equal(inputValue, 'failed query', '输入内容必须保留方便用户修改或重试');
 });
+
+test('paperSearchFlow: send button disabled condition correctly includes paper searching state', () => {
+    // 模拟前端 index.html 中的禁用逻辑:
+    // :disabled="!inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers)"
+    const isSendDisabled = ({ inputText, thinkingAgent, agentMode, isSearchingPapers }) => {
+        return !inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers);
+    };
+
+    // 普通模式下不受 isSearchingPapers 影响
+    assert.equal(isSendDisabled({ inputText: 'hi', thinkingAgent: null, agentMode: 'chat', isSearchingPapers: true }), false);
+    assert.equal(isSendDisabled({ inputText: 'hi', thinkingAgent: null, agentMode: 'tutor', isSearchingPapers: true }), false);
+    assert.equal(isSendDisabled({ inputText: 'hi', thinkingAgent: null, agentMode: 'rag', isSearchingPapers: true }), false);
+
+    // 论文模式下，如果正在检索中，发送按钮必须被禁用 (防抖防重复点击)
+    assert.equal(isSendDisabled({ inputText: 'Transformer', thinkingAgent: null, agentMode: 'paper', isSearchingPapers: true }), true);
+    // 论文模式下，非检索中且输入非空，可发送
+    assert.equal(isSendDisabled({ inputText: 'Transformer', thinkingAgent: null, agentMode: 'paper', isSearchingPapers: false }), false);
+});
+

@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { buildChatPayload } from '../js/utils/chatModes.js';
 
+const resolveFile = (relPath) => {
+    if (existsSync(relPath)) return relPath;
+    const fallback = relPath.replace(/^frontend\//, './');
+    if (existsSync(fallback)) return fallback;
+    const fallback2 = './frontend/' + relPath.replace(/^\.\//, '');
+    if (existsSync(fallback2)) return fallback2;
+    return relPath;
+};
+
 test('Task 1: useAuth should have 一站式 Work menu configuration', () => {
-    const authCode = readFileSync('./frontend/js/hooks/useAuth.js', 'utf-8');
+    const authCode = readFileSync(resolveFile('frontend/js/hooks/useAuth.js'), 'utf-8');
     assert.match(authCode, /name:\s*['"]一站式 Work['"]/);
 });
 
@@ -23,7 +32,7 @@ test('Task 2: buildChatPayload should support custom model selection for hot swi
 });
 
 test('Task 2: useChat.js should export model switcher and work mode switcher', () => {
-    const chatCode = readFileSync('./frontend/js/hooks/useChat.js', 'utf-8');
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
     assert.match(chatCode, /currentModel/);
     assert.match(chatCode, /modelOptions/);
     assert.match(chatCode, /switchModel/);
@@ -31,7 +40,8 @@ test('Task 2: useChat.js should export model switcher and work mode switcher', (
 });
 
 test('Task 3: index.html should contain Codex/TRAE style 一站式 Work workspace structure', () => {
-    const htmlCode = readFileSync('./frontend/index.html', 'utf-8');
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
     // 不再有老旧分流提示
     assert.doesNotMatch(htmlCode, /选择您的工作台模式/);
     // 包含 AI 对话 侧栏按钮

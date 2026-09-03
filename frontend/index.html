@@ -3642,7 +3642,7 @@
 
                                                     <!-- 发送执行按钮 (紫色渐变胶囊) -->
                                                     <button type="button" @click="sendMessage"
-                                                        :disabled="!inputText.trim() || thinkingAgent !== null"
+                                                        :disabled="!inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers)"
                                                         class="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                                                         <span>发送</span>
                                                         <i class="ph ph-arrow-up text-sm font-bold"></i>
@@ -3657,6 +3657,200 @@
                                                 <i class="ph ph-cloud text-slate-500"></i>
                                                 <span class="text-slate-600">云端协同</span>
                                                 <i class="ph ph-caret-down text-[10px]"></i>
+                                            </div>
+                                        </div>
+
+                                        <!-- ==================== 论文查询模式：多来源真实检索状态与结果 ==================== -->
+                                        <div v-if="agentMode === 'paper'" class="w-full max-w-3xl mt-6 flex flex-col gap-4">
+                                            <!-- 总状态与多来源增量状态栏 -->
+                                            <div v-if="isSearchingPapers || paperSearchStatus !== 'idle' || paperSourceStatuses.length > 0"
+                                                class="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col gap-3">
+                                                
+                                                <!-- 头部总状态与统计 -->
+                                                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-bold text-slate-800 flex items-center gap-1.5">
+                                                            <i class="ph ph-magnifying-glass text-sky-600 font-bold"></i>
+                                                            <span>多来源真实检索</span>
+                                                        </span>
+                                                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold"
+                                                            :class="{
+                                                                'bg-sky-50 text-sky-700 border border-sky-200': paperSearchStatus === 'searching',
+                                                                'bg-emerald-50 text-emerald-700 border border-emerald-200': paperSearchStatus === 'success',
+                                                                'bg-amber-50 text-amber-700 border border-amber-200': paperSearchStatus === 'partial',
+                                                                'bg-rose-50 text-rose-700 border border-rose-200': paperSearchStatus === 'error',
+                                                                'bg-slate-100 text-slate-600 border border-slate-200': paperSearchStatus === 'empty' || paperSearchStatus === 'idle'
+                                                            }">
+                                                            <span v-if="paperSearchStatus === 'searching'">正在检索...</span>
+                                                            <span v-else-if="paperSearchStatus === 'success'">来源响应正常</span>
+                                                            <span v-else-if="paperSearchStatus === 'partial'">部分来源不可用</span>
+                                                            <span v-else-if="paperSearchStatus === 'error'">检索失败</span>
+                                                            <span v-else-if="paperSearchStatus === 'empty'">真实来源未找到匹配论文</span>
+                                                            <span v-else>就绪</span>
+                                                        </span>
+                                                    </div>
+
+                                                    <!-- 汇总统计 -->
+                                                    <div v-if="paperSearchSummary.totalAfterMerge > 0 || paperSearchResults.length > 0"
+                                                        class="text-slate-500 text-xs">
+                                                        <span>合并前 {{ paperSearchSummary.totalBeforeMerge }} 篇，去重后 {{ paperSearchSummary.totalAfterMerge }} 篇</span>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 每来源增量状态循环 -->
+                                                <div v-if="paperSourceStatuses.length > 0" class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                                                    <div v-for="src in paperSourceStatuses" :key="src.key"
+                                                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all"
+                                                        :class="{
+                                                            'bg-sky-50/70 border-sky-200 text-sky-800': src.status === 'searching',
+                                                            'bg-emerald-50/70 border-emerald-200 text-emerald-800': src.status === 'success',
+                                                            'bg-rose-50/70 border-rose-200 text-rose-800': src.status === 'error',
+                                                            'bg-slate-50 border-slate-200 text-slate-500': src.status === 'pending' || !src.status
+                                                        }">
+                                                        <span class="font-bold">{{ src.label || src.key }}</span>
+                                                        <span v-if="src.status === 'searching'" class="flex items-center gap-1 text-sky-600">
+                                                            <i class="ph ph-spinner animate-spin"></i>
+                                                            <span>检索中</span>
+                                                        </span>
+                                                        <span v-else-if="src.status === 'success'" class="flex items-center gap-1 text-emerald-600">
+                                                            <i class="ph ph-check-circle"></i>
+                                                            <span>{{ src.count }} 篇 · {{ src.durationMs }}ms</span>
+                                                        </span>
+                                                        <span v-else-if="src.status === 'error'" class="flex items-center gap-1 text-rose-600" :title="src.error">
+                                                            <i class="ph ph-warning-circle"></i>
+                                                            <span>失败</span>
+                                                            <span v-if="src.error" class="text-[10px] text-rose-500 max-w-[140px] truncate">({{ src.error }})</span>
+                                                        </span>
+                                                        <span v-else class="text-slate-400">等待</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- 空状态：未挂载来源 -->
+                                            <div v-if="paperSearchStatus === 'error' && paperSearchError.includes('请先添加')"
+                                                class="py-8 px-6 bg-white rounded-2xl border border-slate-200 text-center flex flex-col items-center justify-center gap-3 shadow-xs">
+                                                <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl">
+                                                    <i class="ph ph-plugs"></i>
+                                                </div>
+                                                <div>
+                                                    <h4 class="text-sm font-bold text-slate-800">未启用任何学术检索来源</h4>
+                                                    <p class="text-xs text-slate-500 mt-1">请先在插件市场添加至少一个学术数据源（OpenAlex、arXiv、Crossref、Europe PMC 等）</p>
+                                                </div>
+                                                <button type="button" @click="openPluginMarket"
+                                                    class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5">
+                                                    <i class="ph ph-puzzle-piece"></i>
+                                                    <span>去添加来源</span>
+                                                </button>
+                                            </div>
+
+                                            <!-- 空状态：未找到匹配结果 -->
+                                            <div v-else-if="paperSearchStatus === 'empty'"
+                                                class="py-10 px-6 bg-white rounded-2xl border border-slate-200 text-center flex flex-col items-center justify-center gap-2 shadow-xs">
+                                                <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center text-2xl">
+                                                    <i class="ph ph-file-dashed"></i>
+                                                </div>
+                                                <h4 class="text-sm font-bold text-slate-700">真实来源未找到匹配论文</h4>
+                                                <p class="text-xs text-slate-400">请尝试更换英文术语、调整检索词或检查拼写后重试</p>
+                                            </div>
+
+                                            <!-- 错误状态：其他检索错误 -->
+                                            <div v-else-if="paperSearchStatus === 'error'"
+                                                class="py-8 px-6 bg-white rounded-2xl border border-rose-200 text-center flex flex-col items-center justify-center gap-2 shadow-xs">
+                                                <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-2xl">
+                                                    <i class="ph ph-warning-circle"></i>
+                                                </div>
+                                                <h4 class="text-sm font-bold text-slate-800">学术检索异常</h4>
+                                                <p class="text-xs text-rose-600">{{ paperSearchError }}</p>
+                                                <button type="button" @click="executePaperSearch(paperSearchQuery || inputText)"
+                                                    class="mt-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5">
+                                                    <i class="ph ph-arrow-clockwise"></i>
+                                                    <span>重新检索</span>
+                                                </button>
+                                            </div>
+
+                                            <!-- 论文结果列表 -->
+                                            <div v-if="paperSearchResults.length > 0" class="space-y-4">
+                                                <div v-for="paper in paperSearchResults" :key="paper.id"
+                                                    class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-sky-300 hover:shadow-md transition-all flex flex-col justify-between gap-3">
+                                                    <div>
+                                                        <div class="flex items-start justify-between gap-2.5 mb-1.5">
+                                                            <h4 class="text-base font-bold text-slate-900 leading-snug">{{ paper.title }}</h4>
+                                                            <div class="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                                                                <span v-for="src in paper.sources" :key="src.key" class="text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-bold border border-sky-200/80">
+                                                                    {{ src.label }}
+                                                                </span>
+                                                                <span v-if="paper.year" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">
+                                                                    {{ paper.year }}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-2.5">
+                                                            <span v-if="paper.authorsText" class="flex items-center gap-1">
+                                                                <i class="ph ph-users text-slate-400"></i>
+                                                                <span>{{ paper.authorsText }}</span>
+                                                            </span>
+                                                            <span v-if="paper.venue" class="text-slate-400">· {{ paper.venue }}</span>
+                                                            <span v-if="paper.publicationType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono">
+                                                                {{ paper.publicationType }}
+                                                            </span>
+                                                            <span v-if="paper.citationCount !== null && paper.citationCount !== undefined" class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200/60">
+                                                                被引 {{ paper.citationCount }}
+                                                            </span>
+                                                            <span v-if="paper.doi" class="text-[10px] font-mono text-slate-400 truncate max-w-[200px]" :title="paper.doi">
+                                                                DOI: {{ paper.doi }}
+                                                            </span>
+                                                        </div>
+
+                                                        <p class="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                            {{ paper.abstract || '该数据源未提供摘要' }}
+                                                        </p>
+                                                    </div>
+
+                                                    <!-- 卡片底部操作栏 -->
+                                                    <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <button type="button" @click="openPaperDetail(paper)"
+                                                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center gap-1.5 transition-colors">
+                                                                <i class="ph ph-file-text"></i>
+                                                                <span>查看详情</span>
+                                                            </button>
+                                                            <a v-if="paper.officialUrl" :href="paper.officialUrl" target="_blank" rel="noopener noreferrer"
+                                                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center gap-1.5 transition-colors">
+                                                                <i class="ph ph-arrow-square-out"></i>
+                                                                <span>访问官方论文页面</span>
+                                                            </a>
+                                                            <a v-if="paper.openAccessUrl" :href="paper.openAccessUrl" target="_blank" rel="noopener noreferrer"
+                                                                class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl font-bold flex items-center gap-1.5 transition-colors">
+                                                                <i class="ph ph-lock-open"></i>
+                                                                <span>打开开放全文</span>
+                                                            </a>
+                                                            <span v-else class="text-[11px] text-slate-400 italic flex items-center gap-1 px-1">
+                                                                <i class="ph ph-lock-simple"></i>
+                                                                <span>暂未发现开放全文</span>
+                                                            </span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                            <button type="button" @click="copyPaperCitation(paper)"
+                                                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center gap-1 transition-colors"
+                                                                title="复制 BibTeX 引用">
+                                                                <i class="ph ph-quotes"></i>
+                                                                <span>复制 BibTeX</span>
+                                                            </button>
+                                                            <button type="button" @click="downloadPaperCitation(paper, 'bib')"
+                                                                class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center gap-1 transition-colors"
+                                                                title="下载 .bib 文件">
+                                                                <i class="ph ph-download-simple"></i>
+                                                                <span>.bib</span>
+                                                            </button>
+                                                            <button type="button" @click="insertPaperToChat(paper)"
+                                                                class="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-xs">
+                                                                <i class="ph ph-chat-circle-dots"></i>
+                                                                <span>引入对话</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -3856,7 +4050,7 @@
                                                             </div>
                                                         </div>
                                                         <button type="button" @click="sendMessage"
-                                                            :disabled="!inputText.trim() || thinkingAgent !== null"
+                                                            :disabled="!inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers)"
                                                             class="px-4 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-xs hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                                                             <span>发送</span>
                                                             <i class="ph ph-arrow-up font-bold"></i>
@@ -5310,10 +5504,10 @@
                             </div>
                             <div>
                                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                                    <span>{{ activeSearchPlugin.name }} 论文实时检索</span>
-                                    <span class="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">API 在线</span>
+                                    <span>{{ activeSearchPlugin.name }} 多来源真实检索</span>
+                                    <span class="text-[10px] px-2 py-0.5 bg-sky-100 text-sky-800 rounded-full font-bold">多来源真实检索</span>
                                 </h3>
-                                <p class="text-xs text-slate-400">输入主题、作者或技术关键词，直接获取前沿文献与 BibTeX 引用</p>
+                                <p class="text-xs text-slate-400">基于官方学术 API 实时检索前沿文献，可导出标准 BibTeX 与 RIS 引用</p>
                             </div>
                         </div>
                         <button type="button" @click="closePaperSearchDrawer"
@@ -5337,55 +5531,276 @@
                         </button>
                     </div>
 
+                    <!-- 来源增量状态与统计条 -->
+                    <div v-if="paperSourceStatuses.length > 0 || paperSearchSummary.totalAfterMerge > 0"
+                        class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-col gap-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-bold text-slate-700">来源响应状态</span>
+                            <span v-if="paperSearchSummary.totalAfterMerge > 0" class="text-slate-500 text-[11px]">
+                                合并前 {{ paperSearchSummary.totalBeforeMerge }} 篇，去重后 {{ paperSearchSummary.totalAfterMerge }} 篇
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div v-for="src in paperSourceStatuses" :key="src.key"
+                                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium"
+                                :class="{
+                                    'bg-sky-50 border-sky-200 text-sky-800': src.status === 'searching',
+                                    'bg-emerald-50 border-emerald-200 text-emerald-800': src.status === 'success',
+                                    'bg-rose-50 border-rose-200 text-rose-800': src.status === 'error',
+                                    'bg-slate-100 border-slate-200 text-slate-500': src.status === 'pending' || !src.status
+                                }">
+                                <span>{{ src.label || src.key }}</span>
+                                <span v-if="src.status === 'searching'" class="flex items-center gap-1 text-sky-600">
+                                    <i class="ph ph-spinner animate-spin text-[11px]"></i>
+                                    <span>检索中</span>
+                                </span>
+                                <span v-else-if="src.status === 'success'" class="text-emerald-700 font-bold">
+                                    {{ src.count }}篇 ({{ src.durationMs }}ms)
+                                </span>
+                                <span v-else-if="src.status === 'error'" class="text-rose-700 font-bold" :title="src.error">
+                                    失败
+                                </span>
+                                <span v-else class="text-slate-400">等待</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 结果列表 -->
                     <div class="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar bg-slate-50/40">
                         <div v-if="isSearchingPapers" class="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
                             <i class="ph ph-spinner animate-spin text-3xl text-violet-600"></i>
-                            <span class="text-xs">正在连接 {{ activeSearchPlugin.name }} 获取最新文献...</span>
+                            <span class="text-xs">正在连接学术数据源获取真实文献...</span>
+                        </div>
+
+                        <div v-else-if="paperSearchStatus === 'empty'" class="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                            <i class="ph ph-file-dashed text-4xl text-slate-300"></i>
+                            <span class="text-xs">真实来源未找到匹配论文，请尝试其他关键词</span>
                         </div>
 
                         <div v-else-if="paperSearchResults.length === 0" class="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
                             <i class="ph ph-file-dashed text-4xl text-slate-300"></i>
-                            <span class="text-xs">暂无检索结果，请尝试其他关键词</span>
+                            <span class="text-xs">暂无检索结果，请输入关键词发起检索</span>
                         </div>
 
                         <div v-for="paper in paperSearchResults" :key="paper.id"
-                            class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-violet-300 hover:shadow-xs transition-all flex flex-col justify-between gap-2.5">
+                            class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-sky-300 hover:shadow-xs transition-all flex flex-col justify-between gap-2.5">
                             <div>
                                 <div class="flex items-start justify-between gap-2 mb-1">
                                     <h4 class="text-sm font-bold text-slate-900 leading-snug">{{ paper.title }}</h4>
-                                    <span class="text-[10px] px-2 py-0.5 rounded bg-violet-50 text-violet-700 font-bold shrink-0">
-                                        {{ paper.year }} · {{ paper.source }}
-                                    </span>
+                                    <div class="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                                        <span v-for="src in paper.sources" :key="src.key" class="text-[10px] px-2 py-0.5 rounded bg-sky-50 text-sky-700 font-bold">
+                                            {{ src.label }}
+                                        </span>
+                                        <span v-if="paper.year" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">
+                                            {{ paper.year }}
+                                        </span>
+                                    </div>
                                 </div>
-                                <p class="text-xs text-slate-500 mb-2">
-                                    <i class="ph ph-users text-slate-400 mr-1"></i>{{ paper.authorsText }}
-                                </p>
+                                <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-2">
+                                    <span v-if="paper.authorsText"><i class="ph ph-users text-slate-400 mr-1"></i>{{ paper.authorsText }}</span>
+                                    <span v-if="paper.publicationType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono text-[10px]">{{ paper.publicationType }}</span>
+                                    <span v-if="paper.citationCount !== null && paper.citationCount !== undefined" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-bold">被引 {{ paper.citationCount }}</span>
+                                    <span v-if="paper.doi" class="text-[10px] text-slate-400 font-mono truncate max-w-[180px]">DOI: {{ paper.doi }}</span>
+                                </div>
                                 <p class="text-xs text-slate-600 leading-relaxed line-clamp-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                    {{ paper.abstract }}
+                                    {{ paper.abstract || '该数据源未提供摘要' }}
                                 </p>
                             </div>
 
                             <!-- 底部操作 -->
-                            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                                <div class="flex items-center gap-2">
-                                    <a v-if="paper.pdfUrl" :href="paper.pdfUrl" target="_blank"
-                                        class="px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg font-bold flex items-center gap-1 transition-colors">
-                                        <i class="ph ph-file-pdf"></i>
-                                        <span>PDF 原文</span>
+                            <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button type="button" @click="openPaperDetail(paper)"
+                                        class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors">
+                                        <i class="ph ph-file-text"></i>
+                                        <span>查看详情</span>
+                                    </button>
+                                    <a v-if="paper.officialUrl" :href="paper.officialUrl" target="_blank" rel="noopener noreferrer"
+                                        class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors">
+                                        <i class="ph ph-arrow-square-out"></i>
+                                        <span>访问官方论文页面</span>
                                     </a>
+                                    <a v-if="paper.openAccessUrl" :href="paper.openAccessUrl" target="_blank" rel="noopener noreferrer"
+                                        class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg font-bold flex items-center gap-1 transition-colors">
+                                        <i class="ph ph-lock-open"></i>
+                                        <span>打开开放全文</span>
+                                    </a>
+                                    <span v-else class="text-[11px] text-slate-400 italic flex items-center gap-1 px-1">
+                                        <i class="ph ph-lock-simple"></i>
+                                        <span>暂未发现开放全文</span>
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2">
                                     <button type="button" @click="copyBibtexCitation(paper)"
                                         class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors">
                                         <i class="ph ph-quotes"></i>
                                         <span>复制 BibTeX</span>
                                     </button>
+                                    <button type="button" @click="downloadPaperCitation(paper, 'bib')"
+                                        class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors"
+                                        title="下载 .bib 文件">
+                                        <i class="ph ph-download-simple"></i>
+                                        <span>.bib</span>
+                                    </button>
+                                    <button type="button" @click="insertPaperToChat(paper)"
+                                        class="px-3 py-1 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold flex items-center gap-1 transition-colors shadow-2xs">
+                                        <i class="ph ph-chat-circle-dots"></i>
+                                        <span>引入当前对话</span>
+                                    </button>
                                 </div>
-                                <button type="button" @click="insertPaperToChat(paper)"
-                                    class="px-3 py-1 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold flex items-center gap-1 transition-colors shadow-2xs">
-                                    <i class="ph ph-chat-circle-dots"></i>
-                                    <span>引入当前对话</span>
-                                </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ==================== 学术论文详情弹窗 (Paper Detail Modal) ==================== -->
+        <transition name="fade">
+            <div v-if="selectedPaper" v-cloak
+                class="fixed inset-0 z-[220] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 sm:p-6"
+                tabindex="-1"
+                @keydown.esc="closePaperDetail"
+                @click.self="closePaperDetail">
+                <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up outline-none focus:ring-2 focus:ring-sky-500">
+                    <!-- 头部 -->
+                    <div class="px-6 py-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/70">
+                        <div class="flex items-start gap-3.5 pr-4">
+                            <div class="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center text-xl shrink-0 shadow-xs">
+                                <i class="ph ph-article"></i>
+                            </div>
+                            <div>
+                                <div class="flex flex-wrap items-center gap-2 mb-1">
+                                    <span v-for="src in selectedPaper.sources" :key="src.key" class="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-bold border border-sky-200">
+                                        {{ src.label }}
+                                    </span>
+                                    <span v-if="selectedPaper.year" class="text-[10px] px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-bold">
+                                        {{ selectedPaper.year }}
+                                    </span>
+                                    <span v-if="selectedPaper.publicationType" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono">
+                                        {{ selectedPaper.publicationType }}
+                                    </span>
+                                </div>
+                                <h3 class="text-base sm:text-lg font-bold text-slate-900 leading-snug">{{ selectedPaper.title }}</h3>
+                            </div>
+                        </div>
+                        <button type="button" @click="closePaperDetail"
+                            class="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all shrink-0">
+                            <i class="ph ph-x text-lg"></i>
+                        </button>
+                    </div>
+
+                    <!-- 内容滚动区域 -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                        <!-- 作者与出处 -->
+                        <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-2">
+                            <div class="text-xs text-slate-600 flex items-start gap-2">
+                                <span class="font-bold text-slate-700 shrink-0">作者团队：</span>
+                                <span class="leading-relaxed">{{ selectedPaper.authorsText || '暂无作者信息' }}</span>
+                            </div>
+                            <div v-if="selectedPaper.venue || selectedPaper.journal" class="text-xs text-slate-600 flex items-start gap-2">
+                                <span class="font-bold text-slate-700 shrink-0">发表刊物/会议：</span>
+                                <span class="leading-relaxed">{{ selectedPaper.venue || selectedPaper.journal }}</span>
+                            </div>
+                            <div v-if="selectedPaper.retrievedAt" class="text-[11px] text-slate-400 flex items-center gap-2">
+                                <span class="font-medium text-slate-500">检索时间：</span>
+                                <span>{{ selectedPaper.retrievedAt }}</span>
+                            </div>
+                        </div>
+
+                        <!-- 标识符与引用统计 -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="p-3.5 rounded-2xl bg-white border border-slate-200/90 text-xs space-y-1.5">
+                                <div class="font-bold text-slate-700 flex items-center gap-1.5">
+                                    <i class="ph ph-fingerprint text-sky-600"></i>
+                                    <span>学术标识符</span>
+                                </div>
+                                <div class="text-slate-600 font-mono text-[11px] space-y-1">
+                                    <div v-if="selectedPaper.doi" class="truncate" :title="selectedPaper.doi">DOI: {{ selectedPaper.doi }}</div>
+                                    <div v-if="selectedPaper.arxivId">arXiv: {{ selectedPaper.arxivId }}</div>
+                                    <div v-if="selectedPaper.pmid">PMID: {{ selectedPaper.pmid }}</div>
+                                    <div v-if="!selectedPaper.doi && !selectedPaper.arxivId && !selectedPaper.pmid" class="text-slate-400 italic">暂无官方标识符</div>
+                                </div>
+                            </div>
+                            <div class="p-3.5 rounded-2xl bg-white border border-slate-200/90 text-xs space-y-1.5">
+                                <div class="font-bold text-slate-700 flex items-center gap-1.5">
+                                    <i class="ph ph-chart-line-up text-amber-600"></i>
+                                    <span>引用统计与来源</span>
+                                </div>
+                                <div class="text-slate-600 text-[11px] space-y-1">
+                                    <div>被引次数：<span class="font-bold text-amber-700">{{ selectedPaper.citationCount !== null && selectedPaper.citationCount !== undefined ? selectedPaper.citationCount : '暂未统计' }}</span></div>
+                                    <div class="text-slate-400">引用量来源：{{ selectedPaper.citationSource || '开放学术元数据' }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 摘要 -->
+                        <div class="space-y-2">
+                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="ph ph-text-align-left text-slate-500"></i>
+                                <span>论文摘要</span>
+                            </h4>
+                            <p class="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                {{ selectedPaper.abstract || '该数据源未提供摘要' }}
+                            </p>
+                        </div>
+
+                        <!-- 来源记录明细 -->
+                        <div v-if="selectedPaper.sources && selectedPaper.sources.length > 0" class="space-y-2">
+                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="ph ph-tree-structure text-slate-500"></i>
+                                <span>来源记录追踪</span>
+                            </h4>
+                            <div class="flex flex-wrap gap-2">
+                                <div v-for="src in selectedPaper.sources" :key="src.key"
+                                    class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs space-y-0.5">
+                                    <div class="font-bold text-slate-800">{{ src.label }}</div>
+                                    <div v-if="src.rawId" class="text-[10px] text-slate-400 font-mono">ID: {{ src.rawId }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 底部操作栏 -->
+                    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a v-if="selectedPaper.officialUrl" :href="selectedPaper.officialUrl" target="_blank" rel="noopener noreferrer"
+                                class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
+                                <i class="ph ph-arrow-square-out"></i>
+                                <span>访问官方论文页面</span>
+                            </a>
+                            <a v-if="selectedPaper.openAccessUrl" :href="selectedPaper.openAccessUrl" target="_blank" rel="noopener noreferrer"
+                                class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
+                                <i class="ph ph-lock-open"></i>
+                                <span>打开开放全文</span>
+                            </a>
+                            <span v-else class="text-xs text-slate-400 italic px-2 flex items-center gap-1">
+                                <i class="ph ph-lock-simple"></i>
+                                <span>暂未发现开放全文</span>
+                            </span>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" @click="copyPaperCitation(selectedPaper)"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
+                                <i class="ph ph-quotes"></i>
+                                <span>复制 BibTeX</span>
+                            </button>
+                            <button type="button" @click="downloadPaperCitation(selectedPaper, 'bib')"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
+                                <i class="ph ph-download-simple"></i>
+                                <span>下载 .bib</span>
+                            </button>
+                            <button type="button" @click="downloadPaperCitation(selectedPaper, 'ris')"
+                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
+                                <i class="ph ph-download-simple"></i>
+                                <span>下载 .ris</span>
+                            </button>
+                            <button type="button" @click="insertPaperToChat(selectedPaper)"
+                                class="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs">
+                                <i class="ph ph-chat-circle-dots"></i>
+                                <span>引入对话</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -5394,7 +5809,7 @@
 
     </div>
 
-    <script type="module" src="./js/main.js?t=20260824_0001"></script>
+    <script type="module" src="./js/main.js?t=20260903_academic_v8"></script>
 
     <!-- Premium Interactive Effects: Generative Art & Card Spotlight -->
     <script>

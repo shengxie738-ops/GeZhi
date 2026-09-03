@@ -47,3 +47,36 @@ test('Plugin Marketplace: main.js should import and export usePlugins states', (
     assert.ok(mainContent.includes('openPluginDetail: pluginsState.openPluginDetail'), 'main.js 应导出 openPluginDetail');
     assert.ok(mainContent.includes('insertPluginToInput: pluginsState.insertPluginToInput'), 'main.js 应导出 insertPluginToInput');
 });
+
+test('Paper Search UI: index.html must satisfy academic search UI contract', () => {
+    const htmlPath = path.resolve(__dirname, '../index.html');
+    const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+
+    // 必须存在的断言
+    const requiredTokens = [
+        '多来源真实检索',
+        'paperSourceStatuses',
+        'totalAfterMerge',
+        '访问官方论文页面',
+        '打开开放全文',
+        '暂未发现开放全文',
+        'openPaperDetail',
+        'downloadPaperCitation',
+        'rel="noopener noreferrer"'
+    ];
+    for (const token of requiredTokens) {
+        assert.ok(htmlContent.includes(token), `index.html 应包含 "${token}"`);
+    }
+
+    // 严禁存在的断言
+    const forbiddenTokens = [
+        'API 在线',
+        'PDF 原文',
+        '浏览官方原文',
+        '离线智能推荐'
+    ];
+    for (const token of forbiddenTokens) {
+        assert.ok(!htmlContent.includes(token), `index.html 绝不得包含误导性或虚假文案 "${token}"`);
+    }
+});
+
