@@ -831,4 +831,8 @@ app.config.errorHandler = (err, instance, info) => {
     alert(`Vue 渲染或运行时错误：\n${err.stack || err}\n附加信息: ${info}`);
 };
 
-app.mount('#app');
+const rootVm = app.mount('#app');
+if (typeof window !== 'undefined') {
+    window.__app__ = rootVm;
+}
+

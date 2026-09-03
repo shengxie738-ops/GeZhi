@@ -308,12 +308,21 @@ async def fetch_arxiv(query: str, limit: int = 10) -> list[dict]:
 
     headers = {"User-Agent": USER_AGENT}
     url = "https://export.arxiv.org/api/query"
+    clean_query = query.strip()
+    if ":" in clean_query or '"' in clean_query:
+        search_query = clean_query
+    elif " " in clean_query:
+        search_query = f'ti:"{clean_query}" OR all:"{clean_query}"'
+    else:
+        search_query = f'all:{clean_query}'
+
     params = {
-        "search_query": f"all:{query}",
+        "search_query": search_query,
         "start": 0,
         "max_results": limit,
         "sortBy": "relevance"
     }
+
 
     async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
         resp = await _execute_request_with_retry(client, url, params=params, headers=headers)
