@@ -1,3 +1,5 @@
+import { normalizeHttpUrl } from './academic/paperModel.js';
+
 /**
  * academicSearch.js - 开源学术论文检索 API 客户端
  * 支持 arXiv, OpenAlex, Crossref, Europe PMC 等开源学术平台
@@ -5,22 +7,26 @@
 
 export function normalizePaperItem(raw, source = 'Academic Source') {
     const authors = Array.isArray(raw.authors)
-        ? raw.authors
-        : (typeof raw.authors === 'string' ? raw.authors.split(',').map(s => s.trim()) : []);
+        ? raw.authors.map(a => String(a || '').trim()).filter(Boolean)
+        : (typeof raw.authors === 'string' ? raw.authors.split(',').map(s => s.trim()).filter(Boolean) : []);
     
+    const doi = raw.doi || '';
+    const officialUrl = normalizeHttpUrl(raw.url || (doi ? `https://doi.org/${doi}` : ''));
+    const pdfUrl = normalizeHttpUrl(raw.pdfUrl || '');
+
     return {
         id: raw.id || `paper-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: String(raw.title || 'Untitled Paper').replace(/\n/g, ' ').trim(),
+        title: String(raw.title || '').replace(/\n/g, ' ').trim(),
         authors,
-        authorsText: authors.join(', ') || 'Anonymous',
-        year: raw.year || new Date().getFullYear(),
+        authorsText: authors.join(', '),
+        year: (raw.year && !isNaN(Number(raw.year))) ? Number(raw.year) : null,
         venue: raw.venue || source,
-        abstract: String(raw.abstract || '暂无摘要内容').replace(/\n/g, ' ').trim(),
-        pdfUrl: raw.pdfUrl || '',
-        doi: raw.doi || '',
-        url: raw.url || raw.pdfUrl || (raw.doi ? `https://doi.org/${raw.doi}` : ''),
+        abstract: String(raw.abstract || '').replace(/\n/g, ' ').trim(),
+        pdfUrl,
+        doi,
+        url: officialUrl || pdfUrl,
         source,
-        citationsCount: Number(raw.citationsCount || raw.citation_count || 0)
+        citationsCount: (raw.citationsCount !== undefined && raw.citationsCount !== null) ? Number(raw.citationsCount) : (raw.citation_count !== undefined ? Number(raw.citation_count) : 0)
     };
 }
 
@@ -112,8 +118,8 @@ export async function searchArxivPapers(query, maxResults = 8) {
 
         return papers;
     } catch (e) {
-        console.warn('[academicSearch] arXiv search fallback to simulated results:', e);
-        return getFallbackPapers(query, 'arXiv');
+        console.error('[academicSearch] arXiv search failed:', e);
+        throw e;
     }
 }
 
@@ -144,8 +150,8 @@ export async function searchOpenAlexWorks(query, maxResults = 8) {
             }, 'OpenAlex');
         });
     } catch (e) {
-        console.warn('[academicSearch] OpenAlex search fallback to simulated results:', e);
-        return getFallbackPapers(query, 'OpenAlex');
+        console.error('[academicSearch] OpenAlex search failed:', e);
+        throw e;
     }
 }
 
@@ -169,7 +175,7 @@ export async function searchCrossrefWorks(query, maxResults = 8) {
                 authors,
                 year,
                 venue: Array.isArray(item['container-title']) ? item['container-title'][0] : 'Crossref Journal',
-                abstract: item.abstract ? item.abstract.replace(/<[^>]+>/g, '') : '暂无详细摘要',
+                abstract: item.abstract ? item.abstract.replace(/<[^>]+>/g, '') : '',
                 pdfUrl: item.link?.[0]?.URL || '',
                 doi: item.DOI,
                 url: `https://doi.org/${item.DOI}`,
@@ -177,8 +183,8 @@ export async function searchCrossrefWorks(query, maxResults = 8) {
             }, 'Crossref');
         });
     } catch (e) {
-        console.warn('[academicSearch] Crossref search fallback to simulated results:', e);
-        return getFallbackPapers(query, 'Crossref');
+        console.error('[academicSearch] Crossref search failed:', e);
+        throw e;
     }
 }
 
@@ -206,30 +212,4 @@ function reconstructAbstract(invertedIndex) {
     }
     wordsWithPositions.sort((a, b) => a.pos - b.pos);
     return wordsWithPositions.map(item => item.word).join(' ').slice(0, 400) + '...';
-}
-
-// 网络离线 / 沙箱环境保底示例数据
-function getFallbackPapers(query, source) {
-    return [
-        normalizePaperItem({
-            title: `A Survey on ${query}: Foundations, Advances and Applications`,
-            authors: ['Zhi Ge', 'Alex M. Turing', 'Linus Torvalds'],
-            year: 2025,
-            venue: `${source} Conference Proceedings`,
-            abstract: `This paper provides a comprehensive overview of ${query}, analyzing theoretical foundations, recent algorithmic breakthroughs, and real-world deployment challenges in modern intelligent systems.`,
-            pdfUrl: 'https://arxiv.org/pdf/1706.03762.pdf',
-            doi: '10.1000/182',
-            citationsCount: 128
-        }, source),
-        normalizePaperItem({
-            title: `Deep Reinforcement Learning & LLM Reasoning in ${query}`,
-            authors: ['Elena Rostova', 'Demis Hassabis', 'Kaiming He'],
-            year: 2024,
-            venue: `${source} Journal of AI Research`,
-            abstract: `We investigate how scalable inference-time compute and self-play reasoning enhance problem solving across multi-agent environments in ${query}.`,
-            pdfUrl: 'https://arxiv.org/pdf/2401.00001.pdf',
-            doi: '10.1000/183',
-            citationsCount: 342
-        }, source)
-    ];
 }
