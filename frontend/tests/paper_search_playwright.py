@@ -1,9 +1,11 @@
+# -*- coding: utf-8 -*-
 import json
 import os
 import sys
 import time
 import subprocess
 import socket
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, expect
@@ -100,6 +102,7 @@ def main():
 
             # 错误捕获
             page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on("pageerror", lambda err: print(f"[playwright pageerror] {err}", flush=True))
             
             # 网络监控
             def track_request(req):
@@ -222,7 +225,7 @@ def main():
             page.route("**/academic/openalex/search*", handle_openalex)
             page.route("**/academic/arxiv/search*", handle_arxiv)
             page.route("**/academic/crossref/search*", handle_crossref)
-            page.route("*europepmc*search*", handle_europepmc)
+            page.route(re.compile(r".*europepmc.*search.*"), handle_europepmc)
 
             # 屏蔽与学术搜索无关的后台轮询接口，避免在无后端时产生 401 控制台噪音
             def mock_general_success(route):
@@ -234,11 +237,34 @@ def main():
             page.route("**/api/user/**", mock_general_success)
 
 
+            chat_history_batch_requests = []
+            def handle_chat_history_batch(route):
+                post_data = route.request.post_data_json
+                chat_history_batch_requests.append(post_data)
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({
+                        "status": "success",
+                        "message": "历史工作记录已保存",
+                        "data": [
+                            {"id": 8801, "role": "user", "agent_mode": "paper"},
+                            {"id": 8802, "role": "assistant", "agent_mode": "paper"}
+                        ]
+                    })
+                )
+
+            page.route("**/api/chat/history/batch*", handle_chat_history_batch)
+            page.route("**/api/chat/history*", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"status": "success", "data": []})))
+
             print("[playwright] navigating to workspace...")
             page.goto(BASE_URL, wait_until="networkidle")
+            page.screenshot(path=str(ARTIFACTS_DIR / "debug-init.png"))
+            print(f"[playwright] current url: {page.url}")
+            print(f"[playwright] console errors: {console_errors}")
 
             # 1. 切换到论文查询模式
-            paper_mode_btn = page.locator("button:has-text('论文查询')").first
+            paper_mode_btn = page.locator("#btn-switch-mode-paper").first
             expect(paper_mode_btn).to_be_visible(timeout=8000)
             paper_mode_btn.click()
             print("[playwright] switched to paper search mode.")
@@ -248,7 +274,7 @@ def main():
             expect(input_textarea).to_be_visible()
             input_textarea.fill("Attention Is All You Need")
 
-            send_button = page.locator("button:has-text('发送')").first
+            send_button = page.locator("#workspace-send-btn").first
             expect(send_button).to_be_enabled()
             send_button.click()
             print("[playwright] clicked search send button.")
@@ -259,13 +285,30 @@ def main():
 
             # 4. 验证来源增量状态栏显示
             # 在 arxiv 延时期间或之后，应该能看到 OpenAlex / arXiv 来源状态
-            expect(page.locator("text=多来源真实检索").first).to_be_visible(timeout=6000)
+            expect(page.locator("text=多来源可核验检索").first).to_be_visible(timeout=6000)
             expect(page.locator("text=OpenAlex").first).to_be_visible()
             expect(page.locator("text=arXiv").first).to_be_visible()
 
             # 等待所有检索完成
             expect(page.locator("text=去重后").first).to_be_visible(timeout=8000)
             print("[playwright] multi-source results merged successfully.")
+
+            # 验证历史记录已向后端同步
+            time.sleep(0.5)
+            assert len(chat_history_batch_requests) >= 1, "论文检索完成后必须调用 /api/chat/history/batch 保存工作记录"
+            paper_history_req = chat_history_batch_requests[0]
+            assert paper_history_req.get("agent_mode") == "paper", f"历史工作记录 agent_mode 错误: {paper_history_req}"
+            assert any(m.get("content") == "Attention Is All You Need" for m in paper_history_req.get("messages", [])), "历史记录必须包含用户检索 query"
+            print("[playwright] paper history DB sync request verified.", flush=True)
+
+            # 验证左侧任务列表记录了论文查询工作
+            paper_proj_node = page.locator('[data-project-id="proj-paper"]').first
+            expect(paper_proj_node).to_be_visible()
+            # 验证任务列表包含子任务记录
+            paper_task_item = page.locator('[data-project-id="proj-paper"] [data-task-id]').first
+            expect(paper_task_item).to_be_visible(timeout=5000)
+            expect(paper_task_item).to_contain_text("Attention Is All You Nee")
+            print("[playwright] left sidebar task tree records paper query verified.", flush=True)
 
             # 点击发送必须把输入文本原样作为 query，不能传入 [object PointerEvent]
             wait_for_request_count(academic_requests, len(installed_plugins))
@@ -352,13 +395,13 @@ def main():
             }""")
             page.reload(wait_until="networkidle")
             
-            paper_mode_btn = page.locator("button:has-text('论文查询')").first
+            paper_mode_btn = page.locator("#btn-switch-mode-paper").first
             paper_mode_btn.click()
 
             academic_requests_before = len(academic_requests)
             input_textarea = page.locator("textarea").first
             input_textarea.fill("Deep Learning Without Plugins")
-            page.locator("button:has-text('发送')").first.click()
+            page.locator("#workspace-send-btn").first.click()
 
             time.sleep(0.5)
             # 断言没有发起学术网络请求
@@ -379,7 +422,7 @@ def main():
             }""")
 
             page.reload(wait_until="networkidle")
-            paper_mode_btn = page.locator("button:has-text('论文查询')").first
+            paper_mode_btn = page.locator("#btn-switch-mode-paper").first
             paper_mode_btn.click()
 
             arxiv_delayed["value"] = False
@@ -411,6 +454,37 @@ def main():
             expect(page.locator("text=New Graph Neural Network Paper").first).to_be_visible()
             assert not page.locator("text=Old Transformer Paper").is_visible(), "旧查询响应不应覆盖新查询结果"
             print("[playwright] fast resubmit cancellation verified.", flush=True)
+
+            # 8. 验证检索后返回对话框按钮与交互链路
+            header_return_btn = page.locator("#header-return-to-chat-btn").first
+            expect(header_return_btn).to_be_visible()
+            status_return_btn = page.locator("#status-return-to-chat-btn").first
+            expect(status_return_btn).to_be_visible()
+            float_return_btn = page.locator("#float-return-to-chat-btn").first
+            expect(float_return_btn).to_be_visible()
+            bottom_return_btn = page.locator("#bottom-return-to-chat-btn").first
+            expect(bottom_return_btn).to_be_visible()
+
+            # 点击顶部 Header 的返回对话框按钮
+            header_return_btn.click()
+            time.sleep(0.3)
+            # 验证模式成功切回 AI 对话
+            expect(page.locator("text=AI 对话 · 自由问答助手").first).to_be_visible()
+            print("[playwright] return to chat button via header verified.", flush=True)
+
+            # 重新切回论文模式，测试引入对话按钮联动返回对话框
+            paper_mode_btn = page.locator("#btn-switch-mode-paper").first
+            paper_mode_btn.click()
+            time.sleep(0.3)
+            expect(page.locator("text=New Graph Neural Network Paper").first).to_be_visible()
+            insert_chat_btn = page.locator("button:has-text('引入对话')").first
+            insert_chat_btn.click()
+            time.sleep(0.3)
+            # 验证引入对话后自动切回 AI 对话模式且输入框含有参考论文内容
+            expect(page.locator("text=AI 对话 · 自由问答助手").first).to_be_visible()
+            textarea_val = page.locator("textarea").first.input_value()
+            assert "参考论文" in textarea_val, f"引入对话后输入框内容不符合预期: {textarea_val}"
+            print("[playwright] insert paper to chat with auto return verified.", flush=True)
 
             browser.close()
 

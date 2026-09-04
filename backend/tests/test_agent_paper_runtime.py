@@ -113,6 +113,8 @@ class AgentPaperRuntimeTest(unittest.TestCase):
         # resolve_request_agent_id 解析
         self.assertEqual(resolve_request_agent_id(req_mode, "paper"), "agent_paper")
         self.assertEqual(resolve_thread_id(req_mode, "user123", "paper"), "user123:paper")
+        req_task = ChatRequest(message="transformer", agent_mode="paper", conversation_id="task-paper-1")
+        self.assertEqual(resolve_thread_id(req_task, "user123", "paper"), "user123:paper:task-paper-1")
 
     def test_03_runtime_config_and_prompt_injection(self):
         """验证 build_agent_runtime_config 能正确为 agent_paper 注入专属模型与学术提示词"""

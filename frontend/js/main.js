@@ -141,7 +141,15 @@ const app = createApp({
             isPaperSearching: () => pluginsState.isSearchingPapers.value,
             sendChat: chat.sendMessage,
             searchPapers: pluginsState.searchFromPaperMode,
-            clearInput: () => { chat.inputText.value = ''; }
+            clearInput: () => { chat.inputText.value = ''; },
+            showPaperResults: chat.showPaperSearchResults,
+            recordPaperWork: async (query) => {
+                await chat.recordPaperSearchWork(query, {
+                    results: pluginsState.paperSearchResults.value,
+                    summary: pluginsState.paperSearchSummary.value,
+                    statuses: pluginsState.paperSourceStatuses.value
+                });
+            }
         });
 
         // ================== 新增：工作台学习模式分流控制 ==================
@@ -603,6 +611,8 @@ const app = createApp({
             switchModel: chat.switchModel,
             toggleModelDropdown: chat.toggleModelDropdown,
             switchWorkMode: chat.switchWorkMode,
+            returnToChatDialog: chat.returnToChatDialog,
+            recordPaperSearchWork: chat.recordPaperSearchWork,
             inputText: chat.inputText,
             chatContainer: chat.chatContainer,
             thinkingAgent: chat.thinkingAgent,
@@ -819,7 +829,10 @@ const app = createApp({
             copyPaperCitation: pluginsState.copyPaperCitation,
             copyBibtexCitation: pluginsState.copyBibtexCitation,
             downloadPaperCitation: pluginsState.downloadPaperCitation,
-            insertPaperToChat: pluginsState.insertPaperToChat,
+            insertPaperToChat: (paper) => {
+                pluginsState.insertPaperToChat(paper);
+                chat.returnToChatDialog();
+            },
             toggleAddMenu: pluginsState.toggleAddMenu,
             insertPluginToInput: pluginsState.insertPluginToInput,
             removeActiveInputPlugin: pluginsState.removeActiveInputPlugin

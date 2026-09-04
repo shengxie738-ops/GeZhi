@@ -13,6 +13,7 @@ import {
     getCanonicalPaperKey,
     normalizeHttpUrl
 } from './paperModel.js';
+import { filterPapersForQuery, prepareAcademicSearchQuery } from './queryPlanner.js';
 
 export const ACADEMIC_PROVIDERS = {
     openalex: { label: 'OpenAlex', search: searchOpenAlex },
@@ -146,6 +147,7 @@ function rankAndMergePapersWithRrf(rankedSourceList) {
  */
 export async function searchAcademicPapers(query, options = {}) {
     const cleanQuery = String(query || '').trim();
+    const queryPlan = prepareAcademicSearchQuery(cleanQuery);
     const providers = options.providers || ACADEMIC_PROVIDERS;
     const rawKeys = Array.isArray(options.sourceKeys) ? options.sourceKeys : Object.keys(providers);
     const sourceKeys = [...new Set(rawKeys)];
@@ -245,13 +247,14 @@ export async function searchAcademicPapers(query, options = {}) {
         }, timeoutMs);
 
         try {
-            const papers = await provider.search(cleanQuery, {
+            const papers = await provider.search(queryPlan.effectiveQuery, {
                 limit,
                 signal: sourceController.signal
             });
 
             const durationMs = Date.now() - startTime;
-            const validPapers = Array.isArray(papers) ? papers : [];
+            const rawPapers = Array.isArray(papers) ? papers : [];
+            const validPapers = filterPapersForQuery(rawPapers, queryPlan);
             totalBeforeMerge += validPapers.length;
 
             validPapers.forEach((paper, idx) => {
@@ -267,6 +270,7 @@ export async function searchAcademicPapers(query, options = {}) {
                 label,
                 status: 'success',
                 count: validPapers.length,
+                rawCount: rawPapers.length,
                 durationMs,
                 error: ''
             };
@@ -307,6 +311,11 @@ export async function searchAcademicPapers(query, options = {}) {
     // 融合排序
     const mergedPapers = rankAndMergePapersWithRrf(rankedItems);
     const sourceStatuses = sourceKeys.map(k => sourceStatusMap.get(k));
+    const totalFetched = sourceStatuses.reduce(
+        (sum, item) => sum + (Number(item?.rawCount) || Number(item?.count) || 0),
+        0
+    );
+    const totalRejected = Math.max(0, totalFetched - totalBeforeMerge);
 
     // 判定总状态: success | partial | empty | error
     const successCount = sourceStatuses.filter(s => s.status === 'success').length;
@@ -325,9 +334,14 @@ export async function searchAcademicPapers(query, options = {}) {
 
     const response = {
         query: cleanQuery,
+        normalizedQuery: queryPlan.cleanedQuery,
+        effectiveQuery: queryPlan.effectiveQuery,
+        queryTranslated: queryPlan.translated,
         status: overallStatus,
         items: mergedPapers,
         sourceStatuses,
+        totalFetched,
+        totalRejected,
         totalBeforeMerge,
         totalAfterMerge: mergedPapers.length,
         searchedAt: new Date().toISOString()

@@ -4,8 +4,8 @@ import { buildVisualGuideSvg, createLocalVisualGuide, getVisualGuideSourceLabel,
 import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
 import request from '../utils/request.js';
-import { getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
-import { findConversationForMessage, groupMessagesIntoConversations, groupConversationsByProjects, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
+import { formatChatTimestamp, getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
+import { CHAT_TASK_MODES, createModeMessageBuckets, createTaskConversationId, findConversationForMessage, flattenModeMessageBuckets, getSystemProjectIdForMode, groupMessagesIntoConversations, groupConversationsByProjects, reconcileModeHistory, resolveConversationIdForSend, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 
@@ -18,6 +18,37 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const historyLoading = ref(false);
     const historyError = ref('');
     const activeConversationId = ref(null);
+    const draftConversationId = ref('');
+    let pendingHistoryLoads = 0;
+
+    const safeSetLocalStorage = (key, value) => {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return false;
+            const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+            localStorage.setItem(key, serialized);
+            return true;
+        } catch (e) {
+            console.warn(`[useChat] Failed to set localStorage for key "${key}":`, e);
+            return false;
+        }
+    };
+
+    const escapeHtmlAndMarkdown = (str) => {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;')
+            .replace(/`/g, '&#96;');
+    };
+
+    const sanitizePaperUrl = (url) => {
+        if (!url || typeof url !== 'string') return '';
+        const trimmed = url.trim();
+        return /^https?:\/\//i.test(trimmed) ? trimmed : '';
+    };
 
     // AI 模型热切换状态与选项
     const currentModel = ref(localStorage.getItem('preferred_chat_model') || 'Auto Mode');
@@ -54,7 +85,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const switchModel = (modelId) => {
         currentModel.value = modelId;
-        localStorage.setItem('preferred_chat_model', modelId);
+        safeSetLocalStorage('preferred_chat_model', modelId);
         showModelDropdown.value = false;
         if (typeof showToast === 'function') {
             showToast(`已切换至模型：${modelId}`, 'success');
@@ -76,6 +107,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const switchWorkMode = (mode) => {
         activeConversationId.value = null;
+        draftConversationId.value = '';
         showModelDropdown.value = false;
         if (showVisualGuideViewer) showVisualGuideViewer.value = false;
         if (mode === 'paper') {
@@ -102,6 +134,160 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             activeProjectId.value = PROJECT_DEFAULT_ID;
             loadChatHistory('chat');
             if (typeof showToast === 'function') showToast('已切换至「AI 对话」全能问答模式', 'info');
+        }
+    };
+
+
+    const recordPaperSearchWork = async (query, meta = {}) => {
+        const cleanQuery = String(query || '').trim();
+        if (!cleanQuery) return;
+        const conversationId = getConversationIdForSend({ mode: 'paper', activate: false });
+        const sessionId = getSessionId();
+        const results = Array.isArray(meta.results) ? meta.results : [];
+        const summary = meta.summary || {};
+        const statuses = Array.isArray(meta.statuses) ? meta.statuses : [];
+
+        const countBefore = summary.totalBeforeMerge || results.length;
+        const countAfter = summary.totalAfterMerge || results.length;
+        const countFetched = summary.totalFetched || countBefore;
+        const countRejected = summary.totalRejected || 0;
+        const effectiveQuery = String(summary.effectiveQuery || '').trim();
+        const activeSources = statuses
+            .filter(s => s.status === 'success')
+            .map(s => `${escapeHtmlAndMarkdown(s.label || s.key)} (${Number(s.count) || 0}篇)`)
+            .join('、') || '学术数据源';
+
+        const topPapers = results.slice(0, 3).map((p, idx) => {
+            const safeTitle = escapeHtmlAndMarkdown(p.title || '无标题文献');
+            const safeAuthors = escapeHtmlAndMarkdown(p.authorsText || '未知学者');
+            const safeSource = escapeHtmlAndMarkdown(p.sources?.map(s => s.label).join('/') || '学术源');
+            const safeUrl = sanitizePaperUrl(p.officialUrl || p.openAccessUrl || '');
+            const titleDisplay = safeUrl ? `[《${safeTitle}》](${safeUrl})` : `《${safeTitle}》`;
+            const doiDisplay = p.doi ? ` · DOI: ${escapeHtmlAndMarkdown(p.doi)}` : '';
+            return `${idx + 1}. **${titleDisplay}** (${escapeHtmlAndMarkdown(p.year || '近期')})
+   - 👥 作者: ${safeAuthors}
+   - 🏛️ 来源: ${safeSource}${doiDisplay}`;
+        }).join('\n\n');
+
+        const effectiveQueryLine = summary.queryTranslated && effectiveQuery
+            ? `- **实际检索词**：\`${escapeHtmlAndMarkdown(effectiveQuery)}\`（由中文主题确定性转换）\n`
+            : '';
+        const filterLine = countRejected > 0
+            ? `- **相关性过滤**：来源返回 ${countFetched} 条，剔除 ${countRejected} 条主题不匹配记录。\n`
+            : '';
+
+        const reportContent = `📚 **学术文献多源检索工作记录**\n\n` +
+            `- **检索主题**：\`${escapeHtmlAndMarkdown(cleanQuery)}\`\n` +
+            effectiveQueryLine +
+            `- **响应数据源**：${activeSources}\n` +
+            filterLine +
+            `- **文献汇总**：相关候选 ${countBefore} 篇，去重后 **${countAfter} 篇来源可核验文献记录**。\n\n` +
+            `**核心检索文献代表**：\n\n${topPapers || '已完成多源去重检索，详情见主视图文献卡片。'}\n\n` +
+            `> 💡 *该工作记录已自动同步至云端数据库与任务列表，可随时在「论文查询」任务树中回顾。*`;
+
+        const timestamp = typeof formatChatTimestamp === 'function' ? formatChatTimestamp() : new Date().toLocaleString('zh-CN');
+        const userMsgId = `paper-user-${Date.now()}`;
+        const agentMsgId = `paper-agent-${Date.now()}`;
+
+        const userMsg = {
+            id: userMsgId,
+            senderType: 'user',
+            content: cleanQuery,
+            time: timestamp,
+            createdAt: timestamp,
+            mode: 'paper',
+            conversationId,
+            projectId: PROJECT_PAPER_ID
+        };
+
+        const agentMsg = {
+            id: agentMsgId,
+            senderType: 'agent',
+            senderId: 'agent_paper',
+            content: reportContent,
+            time: timestamp,
+            createdAt: timestamp,
+            mode: 'paper',
+            conversationId,
+            projectId: PROJECT_PAPER_ID
+        };
+
+        const isCurrentlyInPaperMode = agentMode.value === 'paper';
+        const storageKey = getChatStorageKey(sessionId, 'paper');
+
+        // 1. 同步到前端响应式状态与本地存储（模式隔离保护）
+        if (isCurrentlyInPaperMode) {
+            messages.value.push(userMsg, agentMsg);
+            if (activeConversationId.value === 'new') {
+                activeConversationId.value = null;
+                draftConversationId.value = '';
+            }
+            hydrateParsedMessages();
+            safeSetLocalStorage(storageKey, messages.value);
+        } else {
+            // 若在其他模式下触发，仅增量安全更新 paper 专属的本地缓存，严禁污染当前活动会话
+            const existing = modeMessageBuckets.value.paper || readStoredMessages('paper');
+            existing.push(userMsg, agentMsg);
+            modeMessageBuckets.value.paper = existing;
+            hydrateParsedMessages();
+            safeSetLocalStorage(storageKey, existing);
+        }
+
+        // 2. 真实同步持久化到后端数据库
+        try {
+            const res = await request('/chat/history/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: sessionId,
+                    agent_mode: 'paper',
+                    conversation_id: conversationId,
+                    project_id: PROJECT_PAPER_ID,
+                    messages: [
+                        { role: 'user', content: cleanQuery, agent_mode: 'paper', sender_id: null, conversation_id: conversationId, project_id: PROJECT_PAPER_ID },
+                        { role: 'assistant', content: reportContent, agent_mode: 'paper', sender_id: 'agent_paper', conversation_id: conversationId, project_id: PROJECT_PAPER_ID }
+                    ]
+                })
+            });
+            if (res?.status === 'success' && Array.isArray(res.data) && res.data.length >= 2) {
+                if (isCurrentlyInPaperMode) {
+                    userMsg.id = `db-${res.data[0].id}`;
+                    agentMsg.id = `db-${res.data[1].id}`;
+                    safeSetLocalStorage(storageKey, messages.value);
+                } else {
+                    const existing = modeMessageBuckets.value.paper || readStoredMessages('paper');
+                    const targetUser = existing.find(m => m.id === userMsgId);
+                    const targetAgent = existing.find(m => m.id === agentMsgId);
+                    if (targetUser) targetUser.id = `db-${res.data[0].id}`;
+                    if (targetAgent) targetAgent.id = `db-${res.data[1].id}`;
+                    modeMessageBuckets.value.paper = existing;
+                    safeSetLocalStorage(storageKey, existing);
+                }
+            } else if (res?.status === 'error') {
+                console.warn('[Chat] Backend rejected paper history save:', res.message);
+            }
+        } catch (err) {
+            console.warn('[Chat] Failed to sync paper history to backend DB:', err);
+        }
+    };
+
+    const returnToChatDialog = () => {
+        switchWorkMode('chat');
+        if (typeof window !== 'undefined') {
+            setTimeout(() => {
+                const textarea = document.querySelector('main textarea');
+                if (textarea) {
+                    textarea.focus();
+                    try {
+                        const len = textarea.value ? textarea.value.length : 0;
+                        textarea.setSelectionRange(len, len);
+                    } catch (e) {}
+                    textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 60);
+        }
+        if (typeof showToast === 'function') {
+            showToast('已返回 AI 对话框', 'info');
         }
     };
     const createEmptyVisualGuide = () => ({
@@ -146,7 +332,15 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         }
     };
 
-    const messages = ref(readStoredMessages('tutor'));
+    const modeMessageBuckets = ref(createModeMessageBuckets(readStoredMessages));
+    const messages = computed({
+        get: () => modeMessageBuckets.value[normalizeAgentMode(agentMode.value)] || [],
+        set: (nextMessages) => {
+            const mode = normalizeAgentMode(agentMode.value);
+            modeMessageBuckets.value[mode] = Array.isArray(nextMessages) ? nextMessages : [];
+        }
+    });
+    const allTaskMessages = computed(() => flattenModeMessageBuckets(modeMessageBuckets.value));
 
     // ================== 大项目与子任务树状体系 (OpenAI Codex 风格) ==================
     const getProjectsStorageKey = (sessionId) => `task_projects:${sessionId}`;
@@ -184,7 +378,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     // 大项目与小任务两级聚合树
     const projectTaskTree = computed(() => {
-        return groupConversationsByProjects(messages.value, projectList.value);
+        return groupConversationsByProjects(allTaskMessages.value, projectList.value);
     });
 
     const createProject = (name) => {
@@ -219,14 +413,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         if (!confirmed) return;
 
         // 迁移该项目下的消息到对应系统分组
-        messages.value.forEach(msg => {
+        allTaskMessages.value.forEach(msg => {
             if (msg.projectId === projectId) {
-                msg.projectId = msg.mode === 'paper' ? PROJECT_PAPER_ID : (msg.mode === 'rag' ? PROJECT_RAG_ID : PROJECT_TUTOR_ID);
+                msg.projectId = getSystemProjectIdForMode(msg.mode);
             }
         });
         projectList.value = projectList.value.filter(p => p.id !== projectId);
         if (activeProjectId.value === projectId) {
-            activeProjectId.value = agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : PROJECT_TUTOR_ID);
+            activeProjectId.value = getSystemProjectIdForMode(agentMode.value);
         }
         showToast(`项目「${name}」已删除`, 'success');
     };
@@ -255,7 +449,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const startNewSubTask = (projectId) => {
-        activeProjectId.value = projectId || (agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : (agentMode.value === 'tutor' ? PROJECT_TUTOR_ID : PROJECT_DEFAULT_ID)));
+        activeProjectId.value = projectId || getSystemProjectIdForMode(agentMode.value);
         const targetProj = projectList.value.find(p => p.id === activeProjectId.value);
         if (targetProj) {
             targetProj.expanded = true;
@@ -268,9 +462,15 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             switchWorkMode('rag');
         } else if (projectId === PROJECT_DEFAULT_ID && agentMode.value !== 'chat') {
             switchWorkMode('chat');
-        } else {
-            startNewConversation();
         }
+        startNewConversation(projectId);
+    };
+
+    const showPaperSearchResults = () => {
+        if (agentMode.value !== 'paper') return;
+        activeConversationId.value = null;
+        draftConversationId.value = '';
+        activeProjectId.value = PROJECT_PAPER_ID;
     };
 
     // ================== 伪会话模型：把线性消息流按用户提问切分为对话 ==================
@@ -280,12 +480,19 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         return conversations.slice().reverse();
     });
 
+    const allConversationList = computed(() => {
+        const conversations = groupMessagesIntoConversations(allTaskMessages.value);
+        return conversations.slice().reverse();
+    });
+
     const activeConversation = computed(() => {
         if (!activeConversationId.value || activeConversationId.value === 'new') return null;
         return conversationList.value.find(conversation => conversation.id === activeConversationId.value) || null;
     });
 
-    const isViewingHistory = computed(() => Boolean(activeConversation.value));
+    const isViewingHistory = computed(() => Boolean(
+        activeConversation.value && conversationList.value[0]?.id !== activeConversation.value.id
+    ));
 
     // 侧栏高亮：查看历史时指向该对话，其余情况指向最新对话（新增对话空白态时不高亮）
     const sidebarActiveConversationId = computed(() => {
@@ -306,12 +513,32 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
     };
 
+    const getConversationIdForSend = ({ mode = agentMode.value, activate = true } = {}) => {
+        const normalizedMode = normalizeAgentMode(mode);
+        const isCurrentMode = normalizedMode === normalizeAgentMode(agentMode.value);
+        const targetConversations = isCurrentMode
+            ? conversationList.value
+            : groupMessagesIntoConversations(modeMessageBuckets.value[normalizedMode] || []).slice().reverse();
+        let conversationId = resolveConversationIdForSend({
+            activeConversationId: isCurrentMode ? activeConversationId.value : null,
+            draftConversationId: isCurrentMode ? draftConversationId.value : '',
+            latestConversationId: targetConversations[0]?.id || ''
+        });
+        if (!conversationId) {
+            conversationId = createTaskConversationId(normalizedMode);
+        }
+        if (activate && isCurrentMode) {
+            activeConversationId.value = conversationId;
+            draftConversationId.value = '';
+        }
+        return conversationId;
+    };
+
     const selectConversation = async (conversationId) => {
-        const isLatest = conversationList.value[0]?.id === conversationId;
-        const nextId = isLatest ? null : conversationId;
+        const nextId = conversationId || null;
 
         // 智能联动切换工作模式
-        const conv = conversationList.value.find(c => c.id === conversationId);
+        const conv = allConversationList.value.find(c => c.id === conversationId);
         if (conv) {
             if (conv.mode === 'paper' && agentMode.value !== 'paper') {
                 agentMode.value = 'paper';
@@ -326,6 +553,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
                 agentMode.value = 'chat';
                 forceRAG.value = false;
             }
+            activeProjectId.value = conv.projectId || getSystemProjectIdForMode(conv.mode);
+            await loadChatHistory(conv.mode);
         }
 
         if (activeConversationId.value === nextId) return;
@@ -347,9 +576,12 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         showVisualGuideViewer.value = false;
     };
 
-    const startNewConversation = async () => {
+    const startNewConversation = async (projectId = '') => {
+        const normalizedMode = normalizeAgentMode(agentMode.value);
+        const requestedProjectId = typeof projectId === 'string' ? projectId : '';
+        draftConversationId.value = createTaskConversationId(normalizedMode);
         activeConversationId.value = 'new';
-        activeProjectId.value = agentMode.value === 'paper' ? PROJECT_PAPER_ID : (agentMode.value === 'rag' ? PROJECT_RAG_ID : (agentMode.value === 'tutor' ? PROJECT_TUTOR_ID : PROJECT_DEFAULT_ID));
+        activeProjectId.value = requestedProjectId || getSystemProjectIdForMode(normalizedMode);
         const targetProj = projectList.value.find(p => p.id === activeProjectId.value);
         if (targetProj) {
             targetProj.expanded = true;
@@ -358,11 +590,12 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             resetVisualGuideForNewConversation();
         }
         await scrollChatToBottom();
+        return draftConversationId.value;
     };
 
     const hydrateParsedMessages = () => {
         Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
-        messages.value.forEach(msg => {
+        allTaskMessages.value.forEach(msg => {
             if (msg.senderType === 'agent') {
                 parsedHtmlCache[msg.id] = (window.marked && window.marked.parse) ? window.marked.parse(msg.content) : msg.content;
             }
@@ -372,35 +605,45 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const loadChatHistory = async (mode = agentMode.value) => {
         const normalizedMode = normalizeAgentMode(mode);
         const sessionId = getSessionId();
-        agentMode.value = normalizedMode;
-        forceRAG.value = normalizedMode === 'rag';
-        activeConversationId.value = null;
 
-        messages.value = readStoredMessages(normalizedMode);
+        const inMemoryMessages = modeMessageBuckets.value[normalizedMode] || [];
+        const localMessages = inMemoryMessages.length > 0 ? inMemoryMessages : readStoredMessages(normalizedMode);
+        modeMessageBuckets.value[normalizedMode] = localMessages;
         hydrateParsedMessages();
         await nextTick();
-        if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+        if (agentMode.value === normalizedMode && chatContainer.value) {
+            chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+        }
 
+        pendingHistoryLoads += 1;
         historyLoading.value = true;
         historyError.value = '';
         try {
             const resJson = await request(`/chat/history?session_id=${encodeURIComponent(sessionId)}&agent_mode=${encodeURIComponent(normalizedMode)}&limit=200`);
             if (resJson?.status === 'success' && Array.isArray(resJson.data)) {
-                messages.value = resJson.data.map(mapHistoryRecordToMessage);
+                const remoteMessages = resJson.data.map(mapHistoryRecordToMessage);
+                modeMessageBuckets.value[normalizedMode] = reconcileModeHistory(localMessages, remoteMessages);
                 hydrateParsedMessages();
-                localStorage.setItem(getChatStorageKey(sessionId, normalizedMode), JSON.stringify(messages.value));
+                safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), modeMessageBuckets.value[normalizedMode]);
                 await nextTick();
-                if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+                if (agentMode.value === normalizedMode && chatContainer.value) {
+                    chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+                }
             }
         } catch (error) {
             historyError.value = '历史记录暂时无法同步，当前显示本地缓存。';
             console.info('[Chat] Backend history unavailable, using local cache.', error);
         } finally {
-            historyLoading.value = false;
+            pendingHistoryLoads = Math.max(0, pendingHistoryLoads - 1);
+            historyLoading.value = pendingHistoryLoads > 0;
         }
     };
 
-    const setAgentMode = (mode) => loadChatHistory(mode);
+    const loadAllChatHistories = () => Promise.all(
+        CHAT_TASK_MODES.map(mode => loadChatHistory(mode))
+    );
+
+    const setAgentMode = (mode) => switchWorkMode(mode);
 
     const resolveHistoryMessageDbId = (messageId) => {
         const raw = String(messageId || '');
@@ -430,7 +673,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             historyError.value = '历史记录已从本地移除，云端同步可能未完成。';
             console.info('[Chat] Delete history fallback to local cache.', error);
         } finally {
-            messages.value = messages.value.filter(item => item.id !== message.id);
+            const messageMode = normalizeAgentMode(message.mode);
+            modeMessageBuckets.value[messageMode] = (modeMessageBuckets.value[messageMode] || [])
+                .filter(item => item.id !== message.id);
             if (parsedHtmlCache[message.id]) delete parsedHtmlCache[message.id];
         }
     };
@@ -452,7 +697,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const clearChatHistory = async (mode = agentMode.value) => {
         const normalizedMode = normalizeAgentMode(mode);
-        if (messages.value.length === 0) {
+        if ((modeMessageBuckets.value[normalizedMode] || []).length === 0) {
             showToast('当前没有可清空的历史记录', 'info');
             return;
         }
@@ -469,14 +714,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             if (resJson?.status === 'error') {
                 throw new Error(resJson.message || '清空失败');
             }
-            messages.value = [];
+            modeMessageBuckets.value[normalizedMode] = [];
             Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
-            localStorage.setItem(getChatStorageKey(sessionId, normalizedMode), '[]');
+            safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), '[]');
             showToast('历史记录已清空', 'success');
         } catch (error) {
-            messages.value = [];
+            modeMessageBuckets.value[normalizedMode] = [];
             Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
-            localStorage.setItem(getChatStorageKey(sessionId, normalizedMode), '[]');
+            safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), '[]');
             historyError.value = '历史记录已从本地清空，云端同步可能未完成。';
             showToast(error.message || '已从本地清空', 'warning');
             console.info('[Chat] Clear history fallback to local cache.', error);
@@ -486,6 +731,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     hydrateParsedMessages();
+    if (getSessionId() !== 'guest_user') {
+        loadAllChatHistories();
+    }
 
     const legacyFiles = ref([
         { id: 1, name: '软件杯竞赛指导书.pdf', size: '2.4 MB' },
@@ -949,8 +1197,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const sessionId = getSessionId();
         const prompt = inputText.value;
         if (!prompt.trim() || thinkingAgent.value) return;
-        // 发送永远追加到消息流末尾：重置活跃历史会话态，自动切回主工作流视图
-        activeConversationId.value = null;
+        const conversationId = getConversationIdForSend();
+        const projectId = activeProjectId.value || getSystemProjectIdForMode(agentMode.value);
         if (agentMode.value === 'tutor') {
             visualGuideType.value = 'steps';
             generateVisualGuide(prompt, { reason: 'student-question', force: true });
@@ -972,16 +1220,23 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             (modelId) => {
                 showToast(`模型 ${modelId} 当前不可用，请更换模型`, 'error');
             },
-            currentModel.value
+            currentModel.value,
+            conversationId,
+            projectId
         );
     };
 
-    watch(messages, (newVal) => {
-        localStorage.setItem(getChatStorageKey(getSessionId(), agentMode.value), JSON.stringify(newVal));
+    watch(modeMessageBuckets, (newBuckets) => {
+        CHAT_TASK_MODES.forEach(mode => {
+            safeSetLocalStorage(getChatStorageKey(getSessionId(), mode), newBuckets[mode] || []);
+        });
     }, { deep: true });
 
     watch(() => currentUser.value?.username, () => {
-        loadChatHistory(agentMode.value);
+        modeMessageBuckets.value = createModeMessageBuckets(readStoredMessages);
+        activeConversationId.value = null;
+        draftConversationId.value = '';
+        loadAllChatHistories();
         selectedRepositoryId.value = localStorage.getItem(`knowledge_repo:${getSessionId()}`) || '';
         loadKnowledgeRepositories();
     });
@@ -995,6 +1250,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         historyLoading,
         historyError,
         activeConversationId,
+        draftConversationId,
+        modeMessageBuckets,
         conversationList,
         activeConversation,
         activeConversationMessages,
@@ -1015,6 +1272,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         switchModel,
         toggleModelDropdown,
         switchWorkMode,
+        showPaperSearchResults,
+        returnToChatDialog,
+        recordPaperSearchWork,
         messages,
         files,
         knowledgeRepositories,

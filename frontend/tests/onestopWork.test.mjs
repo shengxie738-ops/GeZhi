@@ -56,3 +56,60 @@ test('Task 3: index.html should contain Codex/TRAE style 一站式 Work workspac
     // 包含 projectTaskTree 折叠任务列表
     assert.match(htmlCode, /projectTaskTree/);
 });
+
+test('Task 4: Return to chat dialog functionality when paper search completed', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+    const mainCode = readFileSync(resolveFile('frontend/js/main.js'), 'utf-8');
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
+    // useChat.js 必须导出 returnToChatDialog 方法
+    assert.match(chatCode, /returnToChatDialog/);
+    assert.match(chatCode, /switchWorkMode\(['"]chat['"]\)/);
+
+    // main.js 必须导出 returnToChatDialog 并联动 insertPaperToChat
+    assert.match(mainCode, /returnToChatDialog:\s*chat\.returnToChatDialog/);
+    assert.match(mainCode, /insertPaperToChat:\s*\(paper\)\s*=>/);
+
+    // index.html 必须包含返回对话框按钮与其对应 id
+    assert.match(htmlCode, /header-return-to-chat-btn/);
+    assert.match(htmlCode, /status-return-to-chat-btn/);
+    assert.match(htmlCode, /float-return-to-chat-btn/);
+    assert.match(htmlCode, /bottom-return-to-chat-btn/);
+    assert.match(htmlCode, /@click="returnToChatDialog"/);
+    assert.match(htmlCode, /返回对话框/);
+    // 检索结果较长时从顶部排版，避免统计栏和首条论文被垂直居中裁掉
+    assert.match(htmlCode, /paperSearchResults\.length > 0 \|\| paperSearchStatus !== ['"]idle['"]/);
+    assert.match(htmlCode, /justify-start/);
+});
+
+test('Task 5: Anti-concurrency lock in workspaceSendRouter.js', () => {
+    const routerCode = readFileSync(resolveFile('frontend/js/controllers/workspaceSendRouter.js'), 'utf-8');
+    assert.match(routerCode, /let isRouting = false;/);
+    assert.match(routerCode, /if \(isRouting\) \{/);
+    assert.match(routerCode, /isRouting = true;/);
+    assert.match(routerCode, /isRouting = false;/);
+});
+
+test('Task 6: Robust storage, XSS sanitization and persistent task state in useChat.js', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
+    // 验证安全存储防崩溃
+    assert.match(chatCode, /const safeSetLocalStorage =/);
+    // 验证XSS防范
+    assert.match(chatCode, /const escapeHtmlAndMarkdown =/);
+    assert.match(chatCode, /const sanitizePaperUrl =/);
+    // 验证任务草稿 ID 与跨功能消息桶存在，任务不再依赖数据库消息 ID 重命名
+    assert.match(chatCode, /draftConversationId/);
+    assert.match(chatCode, /modeMessageBuckets/);
+    // 验证场景A优化（支持点击论文任务查看历史）
+    assert.match(htmlCode, /\(agentMode === 'paper' && !activeConversation\)/);
+});
+
+test('Task 7: top-level new task must not pass the click event as a project id', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
+    assert.match(htmlCode, /@click="startNewConversation\(\)"/);
+    assert.match(chatCode, /typeof projectId === ['"]string['"]/);
+});

@@ -9,6 +9,8 @@ class ChatRequest(BaseModel):
     agent_id: Optional[str] = None
     agent_model: Optional[str] = None
     agent_prompt: Optional[str] = None
+    conversation_id: Optional[str] = None
+    project_id: Optional[str] = None
     repository_id: Optional[str] = None
     force_rag: bool = False
     is_diagnosis: Optional[bool] = False

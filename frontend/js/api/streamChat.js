@@ -24,13 +24,13 @@ export const throttledScroll = throttle(async (chatContainer) => {
     }
 }, 120);
 
-export async function sendStreamingMessage(msg, messages, thinkingAgent, inputText, chatContainer, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, onModelUnavailable = null, model = '') {
+export async function sendStreamingMessage(msg, messages, thinkingAgent, inputText, chatContainer, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, onModelUnavailable = null, model = '', conversationId = '', projectId = '') {
     if (!msg.trim() || thinkingAgent.value) return;
     const normalizedMode = normalizeAgentMode(agentMode);
     const currentTime = formatChatTimestamp();
 
     const userMsgId = Date.now();
-    messages.value.push({ id: userMsgId, senderType: 'user', content: msg, time: currentTime, createdAt: currentTime, mode: normalizedMode });
+    messages.value.push({ id: userMsgId, senderType: 'user', content: msg, time: currentTime, createdAt: currentTime, mode: normalizedMode, conversationId, projectId });
     parsedHtmlCache[userMsgId] = safeParse(msg);
 
     inputText.value = '';
@@ -47,6 +47,8 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         time: agentTime,
         createdAt: agentTime,
         mode: normalizedMode,
+        conversationId,
+        projectId,
         content: ''
     });
     messages.value.push(newAgentMsg);
@@ -60,7 +62,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         try {
             response = await request('/chat/stream', {
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model })),
+                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model })),
                 isStream: true
             });
             if (!response.ok) throw new Error('Stream API failed');
@@ -70,7 +72,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             // Use non-streaming endpoint as fallback
             const chatResponse = await request('/chat', {
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model }))
+                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model }))
             });
             // Simulate streaming response
             if (chatResponse && chatResponse.reply) {
@@ -163,7 +165,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             try {
                 const chatResponse = await request('/chat', {
                     method: 'POST',
-                    body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, repositoryId, agent, courseDatasetIds, model }))
+                    body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model }))
                 });
                 if (chatResponse && chatResponse.reply) {
                     newAgentMsg.content = chatResponse.reply;

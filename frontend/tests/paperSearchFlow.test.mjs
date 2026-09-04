@@ -179,3 +179,43 @@ test('paperSearchFlow: send button disabled condition correctly includes paper s
     assert.equal(isSendDisabled({ inputText: 'Transformer', thinkingAgent: null, agentMode: 'paper', isSearchingPapers: false }), false);
 });
 
+test('paperSearchFlow: invokes recordPaperWork after successful paper search', async () => {
+    const searchPapersSpy = createSpy(async () => true);
+    const recordPaperWorkSpy = createSpy(async () => {});
+    let inputValue = 'Graph Neural Networks';
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => inputValue,
+        isPaperSearching: () => false,
+        sendChat: createSpy(),
+        searchPapers: searchPapersSpy,
+        clearInput: () => { inputValue = ''; },
+        recordPaperWork: recordPaperWorkSpy
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, true);
+    assert.equal(searchPapersSpy.calls.length, 1);
+    assert.equal(recordPaperWorkSpy.calls.length, 1, '检索成功后应记录论文工作记录');
+    assert.equal(recordPaperWorkSpy.calls[0][0], 'Graph Neural Networks');
+});
+
+test('paperSearchFlow: successful search leaves task history and exposes the paper result workspace', async () => {
+    let visibleSurface = 'history';
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getInput: () => '查找金融量化的论文',
+        isPaperSearching: () => false,
+        searchPapers: async () => true,
+        recordPaperWork: async () => {},
+        clearInput: () => {},
+        showPaperResults: () => { visibleSurface = 'results'; }
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, true);
+    assert.equal(visibleSurface, 'results');
+});

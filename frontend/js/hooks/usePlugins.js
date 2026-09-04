@@ -48,7 +48,14 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const isSearchingPapers = ref(false);
     const paperSearchStatus = ref('idle'); // 'idle' | 'searching' | 'success' | 'partial' | 'empty' | 'error'
     const paperSourceStatuses = ref([]);
-    const paperSearchSummary = ref({ totalBeforeMerge: 0, totalAfterMerge: 0 });
+    const paperSearchSummary = ref({
+        totalFetched: 0,
+        totalRejected: 0,
+        totalBeforeMerge: 0,
+        totalAfterMerge: 0,
+        effectiveQuery: '',
+        queryTranslated: false
+    });
     const paperSearchError = ref('');
     const selectedPaper = ref(null);
 
@@ -221,8 +228,12 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
                 paperSearchResults.value = res.items || [];
                 paperSearchStatus.value = res.status;
                 paperSearchSummary.value = {
+                    totalFetched: res.totalFetched || 0,
+                    totalRejected: res.totalRejected || 0,
                     totalBeforeMerge: res.totalBeforeMerge,
-                    totalAfterMerge: res.totalAfterMerge
+                    totalAfterMerge: res.totalAfterMerge,
+                    effectiveQuery: res.effectiveQuery || query,
+                    queryTranslated: Boolean(res.queryTranslated)
                 };
                 const outcome = interpretPaperSearchResponse(res);
                 paperSearchError.value = outcome.errorMessage;

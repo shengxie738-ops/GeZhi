@@ -382,3 +382,75 @@ test('academicAggregate: 5-minute short cache serves successful results and repl
     assert.ok(eventsSecond.some(e => e.key === 'source_a' && e.status === 'success'));
     assert.ok(eventsSecond.some(e => e.key === 'source_b' && e.status === 'success'));
 });
+
+test('academicAggregate: converts a Chinese natural-language finance request into source-ready keywords', async () => {
+    clearAcademicCache();
+    const receivedQueries = [];
+    const providers = {
+        source_a: {
+            label: 'Source A',
+            search: async query => {
+                receivedQueries.push(query);
+                return [createAcademicPaper({
+                    title: 'FinRL: Deep Reinforcement Learning for Quantitative Finance',
+                    abstract: 'Automated trading research for quantitative finance.'
+                }, { key: 'source_a', label: 'Source A' })];
+            }
+        }
+    };
+
+    const result = await searchAcademicPapers('帮我搜索关于金融量化的论文', {
+        sourceKeys: ['source_a'],
+        providers
+    });
+
+    assert.deepEqual(receivedQueries, ['quantitative finance']);
+    assert.equal(result.query, '帮我搜索关于金融量化的论文');
+    assert.equal(result.effectiveQuery, 'quantitative finance');
+});
+
+test('academicAggregate: excludes source records unrelated to the translated academic topic', async () => {
+    clearAcademicCache();
+    const providers = {
+        source_a: {
+            label: 'Source A',
+            search: async () => [
+                createAcademicPaper({
+                    title: 'FinRL: Deep Reinforcement Learning for Quantitative Finance',
+                    abstract: 'Automated trading research for quantitative finance.',
+                    workType: 'preprint'
+                }, { key: 'source_a', label: 'Source A', recordId: 'relevant' }),
+                createAcademicPaper({
+                    title: 'A Review of Landslide Susceptibility Assessment',
+                    abstract: 'Geological hazards and slope stability.',
+                    workType: 'journal-article'
+                }, { key: 'source_a', label: 'Source A', recordId: 'irrelevant' }),
+                createAcademicPaper({
+                    title: '',
+                    venue: 'Quantitative Finance',
+                    doi: '10.1000/blank-record',
+                    workType: 'journal-article'
+                }, { key: 'source_a', label: 'Source A', recordId: 'blank' }),
+                createAcademicPaper({
+                    title: 'Handbook of Quantitative Finance',
+                    abstract: 'A reference book about quantitative finance.',
+                    workType: 'book'
+                }, { key: 'source_a', label: 'Source A', recordId: 'book' })
+            ]
+        }
+    };
+
+    const result = await searchAcademicPapers('查找金融量化的论文', {
+        sourceKeys: ['source_a'],
+        providers
+    });
+
+    assert.deepEqual(result.items.map(item => item.title), [
+        'FinRL: Deep Reinforcement Learning for Quantitative Finance'
+    ]);
+    assert.equal(result.sourceStatuses[0].rawCount, 4);
+    assert.equal(result.sourceStatuses[0].count, 1);
+    assert.equal(result.totalFetched, 4);
+    assert.equal(result.totalRejected, 3);
+    assert.equal(result.totalBeforeMerge, 1);
+});

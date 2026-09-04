@@ -27,7 +27,6 @@ test('Paper Mode: CHAT_AGENT_MODES and normalizeAgentMode', () => {
     assert.equal(normalizeAgentMode('scholar'), 'paper');
     assert.equal(getChatStorageKey('test_user', 'paper'), 'messages:test_user:paper');
 });
-
 test('Paper Mode: buildChatPayload should pass paper mode and model properly', () => {
     const payload = buildChatPayload({
         message: '检索强化学习论文',
@@ -94,4 +93,54 @@ test('Paper Mode Audit: mapHistoryRecordToMessage should include mode, projectId
         created_at: '2026-09-02 23:01:00'
     });
     assert.equal(fallbackMapped.senderId, 'agent_paper', 'senderId 为空时应回退到 agent_paper 而非 agent_tutor');
+});
+
+test('Paper Task Tree: paper search records should dynamically populate projectTaskTree', () => {
+    // 模拟多次论文查询工作产生的工作记录
+    const messages = [
+        // 第一次论文检索：图神经网络
+        {
+            id: 'paper-user-1',
+            senderType: 'user',
+            content: 'Graph Neural Networks in Drug Discovery',
+            mode: 'paper',
+            projectId: PROJECT_PAPER_ID,
+            createdAt: '2026-09-04 10:00:00'
+        },
+        {
+            id: 'paper-agent-1',
+            senderType: 'agent',
+            senderId: 'agent_paper',
+            content: '📚 **学术文献多源检索工作记录**\n- 检索主题：`Graph Neural Networks in Drug Discovery`\n- 响应数据源：arXiv (10篇)、Semantic Scholar (8篇)\n- 文献汇总：去重后 15 篇真实文献。',
+            mode: 'paper',
+            projectId: PROJECT_PAPER_ID,
+            createdAt: '2026-09-04 10:00:02'
+        },
+        // 第二次论文检索：大型语言模型推理能力
+        {
+            id: 'paper-user-2',
+            senderType: 'user',
+            content: 'Reasoning Techniques in Large Language Models',
+            mode: 'paper',
+            projectId: PROJECT_PAPER_ID,
+            createdAt: '2026-09-04 10:15:00'
+        },
+        {
+            id: 'paper-agent-2',
+            senderType: 'agent',
+            senderId: 'agent_paper',
+            content: '📚 **学术文献多源检索工作记录**\n- 检索主题：`Reasoning Techniques in Large Language Models`\n- 响应数据源：arXiv (10篇)\n- 文献汇总：去重后 10 篇真实文献。',
+            mode: 'paper',
+            projectId: PROJECT_PAPER_ID,
+            createdAt: '2026-09-04 10:15:02'
+        }
+    ];
+
+    const taskTree = groupConversationsByProjects(messages, INITIAL_SYSTEM_PROJECTS);
+    const paperProject = taskTree.find(p => p.id === PROJECT_PAPER_ID);
+
+    assert.ok(paperProject, '任务树必须包含【论文查询】项目');
+    assert.equal(paperProject.tasks.length, 2, '任务列表应准确包含 2 个论文查询工作记录');
+    assert.match(paperProject.tasks[0].title, /Graph Neural Networks/, '第1个任务标题应包含检索关键词');
+    assert.match(paperProject.tasks[1].title, /Reasoning Techniques/, '第2个任务标题应包含检索关键词');
 });

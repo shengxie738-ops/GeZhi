@@ -3,8 +3,13 @@ import assert from 'node:assert/strict';
 import {
     EARLY_CONVERSATION_TITLE,
     UNTITLED_CONVERSATION_TITLE,
+    createModeMessageBuckets,
+    createTaskConversationId,
     findConversationForMessage,
+    flattenModeMessageBuckets,
     groupMessagesIntoConversations,
+    reconcileModeHistory,
+    resolveConversationIdForSend,
     truncateConversationTitle
 } from '../js/utils/conversations.js';
 
@@ -89,5 +94,69 @@ assert.equal(truncateConversationTitle(null, 24), '');
 assert.equal(findConversationForMessage(multi, 'a2').id, 'conv-u2');
 assert.equal(findConversationForMessage(multi, 'u1').id, 'conv-u1');
 assert.equal(findConversationForMessage(multi, 'missing'), null);
+
+// 显式任务 ID 是任务边界：同一任务中的多轮问答不能被拆成多个侧栏任务
+const multiTurnTask = groupMessagesIntoConversations([
+    { ...userMsg('u10', '查找 RAG 论文'), mode: 'paper', conversationId: 'task-paper-1' },
+    { ...agentMsg('a10', 'agent_paper', '找到 8 篇论文'), mode: 'paper', conversationId: 'task-paper-1' },
+    { ...userMsg('u11', '继续比较实验数据'), mode: 'paper', conversationId: 'task-paper-1' },
+    { ...agentMsg('a11', 'agent_paper', '对比如下'), mode: 'paper', conversationId: 'task-paper-1' },
+    { ...userMsg('u12', '新主题'), mode: 'paper', conversationId: 'task-paper-2' }
+]);
+assert.equal(multiTurnTask.length, 2);
+assert.equal(multiTurnTask[0].id, 'task-paper-1');
+assert.equal(multiTurnTask[0].title, '查找 RAG 论文');
+assert.deepEqual(multiTurnTask[0].messages.map(message => message.id), ['u10', 'a10', 'u11', 'a11']);
+
+// 任务树必须聚合四种功能的独立消息桶，切换当前功能不能让其他任务消失
+const buckets = createModeMessageBuckets(mode => mode === 'chat'
+    ? [{ ...userMsg('chat-u1', 'AI 对话历史'), mode: 'chat', conversationId: 'task-chat-1' }]
+    : mode === 'paper'
+        ? [{ ...userMsg('paper-u1', '论文查询历史'), mode: 'paper', conversationId: 'task-paper-3' }]
+        : []);
+const flattened = flattenModeMessageBuckets(buckets);
+assert.equal(flattened.length, 2);
+assert.deepEqual(flattened.map(message => message.conversationId), ['task-chat-1', 'task-paper-3']);
+
+// 云端暂时返回空数组时保留本地未同步任务，防止刷新导致历史记录消失
+const localOnly = [{ ...userMsg('local-u1', '离线任务'), mode: 'chat', conversationId: 'task-chat-local' }];
+assert.equal(reconcileModeHistory(localOnly, []), localOnly);
+const remote = [{ ...userMsg('db-u1', '云端任务'), mode: 'chat', conversationId: 'task-chat-db' }];
+assert.deepEqual(
+    reconcileModeHistory(localOnly, remote).map(message => message.conversationId),
+    ['task-chat-db', 'task-chat-local']
+);
+const mirroredRemote = [{ ...localOnly[0], id: 'db-100' }];
+assert.equal(reconcileModeHistory(localOnly, mirroredRemote).length, 1);
+
+// 新建任务在当前功能内获得独立 ID；后续发送继续使用同一个任务，而不是退回默认 AI 对话
+assert.equal(createTaskConversationId('paper', 123456, 'abc123'), 'task-paper-123456-abc123');
+assert.equal(resolveConversationIdForSend({
+    activeConversationId: 'new',
+    draftConversationId: 'task-paper-new',
+    latestConversationId: 'task-paper-old'
+}), 'task-paper-new');
+assert.equal(resolveConversationIdForSend({
+    activeConversationId: 'task-paper-selected',
+    draftConversationId: '',
+    latestConversationId: 'task-paper-old'
+}), 'task-paper-selected');
+assert.equal(resolveConversationIdForSend({
+    activeConversationId: null,
+    draftConversationId: '',
+    latestConversationId: 'task-paper-old'
+}), 'task-paper-old');
+
+// 本地旧记录继续提问时，显式沿用旧任务 ID，不能生成一个同名的重复任务
+const continuedLegacyTask = groupMessagesIntoConversations([
+    userMsg('legacy-u1', '旧任务第一轮'),
+    agentMsg('legacy-a1', 'agent_tutor', '旧回答'),
+    { ...userMsg('new-u1', '继续追问'), conversationId: 'conv-legacy-u1' },
+    { ...agentMsg('new-a1', 'agent_tutor', '继续回答'), conversationId: 'conv-legacy-u1' }
+]);
+assert.equal(continuedLegacyTask.length, 1);
+assert.deepEqual(continuedLegacyTask[0].messages.map(message => message.id), [
+    'legacy-u1', 'legacy-a1', 'new-u1', 'new-a1'
+]);
 
 console.log('conversations.test.mjs: all assertions passed');

@@ -14,6 +14,11 @@ USER_ACCOUNT_COLUMNS = {
     "avatar_path": "VARCHAR(512) NOT NULL DEFAULT ''",
 }
 
+CHAT_MESSAGE_COLUMNS = {
+    "conversation_id": "VARCHAR(64) NULL",
+    "project_id": "VARCHAR(64) NULL",
+}
+
 
 def _ensure_columns(table_name: str, columns: dict[str, str]) -> None:
     inspector = inspect(engine)
@@ -44,6 +49,7 @@ def _sync_domain_payloads() -> None:
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_columns("user_accounts", USER_ACCOUNT_COLUMNS)
+    _ensure_columns("chat_messages", CHAT_MESSAGE_COLUMNS)
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE user_accounts MODIFY COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT ''"))
     _sync_domain_payloads()

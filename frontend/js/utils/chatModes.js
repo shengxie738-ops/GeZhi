@@ -45,7 +45,7 @@ export function getHistoryPanelTitle(agentMode = 'tutor') {
     return '引导式学习历史记录';
 }
 
-export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null, model = '' }) {
+export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', conversationId = '', projectId = '', repositoryId = '', agent = null, courseDatasetIds = null, model = '' }) {
     const normalizedMode = normalizeAgentMode(agentMode);
     const resolvedModel = (model && model !== 'Auto Mode') ? model : agent?.model;
     const payload = {
@@ -53,6 +53,8 @@ export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest
         force_rag: forceRAG || normalizedMode === 'rag',
         sessionId,
         agent_mode: normalizedMode,
+        conversation_id: conversationId || undefined,
+        project_id: projectId || undefined,
         agent_id: agent?.id,
         agent_model: resolvedModel,
         agent_prompt: agent?.prompt
@@ -109,7 +111,7 @@ export function mapHistoryRecordToMessage(record) {
     const content = sanitizeMessageContentForMode(rawContent, agentMode);
     const defaultAgentId = CHAT_AGENT_MODES[agentMode]?.defaultAgentId || 'agent_tutor';
     const fallbackProjectId = agentMode === 'paper' ? 'proj-paper' : (agentMode === 'rag' ? 'proj-rag' : (agentMode === 'tutor' ? 'proj-tutor' : 'proj-default'));
-    return {
+    const message = {
         id: `db-${record?.id}`,
         senderType: role === 'user' ? 'user' : 'agent',
         senderId: role === 'user' ? undefined : (record?.sender_id || defaultAgentId),
@@ -119,4 +121,6 @@ export function mapHistoryRecordToMessage(record) {
         mode: agentMode,
         projectId: record?.project_id || fallbackProjectId
     };
+    if (record?.conversation_id) message.conversationId = record.conversation_id;
+    return message;
 }
