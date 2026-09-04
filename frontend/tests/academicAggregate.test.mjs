@@ -16,6 +16,10 @@ test('academicAggregate: registry exports 4 verified academic providers', () => 
     assert.equal(typeof ACADEMIC_PROVIDERS.crossref.search, 'function');
     assert.equal(typeof ACADEMIC_PROVIDERS.arxiv.search, 'function');
     assert.equal(typeof ACADEMIC_PROVIDERS.europepmc.search, 'function');
+    assert.ok(
+        ACADEMIC_PROVIDERS.arxiv.timeoutMs >= 20000,
+        'arXiv 官方接口存在较高延迟，应使用独立的长超时窗口'
+    );
 });
 
 test('academicAggregate: initial searching events are emitted before provider resolves', async () => {
@@ -191,6 +195,24 @@ test('academicAggregate: status is error when all sources fail', async () => {
     assert.equal(res.status, 'error');
     assert.equal(res.items.length, 0);
     assert.equal(res.sourceStatuses.every(s => s.status === 'error'), true);
+});
+
+test('academicAggregate: preserves actionable upstream timeout diagnostics', async () => {
+    clearAcademicCache();
+    const diagnostic = 'arXiv 上游请求超时（export.arxiv.org）；请检查服务器到该官方接口的网络连通性';
+    const res = await searchAcademicPapers('timeout diagnostic', {
+        sourceKeys: ['arxiv'],
+        providers: {
+            arxiv: {
+                label: 'arXiv',
+                timeoutMs: 25000,
+                search: async () => { throw new Error(diagnostic); }
+            }
+        }
+    });
+
+    assert.equal(res.status, 'error');
+    assert.equal(res.sourceStatuses[0].error, diagnostic);
 });
 
 test('academicAggregate: unknown source keys are recorded as error', async () => {

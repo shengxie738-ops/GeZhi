@@ -17,6 +17,7 @@ import {
     copyCitation,
     downloadCitation
 } from '../api/academicSearch.js';
+import { interpretPaperSearchResponse } from '../controllers/workspaceSendRouter.js';
 
 const SOURCE_LABELS = {
     arxiv: 'arXiv',
@@ -223,7 +224,12 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
                     totalBeforeMerge: res.totalBeforeMerge,
                     totalAfterMerge: res.totalAfterMerge
                 };
-                return true;
+                const outcome = interpretPaperSearchResponse(res);
+                paperSearchError.value = outcome.errorMessage;
+                if (!outcome.completed && showToast) {
+                    showToast(outcome.errorMessage, 'error');
+                }
+                return outcome.completed;
             }
             return false;
         } catch (err) {

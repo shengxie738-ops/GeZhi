@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     OPENALEX_API_KEY: str = ""
     CROSSREF_MAILTO: str = ""
     ACADEMIC_CACHE_TTL_SECONDS: int = 600
+    ACADEMIC_HTTP_TIMEOUT_SECONDS: float = 12.0
     ARXIV_CACHE_TTL_SECONDS: int = 86400
     ARXIV_MIN_INTERVAL_SECONDS: float = 3.0
+    ARXIV_HTTP_TIMEOUT_SECONDS: float = 20.0
 
     # RAGFlow
     RAGFLOW_API_KEY: str

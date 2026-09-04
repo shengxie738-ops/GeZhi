@@ -12,7 +12,7 @@
 
 `FastAPI` `LangGraph` `LangChain` `Vue 3` `React + Vite` `RAGFlow` `Gitea` `MySQL` `微信小程序`
 
-**版本** ｜ **后端端口** 生产 8516 / Windows 本地开发 9516 ｜ **公网域名** https://gezhisystem.com ｜ 
+**版本** ｜ **后端端口** 生产 / Windows 本地开发 8516 ｜ **公网域名** https://gezhisystem.com ｜
 
 
 ---
@@ -80,8 +80,8 @@ copy .env.example .env
 #   QWEN_IMAGE_ENABLED=false     
 
 # 3. 启动后端（数据库表自动创建）
-# 注：Windows 本地开发环境因 winnat 保留端口段（8429-8528）限制改用 9516；Linux/生产环境使用 8516
-uvicorn app.main:app --host 0.0.0.0 --port 9516 --reload
+# 当前 Windows 环境的 9516 端口处于系统保留段，本地与生产统一使用 8516
+uvicorn app.main:app --host 0.0.0.0 --port 8516 --reload
 
 # 4. 启动前端（另开终端）
 cd frontend
@@ -89,7 +89,7 @@ python -m http.server 5174
 ```
 
 访问 http://localhost:5174 ，或者访问 https://gezhisystem.com，使用演示账号 `23001020119` / `123456` 登录。
-前端已在 `frontend/js/config/env.js` 中自动识别运行环境：生产直连公网网关，本地自动连接 `http://127.0.0.1:9516/api`。
+前端已在 `frontend/js/config/env.js` 中自动识别运行环境：生产直连公网网关，本地自动连接 `http://127.0.0.1:8516/api`。
 
 
 > RAGFlow 与 Gitea 为可选依赖，评委跳过不影响主流程体验；完整部署见 [第 5 节](#5-部署与运行可复现部署指南)。
@@ -215,7 +215,7 @@ flowchart TB
 
 | 服务 | 端口 | 协议 | 用途 | 启动方式 |
 |------|------|------|------|----------|
-| 后端 API | 生产 8516 / 本地 9516 | HTTP | FastAPI 主服务，学术代理与业务端点 | `uvicorn app.main:app --port 9516` (本地) / `8516` (生产) |
+| 后端 API | 8516 | HTTP | FastAPI 主服务，学术代理与业务端点 | `uvicorn app.main:app --port 8516` |
 | PC 前端 | 5174 | HTTP | Vue3 主界面（静态） | `python -m http.server 5174` |
 | 登录页 | 5173 | HTTP | React 登录页（开发） | `pnpm dev` |
 | Gitea HTTP | 3000 | HTTP | 仓库 Web 管理界面 | `docker run -p 3000:3000` |
@@ -228,7 +228,7 @@ flowchart TB
 
 ### 3.4 多端交互与数据流
 
-**PC 端**：Vue3 CDN 直连后端 `/api`，静态资源（头像、生成的算法图解）走后端 `/static`。前端通过 `frontend/js/config/env.js` 自动识别运行环境：`localhost` → `http://127.0.0.1:9516`（Windows 本地），生产 → `https://gezhisystem.com`（后端 8516）。
+**PC 端**：Vue3 CDN 直连后端 `/api`，静态资源（头像、生成的算法图解）走后端 `/static`。前端通过 `frontend/js/config/env.js` 自动识别运行环境：`localhost` → `http://127.0.0.1:8516`（Windows 本地），生产 → `https://gezhisystem.com`（后端 8516）。
 
 
 **微信小程序端**：受小程序域名白名单限制，所有 API 请求经云函数 `cloud/apiProxy`（基于 `tcb-admin-node` + `axios`）转发至后端，规避白名单约束并统一鉴权。小程序 18 页面通过自定义 tabBar 组织为"首页 / 学术空间 / AI 导师 / 我的"四大入口。
@@ -704,7 +704,7 @@ pnpm dev
 
 [`frontend/js/config/env.js`](frontend/js/config/env.js) 自动识别运行环境：
 
-- `localhost` / `127.0.0.1` → `http://127.0.0.1:9516`（Windows 本地开发，规避 winnat 保留端口冲突）
+- `localhost` / `127.0.0.1` → `http://127.0.0.1:8516`（Windows 本地开发；当前机器的 9516 位于系统保留段）
 - 其他 → `https://gezhisystem.com`（生产环境，Nginx 反代后端 8516 端口）
 - 支持运行时覆盖：`window.__API_ORIGIN__` 或 `localStorage.apiOrigin`
 
@@ -931,11 +931,13 @@ python -m pip install -r frontend/requirements-test.txt
 python -m playwright install chromium
 ```
 
-**可选环境变量配置（`.env`）**：
-- `OPENALEX_API_KEY`：可选，用于提升 OpenAlex 访问配额
-- `CROSSREF_MAILTO`：可选，用于加入 Crossref 礼貌请求池（Polite Pool）
+**学术检索环境变量配置（`.env`）**：
+- `OPENALEX_API_KEY`：本地可留空；生产建议配置，以提升 OpenAlex 访问配额
+- `CROSSREF_MAILTO`：本地可留空；生产应配置真实联系邮箱，以加入 Crossref 礼貌请求池（Polite Pool）
+- `ACADEMIC_HTTP_TIMEOUT_SECONDS`：OpenAlex / Crossref 后端上游超时，默认 12 秒
+- `ARXIV_HTTP_TIMEOUT_SECONDS`：arXiv 后端上游超时，默认 20 秒（前端独立等待 25 秒）
 - `ACADEMIC_TEST_TOKEN`：可选，测试时直接传入特定学生 JWT
-- `ACADEMIC_API_BASE_URL`：可选，默认 `http://127.0.0.1:9516/api`
+- `ACADEMIC_API_BASE_URL`：真实来源验收脚本可选覆盖，默认 `http://127.0.0.1:8516/api`
 
 #### 7.2.2 运行后端测试
 ```bash
@@ -964,8 +966,8 @@ node tests/onestopWork.test.mjs
 
 #### 7.2.4 浏览器自动化与真实联网验收
 ```bash
-# 终端 A：启动后端（端口 9516）
-cd backend && uvicorn app.main:app --host 127.0.0.1 --port 9516
+# 终端 A：启动后端（端口 8516）
+cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8516
 
 # 终端 B：运行 Playwright 浏览器自动化流程测试（自动拉起静态服务器）
 cd frontend && python tests/paper_search_playwright.py

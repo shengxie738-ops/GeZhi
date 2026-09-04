@@ -178,13 +178,25 @@ def parse_arxiv_atom(xml_text: str) -> list[dict]:
     return items
 
 
-async def _execute_request_with_retry(client: httpx.AsyncClient, url: str, params: dict = None, headers: dict = None) -> httpx.Response:
+def _upstream_timeout_detail(source_name: str, url: str) -> str:
+    source = source_name or "学术来源"
+    host = urlsplit(url).netloc or url
+    return f"{source} 上游请求超时（{host}）；请检查服务器到该官方接口的网络连通性"
+
+
+async def _execute_request_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    params: dict = None,
+    headers: dict = None,
+    source_name: str = ""
+) -> httpx.Response:
     """执行 HTTP 请求，支持超时 504 映射与 429 退避单次重试"""
     try:
         resp = await client.get(url, params=params, headers=headers)
     except httpx.TimeoutException as e:
         logger.warning("Upstream timeout for %s: %s", url, e)
-        raise HTTPException(status_code=504, detail="Upstream request timeout")
+        raise HTTPException(status_code=504, detail=_upstream_timeout_detail(source_name, url))
     except Exception as e:
         logger.error("Upstream request error for %s: %s", url, e)
         raise HTTPException(status_code=502, detail=f"Upstream service connection error: {str(e)}")
@@ -204,7 +216,7 @@ async def _execute_request_with_retry(client: httpx.AsyncClient, url: str, param
         try:
             resp = await client.get(url, params=params, headers=headers)
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="Upstream request timeout")
+            raise HTTPException(status_code=504, detail=_upstream_timeout_detail(source_name, url))
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Upstream service connection error: {str(e)}")
 
@@ -233,8 +245,8 @@ async def fetch_openalex(query: str, limit: int = 10) -> list[dict]:
     }
 
     url = "https://api.openalex.org/works"
-    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-        resp = await _execute_request_with_retry(client, url, params=params, headers=headers)
+    async with httpx.AsyncClient(timeout=settings.ACADEMIC_HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        resp = await _execute_request_with_retry(client, url, params=params, headers=headers, source_name="OpenAlex")
         try:
             data = resp.json()
             return data.get("results", [])
@@ -260,14 +272,14 @@ async def fetch_crossref(query: str, limit: int = 10) -> list[dict]:
     }
 
     doi = normalize_doi_query(query)
-    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=settings.ACADEMIC_HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
         if doi:
             # DOI 精确查询
             url = f"https://api.crossref.org/works/{quote(doi, safe='')}"
             params = {}
             if settings.CROSSREF_MAILTO:
                 params["mailto"] = settings.CROSSREF_MAILTO
-            resp = await _execute_request_with_retry(client, url, params=params, headers=headers)
+            resp = await _execute_request_with_retry(client, url, params=params, headers=headers, source_name="Crossref")
             try:
                 data = resp.json()
                 msg = data.get("message")
@@ -284,7 +296,7 @@ async def fetch_crossref(query: str, limit: int = 10) -> list[dict]:
             }
             if settings.CROSSREF_MAILTO:
                 params["mailto"] = settings.CROSSREF_MAILTO
-            resp = await _execute_request_with_retry(client, url, params=params, headers=headers)
+            resp = await _execute_request_with_retry(client, url, params=params, headers=headers, source_name="Crossref")
             try:
                 data = resp.json()
                 return data.get("message", {}).get("items", [])
@@ -324,6 +336,6 @@ async def fetch_arxiv(query: str, limit: int = 10) -> list[dict]:
     }
 
 
-    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-        resp = await _execute_request_with_retry(client, url, params=params, headers=headers)
+    async with httpx.AsyncClient(timeout=settings.ARXIV_HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        resp = await _execute_request_with_retry(client, url, params=params, headers=headers, source_name="arXiv")
         return parse_arxiv_atom(resp.text)

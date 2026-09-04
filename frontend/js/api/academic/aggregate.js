@@ -17,7 +17,7 @@ import {
 export const ACADEMIC_PROVIDERS = {
     openalex: { label: 'OpenAlex', search: searchOpenAlex },
     crossref: { label: 'Crossref', search: searchCrossref },
-    arxiv: { label: 'arXiv', search: searchArxiv },
+    arxiv: { label: 'arXiv', search: searchArxiv, timeoutMs: 25000 },
     europepmc: { label: 'Europe PMC', search: searchEuropePmc }
 };
 
@@ -201,13 +201,14 @@ export async function searchAcademicPapers(query, options = {}) {
         onSourceStatus({ ...initialStatus });
     }
 
-    // 创建每个来源的任务，包含 12 秒单源超时与外部 signal 监听
+    // 创建每个来源的任务，包含单源超时与外部 signal 监听；arXiv 使用独立长窗口。
     const rankedItems = [];
     let totalBeforeMerge = 0;
 
     const sourcePromises = sourceKeys.map(async (key) => {
         const provider = providers[key];
         const label = provider?.label || key;
+        const timeoutMs = Math.max(Number(provider?.timeoutMs) || 12000, 1);
         const startTime = Date.now();
 
         if (!provider || typeof provider.search !== 'function') {
@@ -241,7 +242,7 @@ export async function searchAcademicPapers(query, options = {}) {
             const timeoutErr = new Error('请求超时');
             timeoutErr.name = 'TimeoutError';
             sourceController.abort(timeoutErr);
-        }, 12000);
+        }, timeoutMs);
 
         try {
             const papers = await provider.search(cleanQuery, {
@@ -278,8 +279,9 @@ export async function searchAcademicPapers(query, options = {}) {
             }
 
             const durationMs = Date.now() - startTime;
-            const isTimeout = err?.name === 'TimeoutError' || err?.message?.includes('超时') || durationMs >= 11900;
-            const errorMsg = isTimeout ? '请求超时' : (err?.message || '请求失败');
+            const isClientTimeout = err?.name === 'TimeoutError' || durationMs >= timeoutMs - 100;
+            // 后端返回的来源化诊断（例如具体上游主机）必须保留；仅压缩前端自身超时。
+            const errorMsg = isClientTimeout ? '请求超时' : (err?.message || '请求失败');
 
             const errorStatus = {
                 key,

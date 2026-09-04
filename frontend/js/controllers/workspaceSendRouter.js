@@ -14,6 +14,22 @@
  * @param {() => void} deps.clearInput 清空输入框回调
  * @returns {(overrideText?: string, options?: any) => Promise<any>}
  */
+export function interpretPaperSearchResponse(response = {}) {
+    if (response?.status !== 'error') {
+        return { completed: true, errorMessage: '' };
+    }
+
+    const sourceErrors = (Array.isArray(response?.sourceStatuses) ? response.sourceStatuses : [])
+        .filter(item => item?.status === 'error')
+        .map(item => `${item.label || item.key || '未知来源'}：${item.error || '请求失败'}`);
+    const details = sourceErrors.length ? `（${sourceErrors.join('；')}）` : '';
+
+    return {
+        completed: false,
+        errorMessage: `全部论文来源检索失败，请稍后重试${details}`
+    };
+}
+
 export function createWorkspaceMessageSender(deps = {}) {
     const {
         getMode = () => '',
@@ -25,8 +41,10 @@ export function createWorkspaceMessageSender(deps = {}) {
     } = deps;
 
     return async function sendMessage(overrideText = null, options = {}) {
-        const text = (overrideText !== null && overrideText !== undefined
-            ? String(overrideText)
+        // Vue 的裸事件处理器会把 PointerEvent/KeyboardEvent 作为第一个参数传入。
+        // 仅字符串可作为程序化查询覆盖值，其他类型一律回退到输入框真实内容。
+        const text = (typeof overrideText === 'string'
+            ? overrideText
             : String(getInput() || '')).trim();
 
         if (!text) {

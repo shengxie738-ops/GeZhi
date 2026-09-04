@@ -13,7 +13,7 @@
  * 严禁硬编码 token 或密钥。
  */
 
-const API_BASE_URL = (process.env.ACADEMIC_API_BASE_URL || 'http://127.0.0.1:9516/api').replace(/\/+$/, '');
+const API_BASE_URL = (process.env.ACADEMIC_API_BASE_URL || 'http://127.0.0.1:8516/api').replace(/\/+$/, '');
 let authToken = process.env.ACADEMIC_TEST_TOKEN || '';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

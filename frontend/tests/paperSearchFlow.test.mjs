@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { createWorkspaceMessageSender } from '../js/controllers/workspaceSendRouter.js';
 
 function createSpy(implementation = () => {}) {
@@ -34,6 +35,38 @@ test('paperSearchFlow: paper mode invokes searchPapers once and never invokes se
     assert.equal(sendChatSpy.calls.length, 0, 'sendChat 绝不得被调用');
     assert.equal(clearInputSpy.calls.length, 1, '成功检索后应清空输入');
     assert.equal(inputValue, '');
+});
+
+for (const eventType of ['click', 'keydown']) {
+    test(`paperSearchFlow: ${eventType} event is never stringified as the paper query`, async () => {
+        const searchPapersSpy = createSpy(async () => true);
+        const sendMessage = createWorkspaceMessageSender({
+            getMode: () => 'paper',
+            getInput: () => 'Attention Is All You Need',
+            isPaperSearching: () => false,
+            sendChat: createSpy(),
+            searchPapers: searchPapersSpy,
+            clearInput: createSpy()
+        });
+
+        await sendMessage({ type: eventType, preventDefault() {} });
+
+        assert.equal(searchPapersSpy.calls.length, 1);
+        assert.equal(
+            searchPapersSpy.calls[0][0],
+            'Attention Is All You Need',
+            'Vue 事件对象必须被忽略，并从输入框读取真实查询词'
+        );
+    });
+}
+
+test('paperSearchFlow: workspace template invokes sendMessage explicitly for click and Enter', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+    assert.doesNotMatch(html, /@click="sendMessage"/);
+    assert.doesNotMatch(html, /@keydown\.enter\.exact\.prevent="sendMessage"/);
+    assert.match(html, /@click="sendMessage\(\)"/);
+    assert.match(html, /@keydown\.enter\.exact\.prevent="sendMessage\(\)"/);
 });
 
 test('paperSearchFlow: chat, tutor, and rag modes invoke sendChat once and never invoke searchPapers', async () => {

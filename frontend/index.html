@@ -3515,7 +3515,7 @@
                                             </div>
 
                                             <textarea v-model="inputText"
-                                                @keydown.enter.exact.prevent="sendMessage"
+                                                @keydown.enter.exact.prevent="sendMessage()"
                                                 rows="4"
                                                 class="w-full bg-transparent resize-none outline-none p-2 text-sm text-slate-800 placeholder-slate-400 transition-colors leading-relaxed"
                                                 :placeholder="agentMode === 'paper' ? '输入论文题目、学术关键词（如 Transformer, GNN, RAG）、DOI 或文献综述需求...' : (agentMode === 'tutor' ? '向导师提问概念理论、算法原理、推导步骤或解题思路...' : (agentMode === 'rag' ? '输入知识库检索或文献问答问题...' : '输入任何问题、代码或想法，AI 助手将为您解答...'))"></textarea>
@@ -3641,7 +3641,7 @@
                                                     </button>
 
                                                     <!-- 发送执行按钮 (紫色渐变胶囊) -->
-                                                    <button type="button" @click="sendMessage"
+                                                    <button type="button" @click="sendMessage()"
                                                         :disabled="!inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers)"
                                                         class="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-md hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                                                         <span>发送</span>
@@ -3963,7 +3963,7 @@
                                                     </div>
 
                                                     <textarea v-model="inputText"
-                                                        @keydown.enter.exact.prevent="sendMessage" rows="2"
+                                                        @keydown.enter.exact.prevent="sendMessage()" rows="2"
                                                         class="flex-1 bg-transparent resize-none outline-none py-2 px-3 text-sm max-h-36 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors"
                                                         :placeholder="agentMode === 'paper' ? '输入论文题目、学术关键词、DOI 或文献综述需求...' : (agentMode === 'tutor' ? '向导师提问概念理论、算法原理、推导步骤或解题思路...' : (agentMode === 'rag' ? '输入知识库检索或文献问答问题...' : '输入追问或新的任务指令...'))"></textarea>
                                                     <div class="flex items-center justify-between pt-2 border-t border-slate-100 px-2">
@@ -4049,7 +4049,7 @@
                                                                 </transition>
                                                             </div>
                                                         </div>
-                                                        <button type="button" @click="sendMessage"
+                                                        <button type="button" @click="sendMessage()"
                                                             :disabled="!inputText.trim() || thinkingAgent !== null || (agentMode === 'paper' && isSearchingPapers)"
                                                             class="px-4 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold text-xs shadow-xs hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                                                             <span>发送</span>

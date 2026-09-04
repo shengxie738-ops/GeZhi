@@ -5,6 +5,7 @@ import time
 import subprocess
 import socket
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, expect
 
 # 确保在 frontend 目录下运行时的路径统一
@@ -16,6 +17,19 @@ ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 PORT = int(os.environ.get("PORT", 8188))
 BASE_URL = f"http://127.0.0.1:{PORT}/index.html"
 ORIGIN = f"http://127.0.0.1:{PORT}"
+
+
+def get_query_parameter(url):
+    return parse_qs(urlparse(url).query).get("query", [""])[0]
+
+
+def wait_for_request_count(requests, expected_count, timeout_seconds=8):
+    deadline = time.time() + timeout_seconds
+    while len(requests) < expected_count and time.time() < deadline:
+        time.sleep(0.1)
+    assert len(requests) >= expected_count, (
+        f"学术请求数量不足，期望至少 {expected_count}，实际 {len(requests)}: {requests}"
+    )
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -91,7 +105,11 @@ def main():
             def track_request(req):
                 if "/api/chat/stream" in req.url:
                     stream_chat_requests.append(req.url)
-                if "academic" in req.url or "europepmc" in req.url:
+                if "europepmc.org/articles/PMC" in req.url:
+                    return
+                request_path = urlparse(req.url).path
+                if (request_path.startswith("/api/academic/") and request_path.endswith("/search")) \
+                        or "/europepmc/webservices/rest/search" in request_path:
                     academic_requests.append(req.url)
             page.on("request", track_request)
 
@@ -249,6 +267,13 @@ def main():
             expect(page.locator("text=去重后").first).to_be_visible(timeout=8000)
             print("[playwright] multi-source results merged successfully.")
 
+            # 点击发送必须把输入文本原样作为 query，不能传入 [object PointerEvent]
+            wait_for_request_count(academic_requests, len(installed_plugins))
+            click_requests = academic_requests[:len(installed_plugins)]
+            assert all(get_query_parameter(url) == "Attention Is All You Need" for url in click_requests), (
+                f"点击发送的真实 query 参数错误: {click_requests}"
+            )
+
             # 5. 验证论文卡片展示与安全外链
             paper_card = page.locator("h4:has-text('Attention Is All You Need')").first
             expect(paper_card).to_be_visible(timeout=5000)
@@ -274,7 +299,9 @@ def main():
 
             # 6. 打开详情弹窗并验证元数据
             detail_btn = page.locator("button:has-text('查看详情')").first
-            detail_btn.click()
+            expect(detail_btn).to_be_visible()
+            # 结果区为内部滚动容器，headless Chromium 有时误判按钮在页面 viewport 外。
+            detail_btn.evaluate("element => element.click()")
 
             # 弹窗内元素验证
             expect(page.locator("h3:has-text('Attention Is All You Need')").first).to_be_visible(timeout=5000)
@@ -299,6 +326,20 @@ def main():
             time.sleep(0.3)
             expect(page.locator("h3:has-text('Attention Is All You Need')")).not_to_be_visible()
             print("[playwright] closed detail modal with Escape.")
+
+            # 回车发送使用不同查询词，确保 KeyboardEvent 同样不会污染 query
+            enter_query = "Graph Neural Networks"
+            request_count_before_enter = len(academic_requests)
+            input_textarea = page.locator("textarea").first
+            input_textarea.fill(enter_query)
+            input_textarea.press("Enter")
+            wait_for_request_count(academic_requests, request_count_before_enter + len(installed_plugins))
+            enter_requests = academic_requests[request_count_before_enter:request_count_before_enter + len(installed_plugins)]
+            assert all(get_query_parameter(url) == enter_query for url in enter_requests), (
+                f"回车发送的真实 query 参数错误: {enter_requests}"
+            )
+            assert len(stream_chat_requests) == 0, "论文模式点击与回车均不得调用聊天流"
+            print("[playwright] click and Enter query parameters verified.")
 
             # 9. 测试空插件来源搜索时的安全拦截与添加引导
             print("[playwright] testing empty plugin sources behavior...", flush=True)
