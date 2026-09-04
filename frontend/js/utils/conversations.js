@@ -52,21 +52,31 @@ export function reconcileModeHistory(localMessages = [], remoteMessages = []) {
         const senderId = message?.senderId || message?.sender_id || '';
         return `${conversationId}\u0000${role}\u0000${senderId}\u0000${String(message?.content || '')}`;
     };
-    const remoteIds = new Set(remote.map(message => String(message?.id || '')).filter(Boolean));
-    const remainingRemoteSignatures = new Map();
-    remote.forEach(message => {
-        const signature = signatureFor(message);
-        remainingRemoteSignatures.set(signature, (remainingRemoteSignatures.get(signature) || 0) + 1);
+    const merged = remote.map(m => (m ? { ...m } : m));
+    const remoteIdMap = new Map();
+    merged.forEach(m => {
+        if (m?.id) remoteIdMap.set(String(m.id), m);
+    });
+    const remoteSignatureMap = new Map();
+    merged.forEach(m => {
+        const sig = signatureFor(m);
+        if (!remoteSignatureMap.has(sig)) {
+            remoteSignatureMap.set(sig, []);
+        }
+        remoteSignatureMap.get(sig).push(m);
     });
 
-    const merged = [...remote];
     local.forEach(message => {
         const signature = signatureFor(message);
-        const matchingRemoteCount = remainingRemoteSignatures.get(signature) || 0;
-        const hasMatchingRemoteId = remoteIds.has(String(message?.id || ''));
-        if (hasMatchingRemoteId || matchingRemoteCount > 0) {
-            if (matchingRemoteCount > 0) {
-                remainingRemoteSignatures.set(signature, matchingRemoteCount - 1);
+        const matchingBySigList = remoteSignatureMap.get(signature);
+        const matchedBySig = matchingBySigList && matchingBySigList.length > 0 ? matchingBySigList.shift() : null;
+        const matchedById = message?.id ? remoteIdMap.get(String(message.id)) : null;
+        const matchedRemote = matchedById || matchedBySig;
+
+        if (matchedRemote) {
+            // 保留本地独有的学术文献快照与扩展字段，防止云端覆写导致丢失
+            if (Array.isArray(message?.attachedPapers) && message.attachedPapers.length > 0 && !matchedRemote.attachedPapers) {
+                matchedRemote.attachedPapers = message.attachedPapers;
             }
             return;
         }

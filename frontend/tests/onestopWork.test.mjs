@@ -101,9 +101,8 @@ test('Task 6: Robust storage, XSS sanitization and persistent task state in useC
     assert.match(chatCode, /const sanitizePaperUrl =/);
     // 验证任务草稿 ID 与跨功能消息桶存在，任务不再依赖数据库消息 ID 重命名
     assert.match(chatCode, /draftConversationId/);
-    assert.match(chatCode, /modeMessageBuckets/);
-    // 验证场景A优化（支持点击论文任务查看历史）
-    assert.match(htmlCode, /\(agentMode === 'paper' && !activeConversation\)/);
+    // 验证场景A优化（由单一状态源 paperActiveTab 决定文献列表还是研读对话）
+    assert.match(htmlCode, /\(agentMode === 'paper' && paperActiveTab === 'results'\)/);
 });
 
 test('Task 7: top-level new task must not pass the click event as a project id', () => {

@@ -3477,6 +3477,28 @@
                                             </span>
                                         </div>
                                         <div class="flex items-center gap-2">
+                                            <!-- 论文模式双态视图切换胶囊: 检索文献列表 ⇄ 研读对话记录 -->
+                                            <div v-if="agentMode === 'paper' && (paperSearchResults.length > 0 || activeConversationMessages.length > 0)"
+                                                class="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200/80 shadow-2xs mr-1">
+                                                <button type="button" @click="paperActiveTab = 'results'"
+                                                    id="tab-paper-results-btn"
+                                                    class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                    :class="paperActiveTab === 'results' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
+                                                    <i class="ph ph-article"></i>
+                                                    <span>文献列表</span>
+                                                    <span v-if="paperSearchResults.length > 0" class="px-1.5 py-0.2 text-[10px] rounded-full bg-sky-100 text-sky-700 font-mono">
+                                                        {{ paperSearchResults.length }}
+                                                    </span>
+                                                </button>
+                                                <button type="button" @click="paperActiveTab = 'dialog'"
+                                                    id="tab-paper-dialog-btn"
+                                                    class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                    :class="paperActiveTab === 'dialog' ? 'bg-white text-violet-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
+                                                    <i class="ph ph-chats-circle"></i>
+                                                    <span>研读对话</span>
+                                                </button>
+                                            </div>
+
                                             <!-- 论文检索后吸顶常驻返回对话框按钮 -->
                                             <button v-if="agentMode === 'paper' && (paperSearchResults.length > 0 || paperSearchStatus !== 'idle')"
                                                 type="button" @click="returnToChatDialog"
@@ -3493,8 +3515,8 @@
                                         </div>
                                     </header>
 
-                                    <!-- 场景 A：首屏 / 新建任务空白态 / 论文查询未选中历史任务时的工作台 -->
-                                    <div v-if="(agentMode === 'paper' && !activeConversation) || activeConversationMessages.length === 0 || activeConversationId === 'new'"
+                                    <!-- 场景 A：首屏 / 新建任务空白态 / 论文查询结果列表大厅 -->
+                                    <div v-if="(agentMode === 'paper' && paperActiveTab === 'results') || (agentMode !== 'paper' && (activeConversationMessages.length === 0 || activeConversationId === 'new'))"
                                         class="flex-1 flex flex-col items-center p-6 md:p-12 overflow-y-auto max-w-4xl mx-auto w-full animate-fade-in"
                                         :class="agentMode === 'paper' && (paperSearchResults.length > 0 || paperSearchStatus !== 'idle') ? 'justify-start' : 'justify-center'">
                                         
@@ -3956,6 +3978,20 @@
                                                         <div v-else
                                                             class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm markdown-body text-[14px] text-slate-800"
                                                             v-html="parsedHtmlCache[msg.id] || msg.content"></div>
+
+                                                        <!-- 若该消息附带文献检索结果，展示文献卡片直达入口 -->
+                                                        <div v-if="msg.attachedPapers && msg.attachedPapers.length > 0"
+                                                            class="mt-2.5 p-3 bg-sky-50/80 border border-sky-200/80 rounded-2xl flex items-center justify-between">
+                                                            <div class="flex items-center gap-2 text-xs font-bold text-sky-800">
+                                                                <i class="ph ph-article text-sky-600 text-sm"></i>
+                                                                <span>该任务已关联检索 {{ msg.attachedPapers.length }} 篇经过学术源验证的真实文献</span>
+                                                            </div>
+                                                            <button type="button" @click="paperSearchResults = msg.attachedPapers; paperSearchStatus = 'success'; paperActiveTab = 'results'"
+                                                                class="px-2.5 py-1 bg-white hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg border border-sky-300/60 transition-all flex items-center gap-1 shadow-2xs cursor-pointer">
+                                                                <i class="ph ph-arrow-up-right"></i>
+                                                                <span>查看文献卡片大厅</span>
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>

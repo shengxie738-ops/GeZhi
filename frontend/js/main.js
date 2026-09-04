@@ -539,6 +539,21 @@ const app = createApp({
             }
         }
 
+        const handleSelectConversation = async (conversationId) => {
+            await chat.selectConversation(conversationId);
+            if (chat.agentMode.value === 'paper') {
+                const conv = chat.activeConversation.value;
+                if (conv && Array.isArray(conv.messages)) {
+                    const paperAgentMsg = conv.messages.slice().reverse().find(m => Array.isArray(m.attachedPapers) && m.attachedPapers.length > 0);
+                    if (paperAgentMsg && paperAgentMsg.attachedPapers && paperAgentMsg.attachedPapers.length > 0) {
+                        pluginsState.paperSearchResults.value = paperAgentMsg.attachedPapers;
+                        pluginsState.paperSearchStatus.value = 'success';
+                    }
+                }
+                chat.paperActiveTab.value = 'results';
+            }
+        };
+
         // 整合返回供模板挂载
         return {
             // Toast
@@ -563,6 +578,7 @@ const app = createApp({
             // 工作台模式控制
             workspaceMode,
             selectWorkspaceMode,
+            paperActiveTab: chat.paperActiveTab,
 
             // Chat & Files
             inputText: chat.inputText,
@@ -671,7 +687,7 @@ const app = createApp({
             setAgentMode: chat.setAgentMode,
             loadChatHistory: chat.loadChatHistory,
             startNewConversation: chat.startNewConversation,
-            selectConversation: chat.selectConversation,
+            selectConversation: handleSelectConversation,
             backToCurrentConversation: chat.backToCurrentConversation,
             deleteConversation: chat.deleteConversation,
             clearChatHistory: chat.clearChatHistory,

@@ -105,6 +105,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         };
     });
 
+    // 论文模式下的工作台双态切换视图: 'results' (文献检索卡片列表) | 'dialog' (研读对话流)
+    const paperActiveTab = ref('results');
+
     const switchWorkMode = (mode) => {
         activeConversationId.value = null;
         draftConversationId.value = '';
@@ -112,6 +115,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         if (showVisualGuideViewer) showVisualGuideViewer.value = false;
         if (mode === 'paper') {
             agentMode.value = 'paper';
+            paperActiveTab.value = 'results';
             forceRAG.value = false;
             activeProjectId.value = PROJECT_PAPER_ID;
             loadChatHistory('paper');
@@ -205,6 +209,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             senderType: 'agent',
             senderId: 'agent_paper',
             content: reportContent,
+            attachedPapers: results.slice(0, 20),
             time: timestamp,
             createdAt: timestamp,
             mode: 'paper',
@@ -217,6 +222,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
         // 1. 同步到前端响应式状态与本地存储（模式隔离保护）
         if (isCurrentlyInPaperMode) {
+            paperActiveTab.value = 'results';
             messages.value.push(userMsg, agentMsg);
             if (activeConversationId.value === 'new') {
                 activeConversationId.value = null;
@@ -468,6 +474,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const showPaperSearchResults = () => {
         if (agentMode.value !== 'paper') return;
+        paperActiveTab.value = 'results';
         activeConversationId.value = null;
         draftConversationId.value = '';
         activeProjectId.value = PROJECT_PAPER_ID;
@@ -1273,6 +1280,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         toggleModelDropdown,
         switchWorkMode,
         showPaperSearchResults,
+        paperActiveTab,
         returnToChatDialog,
         recordPaperSearchWork,
         messages,

@@ -233,8 +233,74 @@ async def _execute_request_with_retry(
     return resp
 
 
+BACKEND_TERM_TRANSLATIONS = [
+    ("金融量化与算法交易", "quantitative finance algorithmic trading"),
+    ("量化投资与资产配置", "quantitative investment asset allocation"),
+    ("金融量化", "quantitative finance"),
+    ("量化金融", "quantitative finance"),
+    ("量化交易", "quantitative trading"),
+    ("算法交易", "algorithmic trading"),
+    ("量化投资", "quantitative investment"),
+    ("金融工程", "financial engineering"),
+    ("资产定价", "asset pricing"),
+    ("期权定价", "option pricing"),
+    ("高频交易", "high frequency trading"),
+    ("风险管理", "risk management"),
+    ("投资组合优化", "portfolio optimization"),
+    ("信用风险", "credit risk"),
+    ("市场微观结构", "market microstructure"),
+    ("检索增强生成", "retrieval augmented generation"),
+    ("生成对抗网络", "generative adversarial networks"),
+    ("深度强化学习", "deep reinforcement learning"),
+    ("大语言模型", "large language models"),
+    ("语言大模型", "large language models"),
+    ("图卷积网络", "graph convolutional networks"),
+    ("图神经网络", "graph neural networks"),
+    ("自监督学习", "self-supervised learning"),
+    ("多模态学习", "multimodal learning"),
+    ("注意力机制", "attention mechanism"),
+    ("时间序列分析", "time series analysis"),
+    ("知识图谱", "knowledge graphs"),
+    ("自然语言处理", "natural language processing"),
+    ("计算机视觉", "computer vision"),
+    ("深度学习", "deep learning"),
+    ("强化学习", "reinforcement learning"),
+    ("机器学习", "machine learning"),
+    ("人工智能", "artificial intelligence"),
+    ("神经网络", "neural networks"),
+]
+
+
+def sanitize_academic_search_query(query: str) -> str:
+    """对学术检索词进行清洗防御，剥离中文自然语言噪音并实施核心学术术语安全映射"""
+    if not query:
+        return ""
+    cleaned = query.strip()
+    cleaned = re.sub(
+        r"^(?:请帮我|帮我|请问|请|麻烦您?|能否|我想|我想找|查找|搜索|检索|查询|寻找|推荐|调研一下)\s*(?:一下|一些|相关的)?\s*",
+        "",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = re.sub(r"^(?:关于|有关|针对|基于)\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(
+        r"\s*(?:相关|有关)?\s*的?\s*(?:学术|权威|核心|最新|前沿)?\s*(?:论文|文献|文章|专著|资料)[。.!！?？\s]*$",
+        "",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = cleaned.strip()
+
+    for ch_term, en_term in BACKEND_TERM_TRANSLATIONS:
+        if ch_term in cleaned:
+            return en_term
+
+    return cleaned or query.strip()
+
+
 async def fetch_openalex(query: str, limit: int = 10) -> list[dict]:
     """通过 OpenAlex API 查询作品"""
+    query = sanitize_academic_search_query(query)
     headers = {"User-Agent": USER_AGENT}
     if settings.OPENALEX_API_KEY:
         headers["Authorization"] = f"Bearer {settings.OPENALEX_API_KEY}"
@@ -289,9 +355,10 @@ async def fetch_crossref(query: str, limit: int = 10) -> list[dict]:
                 raise HTTPException(status_code=502, detail="Invalid JSON from Crossref")
         else:
             # 关键词检索
+            clean_search_query = sanitize_academic_search_query(query)
             url = "https://api.crossref.org/works"
             params = {
-                "query.bibliographic": query,
+                "query.bibliographic": clean_search_query,
                 "rows": limit
             }
             if settings.CROSSREF_MAILTO:
@@ -320,7 +387,7 @@ async def fetch_arxiv(query: str, limit: int = 10) -> list[dict]:
 
     headers = {"User-Agent": USER_AGENT}
     url = "https://export.arxiv.org/api/query"
-    clean_query = query.strip()
+    clean_query = sanitize_academic_search_query(query.strip())
     if ":" in clean_query or '"' in clean_query:
         search_query = clean_query
     elif " " in clean_query:
