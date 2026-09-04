@@ -49,6 +49,7 @@ def save_chat_message(
     sender_id: str | None = None,
     conversation_id: str | None = None,
     project_id: str | None = None,
+    payload: dict | None = None,
 ) -> ChatMessage:
     record = ChatMessage(
         user_id=normalize_user_id(user_id),
@@ -58,6 +59,7 @@ def save_chat_message(
         sender_id=sender_id,
         conversation_id=normalize_conversation_id(conversation_id),
         project_id=(project_id or "").strip()[:64] or None,
+        payload=payload,
     )
     try:
         db.add(record)
@@ -96,6 +98,7 @@ def save_chat_messages_batch(
                 project_id=(
                     getattr(item, "project_id", None) or project_id or ""
                 ).strip()[:64] or None,
+                payload=getattr(item, "payload", None),
             )
         )
     if not records:
@@ -155,6 +158,7 @@ def serialize_chat_message(record: ChatMessage) -> dict:
         "sender_id": record.sender_id,
         "conversation_id": record.conversation_id,
         "project_id": record.project_id,
+        "payload": record.payload,
         "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S") if record.created_at else None,
     }
 

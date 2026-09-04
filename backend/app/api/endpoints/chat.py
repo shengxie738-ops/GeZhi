@@ -440,6 +440,7 @@ class SaveChatHistoryRequest(BaseModel):
     sender_id: Optional[str] = Field(default=None, max_length=64)
     conversation_id: Optional[str] = Field(default=None, max_length=64)
     project_id: Optional[str] = Field(default=None, max_length=64)
+    payload: Optional[dict] = None
 
 
 class ChatHistoryItem(BaseModel):
@@ -449,6 +450,7 @@ class ChatHistoryItem(BaseModel):
     sender_id: Optional[str] = Field(default=None, max_length=64)
     conversation_id: Optional[str] = Field(default=None, max_length=64)
     project_id: Optional[str] = Field(default=None, max_length=64)
+    payload: Optional[dict] = None
 
 
 class SaveChatHistoryBatchRequest(BaseModel):
@@ -474,6 +476,7 @@ async def create_chat_history_message(
             sender_id=payload.sender_id,
             conversation_id=payload.conversation_id,
             project_id=payload.project_id,
+            payload=payload.payload,
         )
         return {
             "status": "success",
@@ -487,6 +490,7 @@ async def create_chat_history_message(
                 "sender_id": record.sender_id,
                 "conversation_id": record.conversation_id,
                 "project_id": record.project_id,
+                "payload": record.payload,
                 "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S") if record.created_at else None,
             },
         }
@@ -519,6 +523,7 @@ async def create_chat_history_batch(
                 "sender_id": record.sender_id,
                 "conversation_id": record.conversation_id,
                 "project_id": record.project_id,
+                "payload": record.payload,
                 "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S") if record.created_at else None,
             }
             for record in records

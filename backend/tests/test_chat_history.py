@@ -100,7 +100,19 @@ class ChatHistoryTest(unittest.TestCase):
                 agent_mode="paper",
                 messages=[
                     ChatHistoryItem(role="user", content="检索 GNN"),
-                    ChatHistoryItem(role="assistant", content="检索到 10 篇 GNN 论文", sender_id="agent_paper"),
+                    ChatHistoryItem(
+                        role="assistant",
+                        content="检索到 10 篇 GNN 论文",
+                        sender_id="agent_paper",
+                        payload={
+                            "kind": "paper_search",
+                            "query": "GNN",
+                            "status": "success",
+                            "results": [{"id": "W-GNN", "title": "GNN Survey"}],
+                            "summary": {"totalAfterMerge": 1},
+                            "statuses": [],
+                        },
+                    ),
                 ],
             )
             batch_res = asyncio.run(create_chat_history_batch(batch_req, db=db))
@@ -114,6 +126,7 @@ class ChatHistoryTest(unittest.TestCase):
             self.assertEqual(history[1]["content"], "检索 GNN")
             self.assertEqual(history[2]["content"], "检索到 10 篇 GNN 论文")
             self.assertEqual(history[2]["sender_id"], "agent_paper")
+            self.assertEqual(history[2]["payload"]["results"][0]["id"], "W-GNN")
         finally:
             db.close()
 
@@ -154,6 +167,42 @@ class ChatHistoryTest(unittest.TestCase):
                 ["task-paper-1", "task-paper-1", "task-paper-2"],
             )
             self.assertTrue(all(item["project_id"] == "proj-paper" for item in history))
+        finally:
+            db.close()
+
+    def test_paper_history_round_trips_structured_search_snapshot(self):
+        db = self.SessionLocal()
+        snapshot = {
+            "kind": "paper_search",
+            "query": "graph neural networks",
+            "status": "success",
+            "results": [
+                {
+                    "id": "https://openalex.org/W123",
+                    "title": "A Graph Neural Network Paper",
+                    "year": 2025,
+                    "officialUrl": "https://openalex.org/W123",
+                }
+            ],
+            "summary": {"totalAfterMerge": 1},
+            "statuses": [{"key": "openalex", "status": "success", "count": 1}],
+        }
+        try:
+            save_chat_message(
+                db,
+                user_id="alice",
+                agent_mode="paper",
+                role="assistant",
+                content="论文检索工作记录",
+                sender_id="agent_paper",
+                conversation_id="task-paper-snapshot",
+                project_id="proj-paper",
+                payload=snapshot,
+            )
+
+            history = list_chat_history(db, user_id="alice", agent_mode="paper")
+
+            self.assertEqual(history[0]["payload"], snapshot)
         finally:
             db.close()
 

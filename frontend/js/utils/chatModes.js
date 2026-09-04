@@ -122,5 +122,17 @@ export function mapHistoryRecordToMessage(record) {
         projectId: record?.project_id || fallbackProjectId
     };
     if (record?.conversation_id) message.conversationId = record.conversation_id;
+    const payload = record?.payload;
+    if (agentMode === 'paper' && payload?.kind === 'paper_search' && Array.isArray(payload.results)) {
+        const snapshot = {
+            query: String(payload.query || ''),
+            status: String(payload.status || (payload.results.length > 0 ? 'success' : 'empty')),
+            results: payload.results,
+            summary: payload.summary && typeof payload.summary === 'object' ? payload.summary : {},
+            statuses: Array.isArray(payload.statuses) ? payload.statuses : []
+        };
+        message.attachedPapers = snapshot.results;
+        message.paperSearchSnapshot = snapshot;
+    }
     return message;
 }

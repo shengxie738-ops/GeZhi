@@ -238,9 +238,23 @@ def main():
 
 
             chat_history_batch_requests = []
+            persisted_chat_history = []
             def handle_chat_history_batch(route):
                 post_data = route.request.post_data_json
                 chat_history_batch_requests.append(post_data)
+                persisted_chat_history.clear()
+                for index, message in enumerate(post_data.get("messages", []), start=1):
+                    persisted_chat_history.append({
+                        "id": 8800 + index,
+                        "role": message.get("role"),
+                        "sender_id": message.get("sender_id"),
+                        "agent_mode": message.get("agent_mode", post_data.get("agent_mode", "paper")),
+                        "content": message.get("content", ""),
+                        "conversation_id": message.get("conversation_id", post_data.get("conversation_id")),
+                        "project_id": message.get("project_id", post_data.get("project_id")),
+                        "payload": message.get("payload"),
+                        "created_at": "2026-09-04 19:00:00",
+                    })
                 route.fulfill(
                     status=200,
                     content_type="application/json",
@@ -255,7 +269,16 @@ def main():
                 )
 
             page.route("**/api/chat/history/batch*", handle_chat_history_batch)
-            page.route("**/api/chat/history*", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"status": "success", "data": []})))
+            def handle_chat_history_list(route):
+                mode = parse_qs(urlparse(route.request.url).query).get("agent_mode", ["tutor"])[0]
+                data = persisted_chat_history if mode == "paper" else []
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"status": "success", "data": data}),
+                )
+
+            page.route("**/api/chat/history*", handle_chat_history_list)
 
             print("[playwright] navigating to workspace...")
             page.goto(BASE_URL, wait_until="networkidle")
@@ -309,6 +332,17 @@ def main():
             expect(paper_task_item).to_be_visible(timeout=5000)
             expect(paper_task_item).to_contain_text("Attention Is All You Nee")
             print("[playwright] left sidebar task tree records paper query verified.", flush=True)
+
+            # 模拟另一浏览器/设备：清除论文本地缓存，只允许从数据库历史恢复完整文献卡片
+            page.evaluate("() => localStorage.removeItem('messages:student_tester:paper')")
+            page.reload(wait_until="networkidle")
+            paper_mode_btn = page.locator("#btn-switch-mode-paper").first
+            paper_mode_btn.click()
+            restored_task_item = page.locator('[data-project-id="proj-paper"] [data-task-id]').first
+            expect(restored_task_item).to_be_visible(timeout=5000)
+            restored_task_item.click()
+            expect(page.locator("h4:has-text('Attention Is All You Need')").first).to_be_visible(timeout=5000)
+            print("[playwright] paper cards restored from database history after local cache reset.", flush=True)
 
             # 点击发送必须把输入文本原样作为 query，不能传入 [object PointerEvent]
             wait_for_request_count(academic_requests, len(installed_plugins))

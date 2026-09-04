@@ -73,15 +73,15 @@ export function createWorkspaceMessageSender(deps = {}) {
                 const success = await searchPapers(text, options);
                 // 只有成功才沉淀工作记录并清空输入框，失败时保留查询词供用户修正
                 if (success) {
-                    if (typeof showPaperResults === 'function') {
-                        showPaperResults();
-                    }
                     if (typeof recordPaperWork === 'function') {
                         try {
                             await recordPaperWork(text, options);
                         } catch (e) {
                             console.warn('[Workspace] recordPaperWork failed:', e);
                         }
+                    }
+                    if (typeof showPaperResults === 'function') {
+                        showPaperResults();
                     }
                     if (typeof clearInput === 'function') {
                         clearInput();

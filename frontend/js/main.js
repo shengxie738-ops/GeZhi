@@ -37,6 +37,7 @@ import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
 import { usePlugins } from './hooks/usePlugins.js';
 import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
+import { resolvePaperHistoryState } from './utils/conversations.js';
 
 import { courseMindmaps } from './data/mockData.js?v=20260620';
 import { radarOptionTemplate, getLineOptionTemplate } from './config/chartOptions.js';
@@ -146,6 +147,7 @@ const app = createApp({
             recordPaperWork: async (query) => {
                 await chat.recordPaperSearchWork(query, {
                     results: pluginsState.paperSearchResults.value,
+                    status: pluginsState.paperSearchStatus.value,
                     summary: pluginsState.paperSearchSummary.value,
                     statuses: pluginsState.paperSourceStatuses.value
                 });
@@ -543,14 +545,23 @@ const app = createApp({
             await chat.selectConversation(conversationId);
             if (chat.agentMode.value === 'paper') {
                 const conv = chat.activeConversation.value;
-                if (conv && Array.isArray(conv.messages)) {
-                    const paperAgentMsg = conv.messages.slice().reverse().find(m => Array.isArray(m.attachedPapers) && m.attachedPapers.length > 0);
-                    if (paperAgentMsg && paperAgentMsg.attachedPapers && paperAgentMsg.attachedPapers.length > 0) {
-                        pluginsState.paperSearchResults.value = paperAgentMsg.attachedPapers;
-                        pluginsState.paperSearchStatus.value = 'success';
-                    }
+                const historyState = resolvePaperHistoryState(conv);
+                if (historyState.snapshot) {
+                    const snapshot = historyState.snapshot;
+                    pluginsState.paperSearchQuery.value = snapshot.query;
+                    pluginsState.paperSearchResults.value = snapshot.results;
+                    pluginsState.paperSearchStatus.value = snapshot.status;
+                    pluginsState.paperSearchSummary.value = snapshot.summary;
+                    pluginsState.paperSourceStatuses.value = snapshot.statuses;
+                    pluginsState.paperSearchError.value = '';
+                } else {
+                    pluginsState.paperSearchQuery.value = '';
+                    pluginsState.paperSearchResults.value = [];
+                    pluginsState.paperSearchStatus.value = 'idle';
+                    pluginsState.paperSourceStatuses.value = [];
+                    pluginsState.paperSearchError.value = '';
                 }
-                chat.paperActiveTab.value = 'results';
+                chat.paperActiveTab.value = historyState.tab;
             }
         };
 

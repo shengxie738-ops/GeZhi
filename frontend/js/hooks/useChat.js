@@ -150,6 +150,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const results = Array.isArray(meta.results) ? meta.results : [];
         const summary = meta.summary || {};
         const statuses = Array.isArray(meta.statuses) ? meta.statuses : [];
+        const searchStatus = String(meta.status || (results.length > 0 ? 'success' : 'empty'));
+        const paperSearchSnapshot = {
+            query: cleanQuery,
+            status: searchStatus,
+            results: results.slice(0, 20),
+            summary,
+            statuses
+        };
 
         const countBefore = summary.totalBeforeMerge || results.length;
         const countAfter = summary.totalAfterMerge || results.length;
@@ -209,7 +217,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             senderType: 'agent',
             senderId: 'agent_paper',
             content: reportContent,
-            attachedPapers: results.slice(0, 20),
+            attachedPapers: paperSearchSnapshot.results,
+            paperSearchSnapshot,
             time: timestamp,
             createdAt: timestamp,
             mode: 'paper',
@@ -251,7 +260,15 @@ export function useChat(currentUser, showToast, agentResolver = null) {
                     project_id: PROJECT_PAPER_ID,
                     messages: [
                         { role: 'user', content: cleanQuery, agent_mode: 'paper', sender_id: null, conversation_id: conversationId, project_id: PROJECT_PAPER_ID },
-                        { role: 'assistant', content: reportContent, agent_mode: 'paper', sender_id: 'agent_paper', conversation_id: conversationId, project_id: PROJECT_PAPER_ID }
+                        {
+                            role: 'assistant',
+                            content: reportContent,
+                            agent_mode: 'paper',
+                            sender_id: 'agent_paper',
+                            conversation_id: conversationId,
+                            project_id: PROJECT_PAPER_ID,
+                            payload: { kind: 'paper_search', ...paperSearchSnapshot }
+                        }
                     ]
                 })
             });

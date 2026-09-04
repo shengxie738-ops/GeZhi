@@ -78,6 +78,9 @@ export function reconcileModeHistory(localMessages = [], remoteMessages = []) {
             if (Array.isArray(message?.attachedPapers) && message.attachedPapers.length > 0 && !matchedRemote.attachedPapers) {
                 matchedRemote.attachedPapers = message.attachedPapers;
             }
+            if (message?.paperSearchSnapshot && !matchedRemote.paperSearchSnapshot) {
+                matchedRemote.paperSearchSnapshot = message.paperSearchSnapshot;
+            }
             return;
         }
         merged.push(message);
@@ -98,6 +101,54 @@ export function resolveConversationIdForSend({
 } = {}) {
     if (activeConversationId === 'new') return draftConversationId || '';
     return activeConversationId || latestConversationId || draftConversationId || '';
+}
+
+export function resolvePaperHistoryState(conversation = null) {
+    const conversationMessages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+    const userQuery = conversationMessages.find(message => message?.senderType === 'user')?.content || '';
+    const snapshotMessage = conversationMessages.slice().reverse().find(message => (
+        message?.paperSearchSnapshot && Array.isArray(message.paperSearchSnapshot.results)
+    ));
+
+    if (snapshotMessage) {
+        const snapshot = snapshotMessage.paperSearchSnapshot;
+        return {
+            tab: 'results',
+            snapshot: {
+                query: String(snapshot.query || userQuery),
+                status: String(snapshot.status || (snapshot.results.length > 0 ? 'success' : 'empty')),
+                results: snapshot.results,
+                summary: snapshot.summary && typeof snapshot.summary === 'object' ? snapshot.summary : {},
+                statuses: Array.isArray(snapshot.statuses) ? snapshot.statuses : []
+            }
+        };
+    }
+
+    const attachmentMessage = conversationMessages.slice().reverse().find(message => (
+        Array.isArray(message?.attachedPapers) && message.attachedPapers.length > 0
+    ));
+    if (attachmentMessage) {
+        const results = attachmentMessage.attachedPapers;
+        return {
+            tab: 'results',
+            snapshot: {
+                query: String(userQuery),
+                status: 'success',
+                results,
+                summary: {
+                    totalFetched: results.length,
+                    totalRejected: 0,
+                    totalBeforeMerge: results.length,
+                    totalAfterMerge: results.length,
+                    effectiveQuery: String(userQuery),
+                    queryTranslated: false
+                },
+                statuses: []
+            }
+        };
+    }
+
+    return { tab: 'dialog', snapshot: null };
 }
 
 const TITLE_MAX_LENGTH = 24;

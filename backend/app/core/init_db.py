@@ -17,6 +17,7 @@ USER_ACCOUNT_COLUMNS = {
 CHAT_MESSAGE_COLUMNS = {
     "conversation_id": "VARCHAR(64) NULL",
     "project_id": "VARCHAR(64) NULL",
+    "payload": "JSON NULL",
 }
 
 

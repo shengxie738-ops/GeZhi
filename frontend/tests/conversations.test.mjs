@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as conversationUtils from '../js/utils/conversations.js';
 
 import {
     EARLY_CONVERSATION_TITLE,
@@ -129,6 +130,29 @@ assert.deepEqual(
 const mirroredRemote = [{ ...localOnly[0], id: 'db-100' }];
 assert.equal(reconcileModeHistory(localOnly, mirroredRemote).length, 1);
 
+const localPaperSnapshot = {
+    ...agentMsg('local-paper-a1', 'agent_paper', '论文检索工作记录'),
+    mode: 'paper',
+    conversationId: 'task-paper-local-snapshot',
+    attachedPapers: [{ id: 'W-local', title: 'Locally Cached Paper' }],
+    paperSearchSnapshot: {
+        query: 'local paper',
+        status: 'success',
+        results: [{ id: 'W-local', title: 'Locally Cached Paper' }],
+        summary: { totalAfterMerge: 1 },
+        statuses: []
+    }
+};
+const remotePaperWithoutSnapshot = [{
+    ...localPaperSnapshot,
+    id: 'db-paper-a1',
+    attachedPapers: undefined,
+    paperSearchSnapshot: undefined
+}];
+const reconciledPaper = reconcileModeHistory([localPaperSnapshot], remotePaperWithoutSnapshot);
+assert.deepEqual(reconciledPaper[0].attachedPapers, localPaperSnapshot.attachedPapers);
+assert.deepEqual(reconciledPaper[0].paperSearchSnapshot, localPaperSnapshot.paperSearchSnapshot);
+
 // 新建任务在当前功能内获得独立 ID；后续发送继续使用同一个任务，而不是退回默认 AI 对话
 assert.equal(createTaskConversationId('paper', 123456, 'abc123'), 'task-paper-123456-abc123');
 assert.equal(resolveConversationIdForSend({
@@ -158,5 +182,45 @@ assert.equal(continuedLegacyTask.length, 1);
 assert.deepEqual(continuedLegacyTask[0].messages.map(message => message.id), [
     'legacy-u1', 'legacy-a1', 'new-u1', 'new-a1'
 ]);
+
+// 数据库恢复的论文快照应打开文献列表；没有快照的旧论文记录应打开研读对话，不能落到空白检索页
+const restoredPaperState = conversationUtils.resolvePaperHistoryState?.({
+    messages: [
+        { senderType: 'user', content: '图神经网络' },
+        {
+            senderType: 'agent',
+            paperSearchSnapshot: {
+                query: '图神经网络',
+                status: 'success',
+                results: [{ id: 'W123', title: 'A Graph Neural Network Paper' }],
+                summary: { totalAfterMerge: 1 },
+                statuses: []
+            }
+        }
+    ]
+});
+assert.equal(restoredPaperState?.tab, 'results');
+assert.equal(restoredPaperState?.snapshot?.results[0].id, 'W123');
+
+const localAttachmentState = conversationUtils.resolvePaperHistoryState?.({
+    messages: [
+        { senderType: 'user', content: '本地旧缓存查询' },
+        {
+            senderType: 'agent',
+            attachedPapers: [{ id: 'W-local', title: 'Locally Cached Paper' }]
+        }
+    ]
+});
+assert.equal(localAttachmentState?.tab, 'results');
+assert.equal(localAttachmentState?.snapshot?.query, '本地旧缓存查询');
+assert.equal(localAttachmentState?.snapshot?.results[0].id, 'W-local');
+
+const legacyPaperState = conversationUtils.resolvePaperHistoryState?.({
+    messages: [
+        { senderType: 'user', content: '旧论文查询', mode: 'paper' },
+        { senderType: 'agent', content: '旧版检索报告', mode: 'paper' }
+    ]
+});
+assert.deepEqual(legacyPaperState, { tab: 'dialog', snapshot: null });
 
 console.log('conversations.test.mjs: all assertions passed');

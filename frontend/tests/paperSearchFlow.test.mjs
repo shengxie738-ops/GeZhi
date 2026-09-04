@@ -204,18 +204,27 @@ test('paperSearchFlow: invokes recordPaperWork after successful paper search', a
 
 test('paperSearchFlow: successful search leaves task history and exposes the paper result workspace', async () => {
     let visibleSurface = 'history';
+    const completionOrder = [];
     const sendMessage = createWorkspaceMessageSender({
         getMode: () => 'paper',
         getInput: () => '查找金融量化的论文',
         isPaperSearching: () => false,
         searchPapers: async () => true,
-        recordPaperWork: async () => {},
+        recordPaperWork: async () => { completionOrder.push('record'); },
         clearInput: () => {},
-        showPaperResults: () => { visibleSurface = 'results'; }
+        showPaperResults: () => {
+            completionOrder.push('show');
+            visibleSurface = 'results';
+        }
     });
 
     const result = await sendMessage();
 
     assert.equal(result, true);
     assert.equal(visibleSurface, 'results');
+    assert.deepEqual(
+        completionOrder,
+        ['record', 'show'],
+        '必须先用当前任务 ID 持久化，再切换结果页并清理草稿状态'
+    );
 });

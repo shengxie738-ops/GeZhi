@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, text, Index
+from sqlalchemy import JSON, Column, Integer, String, Text, TIMESTAMP, text, Index
 
 from app.core.database import Base
 
@@ -14,6 +14,7 @@ class ChatMessage(Base):
     sender_id = Column(String(64), nullable=True)
     conversation_id = Column(String(64), nullable=True, index=True)
     project_id = Column(String(64), nullable=True)
+    payload = Column(JSON, nullable=True)
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
 
     __table_args__ = (

@@ -120,4 +120,33 @@ assert.deepEqual(
   ],
 );
 
+const restoredPaperMessage = mapHistoryRecordToMessage({
+  id: 15,
+  role: 'assistant',
+  sender_id: 'agent_paper',
+  agent_mode: 'paper',
+  conversation_id: 'task-paper-restored',
+  project_id: 'proj-paper',
+  content: '论文检索工作记录',
+  created_at: '2026-09-04 19:00:00',
+  payload: {
+    kind: 'paper_search',
+    query: 'graph neural networks',
+    status: 'success',
+    results: [{ id: 'W123', title: 'A Graph Neural Network Paper' }],
+    summary: { totalAfterMerge: 1 },
+    statuses: [{ key: 'openalex', status: 'success', count: 1 }],
+  },
+});
+assert.deepEqual(restoredPaperMessage.attachedPapers, [
+  { id: 'W123', title: 'A Graph Neural Network Paper' },
+]);
+assert.deepEqual(restoredPaperMessage.paperSearchSnapshot, {
+  query: 'graph neural networks',
+  status: 'success',
+  results: [{ id: 'W123', title: 'A Graph Neural Network Paper' }],
+  summary: { totalAfterMerge: 1 },
+  statuses: [{ key: 'openalex', status: 'success', count: 1 }],
+});
+
 console.log('chatModes tests passed');
