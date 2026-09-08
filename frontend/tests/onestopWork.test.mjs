@@ -145,3 +145,47 @@ test('Task 10: Claude Desktop single-task workflow exports openPaperTaskDialog a
     assert.match(htmlCode, /论文专属研读工作区/);
 });
 
+test('Task 11: Workspace left sidebar must contain bottom settings button for custom AI model configuration', () => {
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+    // 侧栏最底部包含设置按钮
+    assert.match(htmlCode, /id="btn-workspace-model-settings"/);
+    assert.match(htmlCode, /openCustomModelModal\(['"]create['"]\)/);
+    assert.match(htmlCode, /模型设置/);
+});
+
+test('Task 12: Custom AI model modal must faithfully implement reference design with all fields and actions', () => {
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+    const mainCode = readFileSync(resolveFile('frontend/js/main.js'), 'utf-8');
+
+    // 模态框及响应式显隐
+    assert.match(htmlCode, /v-if="showCustomModelModal"/);
+    // 供应商与 API 类型选择
+    assert.match(htmlCode, /v-model="customModelForm\.provider"/);
+    assert.match(htmlCode, /v-model="customModelForm\.api_type"/);
+    // 接口地址 Base URL 与 API Key
+    assert.match(htmlCode, /id="input-custom-model-base-url"/);
+    assert.match(htmlCode, /id="input-custom-model-api-key"/);
+    assert.match(htmlCode, /id="btn-toggle-show-api-key"/);
+    // Model ID 动态增删
+    assert.match(htmlCode, /id="btn-add-model-id"/);
+    assert.match(htmlCode, /removeCustomModelIdInput/);
+    // 测试连通性与保存按钮
+    assert.match(htmlCode, /id="btn-test-model-connection"/);
+    assert.match(htmlCode, /id="btn-save-custom-model"/);
+    // 管理已有模型 Tab
+    assert.match(htmlCode, /customModelModalTab === ['"]manage['"]/);
+
+    // main.js 中正确导出对应方法
+    assert.match(mainCode, /showCustomModelModal/);
+    assert.match(mainCode, /handleTestCustomModelConnection/);
+    assert.match(mainCode, /handleSaveCustomModelConfig/);
+});
+
+test('Task 13: Model switcher in chat input bars must display custom model badges and hot-switch seamlessly', () => {
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
+    // 下拉面板中包含自定义模型高亮与配置快捷入口
+    assert.match(htmlCode, /m\.isCustom/);
+    assert.match(htmlCode, /配置自定义大模型\.\.\./);
+});
+

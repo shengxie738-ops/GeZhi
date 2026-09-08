@@ -1,7 +1,7 @@
 from sqlalchemy import inspect, text
 
 from app.core.database import Base, SessionLocal, engine
-from app.models import chat_message, code_diagnosis, domain_record, gitea_account_binding, ranked_question, sms_verification_code, student_profile, user_account, user_knowledge, user_rag  # noqa: F401
+from app.models import chat_message, code_diagnosis, domain_record, gitea_account_binding, ranked_question, sms_verification_code, student_profile, user_account, user_custom_ai_model, user_knowledge, user_rag  # noqa: F401
 
 
 USER_ACCOUNT_COLUMNS = {

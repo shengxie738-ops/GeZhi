@@ -12,7 +12,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -163,6 +163,9 @@ def _fallback_agent_id(last_user_message: str) -> str:
 def resolve_runtime_model_id(config: RunnableConfig | dict | None, last_user_message: str = "") -> str:
     configurable = _get_configurable(config)
     requested_model = configurable.get("agent_model")
+    # 若附带自定义模型凭据，直接放行自定义模型 ID
+    if configurable.get("custom_model_api_key") and requested_model:
+        return requested_model
     if has_model(requested_model, category="text"):
         return requested_model
 
@@ -249,9 +252,28 @@ def call_model(state: State, config: RunnableConfig | None = None):
     temperature = 0 if model_id in {"qwen3.7-max", "kimi-k2.7-code"} else 0.1
     print(f"[Router] Routing to selected model: {model_id}", flush=True)
     
+    # 支持用户专属自定义模型调用
+    custom_base_url = configurable.get("custom_model_base_url")
+    custom_api_key = configurable.get("custom_model_api_key")
+    if custom_base_url and custom_api_key:
+        clean_base_url = custom_base_url.strip().rstrip("/")
+        if clean_base_url.endswith("/chat/completions"):
+            clean_base_url = clean_base_url[:-len("/chat/completions")].rstrip("/")
+        llm_instance = ChatOpenAI(
+            model=model_id,
+            openai_api_key=custom_api_key,
+            openai_api_base=clean_base_url,
+            base_url=clean_base_url,
+            temperature=temperature,
+            request_timeout=30.0,
+            max_retries=1,
+        )
+    else:
+        llm_instance = build_chat_model(model_id, temperature=temperature)
+
     # Use .stream() instead of .invoke() to enable token-level streaming
     # This allows astream_events to produce on_chat_model_stream events
-    model = build_chat_model(model_id, temperature=temperature).bind_tools(tools)
+    model = llm_instance.bind_tools(tools)
     full_response = None
     for chunk in model.stream(messages):
         if full_response is None:
@@ -259,6 +281,9 @@ def call_model(state: State, config: RunnableConfig | None = None):
         else:
             full_response = full_response + chunk
         
+    if full_response is None:
+        full_response = AIMessage(content="大模型未返回任何有效文本内容，请检查端点配置。")
+
     return {"messages": [full_response]}
 
 workflow = StateGraph(State)

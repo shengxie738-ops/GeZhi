@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile,
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_openai import ChatOpenAI
 import json
 import asyncio
 import time
@@ -19,6 +20,7 @@ from app.core.miniprogram_response import api_response, is_miniprogram_client, p
 from app.core.security import decode_access_token
 from app.models.user_rag import UserRagMapping
 from app.models.code_diagnosis import CodeDiagnosis
+from app.models.user_custom_ai_model import UserCustomAIModel
 from app.schemas.chat import ChatRequest
 from app.services.rag_service import (
     build_repository_metadata_condition,
@@ -75,7 +77,33 @@ def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
     return "agent_tutor"
 
 
-def build_agent_runtime_config(request: ChatRequest, *, thread_id: str, agent_mode: str, message: str) -> dict:
+def find_user_custom_model_credentials(db: Session, user_id: str, model_id: str) -> tuple[str, str] | None:
+    """若当前用户配置了该模型 ID，返回 (base_url, decrypted_api_key)，否则返回 None。"""
+    if not user_id or not model_id or not db:
+        return None
+    try:
+        records = (
+            db.query(UserCustomAIModel)
+            .filter(UserCustomAIModel.user_id == user_id, UserCustomAIModel.is_active == True)
+            .all()
+        )
+        for rec in records:
+            if isinstance(rec.model_ids, list) and model_id in rec.model_ids:
+                return rec.base_url, rec.get_decrypted_api_key()
+    except Exception as e:
+        logger.warning(f"[CustomModel] Failed to query user custom models for {user_id}: {e}")
+    return None
+
+
+def build_agent_runtime_config(
+    request: ChatRequest,
+    *,
+    thread_id: str,
+    agent_mode: str,
+    message: str,
+    user_id: str | None = None,
+    db: Session | None = None,
+) -> dict:
     agent_id = resolve_request_agent_id(request, agent_mode)
     agent_prompt = request.agent_prompt or get_default_agent_prompt(agent_id)
     configurable = {
@@ -85,13 +113,30 @@ def build_agent_runtime_config(request: ChatRequest, *, thread_id: str, agent_mo
         "agent_model": request.agent_model,
         "agent_prompt": agent_prompt,
     }
+    if user_id and db and request.agent_model:
+        creds = find_user_custom_model_credentials(db, user_id, request.agent_model)
+        if creds:
+            configurable["custom_model_base_url"] = creds[0]
+            configurable["custom_model_api_key"] = creds[1]
+
     selected_model = resolve_runtime_model_id({"configurable": configurable}, message)
     configurable["agent_model"] = selected_model
     return {"configurable": configurable}
 
 
 def get_request_chat_model(config: dict, *, temperature: float = 0.1):
-    model_id = config.get("configurable", {}).get("agent_model")
+    configurable = config.get("configurable", {})
+    model_id = configurable.get("agent_model")
+    custom_base_url = configurable.get("custom_model_base_url")
+    custom_api_key = configurable.get("custom_model_api_key")
+    if custom_base_url and custom_api_key:
+        return ChatOpenAI(
+            model=model_id,
+            openai_api_key=custom_api_key,
+            openai_api_base=custom_base_url,
+            base_url=custom_base_url,
+            temperature=temperature,
+        )
     return build_chat_model(model_id, temperature=temperature)
 
 
@@ -104,10 +149,12 @@ MODEL_UNAVAILABLE_MESSAGE = "当前模型不可用，请更换模型"
 
 
 def is_model_invocation_error(exc: BaseException) -> bool:
-    return isinstance(exc, openai.OpenAIError)
+    return isinstance(exc, (openai.OpenAIError, httpx.HTTPError, json.JSONDecodeError, TimeoutError))
 
 
-def is_configured_model_unavailable(request) -> bool:
+def is_configured_model_unavailable(request, config: dict | None = None) -> bool:
+    if config and config.get("configurable", {}).get("custom_model_api_key"):
+        return False
     requested_model = getattr(request, "agent_model", None)
     return bool(requested_model) and not has_model(requested_model, category="text")
 
@@ -265,7 +312,16 @@ async def upload_user_doc(
         return {"status": "error", "message": str(e)}
 
 @router.post("/chat")
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat(request: ChatRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    # 鉴权防盗用：若携带 Token，强制以 Token 签发者身份执行
+    if authorization and authorization.lower().startswith("bearer "):
+        token_payload = decode_access_token(authorization.split(" ", 1)[1])
+        if token_payload and token_payload.get("sub"):
+            request.sessionId = token_payload.get("sub")
+    elif request.agent_model and not has_model(request.agent_model, category="text"):
+        # 若试图调用非内置模型（自定义模型），强制要求有效鉴权
+        raise HTTPException(status_code=401, detail="使用自定义模型需要有效的认证令牌")
+
     agent_mode = resolve_agent_mode(request)
     user_id = resolve_user_id(request)
     thread_id = resolve_thread_id(request, user_id, agent_mode)
@@ -318,9 +374,16 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"请结合以上资料，直接且专业地回答用户的问题：{cleaned_msg}"
         )
 
-    config = build_agent_runtime_config(request, thread_id=thread_id, agent_mode=agent_mode, message=user_content)
+    config = build_agent_runtime_config(
+        request,
+        thread_id=thread_id,
+        agent_mode=agent_mode,
+        message=user_content,
+        user_id=user_id,
+        db=db,
+    )
     model_unavailable_notice = ""
-    if is_configured_model_unavailable(request):
+    if is_configured_model_unavailable(request, config=config):
         model_unavailable_notice = build_model_unavailable_notice(request.agent_model) + "\n\n"
 
     if agent_mode == "rag":
@@ -654,8 +717,15 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     ref_list = build_reference_source_block(ref_docs, agent_mode)
 
     full_reply = ""
-    config = build_agent_runtime_config(request, thread_id=thread_id, agent_mode=agent_mode, message=user_content)
-    if is_configured_model_unavailable(request):
+    config = build_agent_runtime_config(
+        request,
+        thread_id=thread_id,
+        agent_mode=agent_mode,
+        message=user_content,
+        user_id=user_id,
+        db=db,
+    )
+    if is_configured_model_unavailable(request, config=config):
         yield build_model_unavailable_event(request.agent_model)
 
     if agent_mode == "rag":

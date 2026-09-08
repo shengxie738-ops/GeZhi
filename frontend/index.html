@@ -3466,6 +3466,27 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- 侧栏最下方：大模型配置设置入口 (参考截图1底部布局) -->
+                                    <div class="pt-2 border-t border-slate-200/80 shrink-0">
+                                        <button type="button" @click="openCustomModelModal('create')"
+                                            id="btn-workspace-model-settings"
+                                            class="w-full px-3 py-2 rounded-xl bg-white hover:bg-slate-100/90 border border-slate-200/90 text-slate-700 hover:text-slate-900 transition-all flex items-center justify-between shadow-2xs group active:scale-98 cursor-pointer"
+                                            title="配置个人自定义大模型与 API Key">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                                                    <i class="ph ph-gear-six text-sm"></i>
+                                                </div>
+                                                <span class="text-xs font-bold">模型设置</span>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <span v-if="userCustomConfigs.length > 0" class="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-700 font-bold font-mono">
+                                                    {{ userCustomConfigs.length }}
+                                                </span>
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 font-medium">配置</span>
+                                            </div>
+                                        </button>
+                                    </div>
                                 </aside>
 
                                 <!-- 右侧核心工作区 (Codex / TRAE 风格) -->
@@ -3662,11 +3683,21 @@
                                                                         <div class="min-w-0 pr-2">
                                                                             <div class="text-xs font-bold truncate flex items-center gap-1.5">
                                                                                 <span>{{ m.label || m.id }}</span>
-                                                                                <span v-if="m.provider" class="text-[9px] px-1 py-0.2 rounded bg-slate-200/80 text-slate-600 font-normal">{{ m.provider }}</span>
+                                                                                <span v-if="m.isCustom" class="text-[9px] px-1.5 py-0.2 rounded bg-violet-100 text-violet-700 font-bold">自定义</span>
+                                                                                <span v-else-if="m.provider" class="text-[9px] px-1 py-0.2 rounded bg-slate-200/80 text-slate-600 font-normal">{{ m.provider }}</span>
                                                                             </div>
                                                                             <div v-if="m.hint" class="text-[10px] text-slate-400 mt-0.5 truncate">{{ m.hint }}</div>
                                                                         </div>
                                                                         <i v-if="currentModel === m.id" class="ph ph-check text-violet-600 font-bold shrink-0"></i>
+                                                                    </button>
+                                                                </div>
+
+                                                                <!-- 底部快速自定义模型入口 -->
+                                                                <div class="mt-2 pt-2 border-t border-slate-100">
+                                                                    <button type="button" @click="openCustomModelModal('create'); showModelDropdown = false"
+                                                                        class="w-full px-2.5 py-1.5 rounded-xl text-left transition-all flex items-center justify-center gap-1.5 text-xs text-violet-600 font-bold hover:bg-violet-50 cursor-pointer">
+                                                                        <i class="ph ph-sliders text-sm"></i>
+                                                                        <span>配置自定义大模型...</span>
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -4129,8 +4160,18 @@
                                                                                 @click="switchModel(m.id)"
                                                                                 class="w-full px-2 py-1.5 rounded-xl text-left transition-all flex items-center justify-between text-xs"
                                                                                 :class="currentModel === m.id ? 'bg-violet-50 font-bold text-violet-800' : 'hover:bg-slate-100 text-slate-700'">
-                                                                                <span class="truncate">{{ m.label || m.id }}</span>
-                                                                                <i v-if="currentModel === m.id" class="ph ph-check text-violet-600"></i>
+                                                                                <div class="flex items-center gap-1.5 truncate pr-1">
+                                                                                    <span class="truncate">{{ m.label || m.id }}</span>
+                                                                                    <span v-if="m.isCustom" class="text-[9px] px-1 py-0.2 rounded bg-violet-100 text-violet-700 font-bold shrink-0">自定义</span>
+                                                                                </div>
+                                                                                <i v-if="currentModel === m.id" class="ph ph-check text-violet-600 shrink-0"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                        <div class="mt-2 pt-2 border-t border-slate-100">
+                                                                            <button type="button" @click="openCustomModelModal('create'); showModelDropdown = false"
+                                                                                class="w-full px-2 py-1 rounded-xl text-left transition-all flex items-center justify-center gap-1 text-[11px] text-violet-600 font-bold hover:bg-violet-50 cursor-pointer">
+                                                                                <i class="ph ph-sliders text-xs"></i>
+                                                                                <span>配置自定义大模型...</span>
                                                                             </button>
                                                                         </div>
                                                                     </div>
@@ -4302,6 +4343,217 @@
                                         </div>
                                     </div>
                                 </aside>
+                            </div>
+                        </transition>
+
+                        <!-- 自定义大模型配置弹窗 (明亮色轻量高级设计) -->
+                        <transition name="fade">
+                            <div v-if="showCustomModelModal"
+                                class="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+                                @click.self="closeCustomModelModal"
+                                @keydown.esc.window="closeCustomModelModal">
+                                <div class="w-full max-w-[490px] bg-white text-slate-800 border border-slate-200/90 rounded-2xl shadow-2xl shadow-slate-900/10 p-5 flex flex-col gap-4 animate-scale-up"
+                                    @click.stop>
+                                    <!-- 顶部导航与关闭 -->
+                                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                        <div class="flex items-center gap-4">
+                                            <button type="button" @click="customModelModalTab = 'create'"
+                                                class="text-sm font-bold transition-all cursor-pointer relative py-1"
+                                                :class="customModelModalTab === 'create' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'">
+                                                <span>{{ editingConfigId ? '编辑模型' : '添加模型' }}</span>
+                                                <span v-if="customModelModalTab === 'create'" class="absolute left-0 right-0 -bottom-3 h-0.5 bg-emerald-600 rounded-full"></span>
+                                            </button>
+                                            <button type="button" @click="customModelModalTab = 'manage'"
+                                                class="text-sm font-bold transition-all cursor-pointer relative py-1 flex items-center gap-1.5"
+                                                :class="customModelModalTab === 'manage' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'">
+                                                <span>已配模型</span>
+                                                <span v-if="userCustomConfigs.length" class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono font-bold">
+                                                    {{ userCustomConfigs.length }}
+                                                </span>
+                                                <span v-if="customModelModalTab === 'manage'" class="absolute left-0 right-0 -bottom-3 h-0.5 bg-emerald-600 rounded-full"></span>
+                                            </button>
+                                        </div>
+                                        <button type="button" @click="closeCustomModelModal"
+                                            class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+                                            title="关闭 (Esc)">
+                                            <i class="ph ph-x text-base font-bold"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- TAB 1: 添加/编辑模型表单 (明亮色风格) -->
+                                    <div v-show="customModelModalTab === 'create'" class="flex flex-col gap-3.5">
+                                        <!-- 供应商 -->
+                                        <div class="flex flex-col gap-1.5">
+                                            <label class="text-xs font-bold text-slate-700">供应商</label>
+                                            <div class="relative">
+                                                <div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                                    <i class="ph ph-pencil-simple text-sm"></i>
+                                                </div>
+                                                <select v-model="customModelForm.provider"
+                                                    class="w-full pl-9 pr-9 py-2.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200/90 hover:border-slate-300 rounded-xl text-xs text-slate-800 appearance-none outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer font-medium">
+                                                    <option v-for="opt in customModelProviderOptions" :key="opt" :value="opt">{{ opt }}</option>
+                                                </select>
+                                                <div class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                                    <i class="ph ph-caret-down text-xs"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- API 类型 -->
+                                        <div class="flex flex-col gap-1.5">
+                                            <label class="text-xs font-bold text-slate-700">API 类型</label>
+                                            <div class="relative">
+                                                <select v-model="customModelForm.api_type"
+                                                    class="w-full px-3.5 pr-9 py-2.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200/90 hover:border-slate-300 rounded-xl text-xs text-slate-800 appearance-none outline-none focus:border-emerald-500 focus:bg-white transition-all cursor-pointer font-medium">
+                                                    <option v-for="opt in customModelApiTypeOptions" :key="opt" :value="opt">{{ opt }}</option>
+                                                </select>
+                                                <div class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                                    <i class="ph ph-caret-down text-xs"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 接口地址 (Base URL) -->
+                                        <div class="flex flex-col gap-1.5">
+                                            <label class="text-xs font-bold text-slate-700">接口地址（Base URL）</label>
+                                            <input v-model="customModelForm.base_url" type="text"
+                                                id="input-custom-model-base-url"
+                                                placeholder="https://api.example.com/v1"
+                                                class="w-full px-3.5 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-500 transition-all font-mono" />
+                                        </div>
+
+                                        <!-- API Key -->
+                                        <div class="flex flex-col gap-1.5">
+                                            <label class="text-xs font-bold text-slate-700">API Key</label>
+                                            <div class="relative">
+                                                <input v-model="customModelForm.api_key"
+                                                    id="input-custom-model-api-key"
+                                                    :type="showCustomModelApiKey ? 'text' : 'password'"
+                                                    placeholder="请输入 API Key"
+                                                    class="w-full pl-3.5 pr-10 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-500 transition-all font-mono" />
+                                                <button type="button" @click="toggleShowCustomModelApiKey"
+                                                    id="btn-toggle-show-api-key"
+                                                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                                                    title="显示/隐藏明文">
+                                                    <i class="ph text-base" :class="showCustomModelApiKey ? 'ph-eye-slash' : 'ph-eye'"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Model ID 动态列表 -->
+                                        <div class="flex flex-col gap-1.5">
+                                            <div class="flex items-center justify-between">
+                                                <label class="text-xs font-bold text-slate-700">Model ID</label>
+                                                <button type="button" @click="addCustomModelIdInput"
+                                                    id="btn-add-model-id"
+                                                    class="text-xs text-emerald-700 hover:text-emerald-800 transition-colors flex items-center gap-1 cursor-pointer font-bold">
+                                                    <i class="ph ph-plus text-xs"></i>
+                                                    <span>添加 Model ID</span>
+                                                </button>
+                                            </div>
+                                            <div class="space-y-2 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                                                <div v-for="(mId, idx) in customModelForm.model_ids" :key="idx" class="flex items-center gap-2">
+                                                    <input v-model="customModelForm.model_ids[idx]" type="text"
+                                                        :placeholder="idx === 0 ? '例如 qwen3.8-max' : '请输入模型标识，如 deepseek-chat'"
+                                                        class="flex-1 px-3.5 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-500 transition-all font-mono" />
+                                                    <button type="button" @click="removeCustomModelIdInput(idx)"
+                                                        class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors rounded-lg cursor-pointer"
+                                                        title="删除此 Model ID">
+                                                        <i class="ph ph-trash text-sm"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 连通性测试结果提示条 -->
+                                        <div v-if="customModelTestResult" class="p-2.5 rounded-xl text-xs flex items-center gap-2"
+                                            :class="customModelTestResult.status === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'">
+                                            <i class="ph text-base" :class="customModelTestResult.status === 'success' ? 'ph-check-circle text-emerald-600' : 'ph-warning-circle text-rose-600'"></i>
+                                            <span class="leading-relaxed font-medium">{{ customModelTestResult.message }}</span>
+                                        </div>
+
+                                        <!-- 底部操作按钮 -->
+                                        <div class="flex items-center justify-between pt-3 border-t border-slate-100 mt-1">
+                                            <div>
+                                                <button type="button" @click="handleTestCustomModelConnection"
+                                                    :disabled="isTestingCustomModel"
+                                                    id="btn-test-model-connection"
+                                                    class="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs">
+                                                    <i class="ph" :class="isTestingCustomModel ? 'ph-spinner animate-spin text-emerald-600' : 'ph-lightning text-slate-500'"></i>
+                                                    <span>{{ isTestingCustomModel ? '测试中...' : '测试连通性' }}</span>
+                                                </button>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <button type="button" @click="closeCustomModelModal"
+                                                    class="px-4 py-2 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer">
+                                                    取消
+                                                </button>
+                                                <button type="button" @click="handleSaveCustomModelConfig"
+                                                    :disabled="isSavingCustomModel"
+                                                    id="btn-save-custom-model"
+                                                    class="px-5 py-2 rounded-xl bg-[#3b8c56] hover:bg-[#317346] active:scale-95 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5">
+                                                    <i v-if="isSavingCustomModel" class="ph ph-spinner animate-spin"></i>
+                                                    <span>{{ isSavingCustomModel ? '保存中...' : (editingConfigId ? '保存更改' : '下一步') }}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- TAB 2: 已配置模型管理列表 (明亮色风格) -->
+                                    <div v-show="customModelModalTab === 'manage'" class="flex flex-col gap-3 max-h-[440px] overflow-y-auto pr-0.5 custom-scrollbar">
+                                        <div v-if="userCustomConfigs.length === 0" class="py-12 text-center flex flex-col items-center justify-center gap-2 text-slate-400">
+                                            <i class="ph ph-sliders text-3xl text-slate-300"></i>
+                                            <p class="text-xs">暂无已保存的自定义模型配置</p>
+                                            <button type="button" @click="customModelModalTab = 'create'"
+                                                class="mt-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-all cursor-pointer">
+                                                立即添加模型
+                                            </button>
+                                        </div>
+                                        <div v-else class="space-y-2.5">
+                                            <div v-for="cfg in userCustomConfigs" :key="cfg.id"
+                                                class="p-3.5 bg-slate-50/80 border border-slate-200/80 rounded-xl flex flex-col gap-2 transition-all hover:border-slate-300 hover:bg-slate-50">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                                        <span class="font-bold text-xs text-slate-800">{{ cfg.provider || '自定义端点' }}</span>
+                                                        <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-600 font-mono font-medium">{{ cfg.api_type }}</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-1.5">
+                                                        <button type="button" @click="openCustomModelModal('create', cfg)"
+                                                            class="p-1 hover:text-slate-800 text-slate-400 hover:bg-slate-200/80 rounded transition-colors"
+                                                            title="编辑此配置">
+                                                            <i class="ph ph-pencil text-xs"></i>
+                                                        </button>
+                                                        <button type="button" @click="handleDeleteCustomModelConfig(cfg.id)"
+                                                            class="p-1 hover:text-rose-600 text-slate-400 hover:bg-rose-50 rounded transition-colors"
+                                                            title="删除配置">
+                                                            <i class="ph ph-trash text-xs"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="text-[11px] text-slate-500 truncate flex items-center gap-1 font-mono">
+                                                    <i class="ph ph-link text-xs text-slate-400"></i>
+                                                    <span class="truncate">{{ cfg.base_url }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 text-[10px] text-slate-400">
+                                                    <span>密钥: {{ cfg.api_key }}</span>
+                                                </div>
+                                                <div class="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-200/60">
+                                                    <span class="text-[10px] text-slate-500 font-medium">可用 Model ID:</span>
+                                                    <button v-for="mid in cfg.model_ids" :key="mid"
+                                                        type="button"
+                                                        @click="switchModel(mid); closeCustomModelModal()"
+                                                        class="px-2 py-0.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-1 cursor-pointer border"
+                                                        :class="currentModel === mid ? 'bg-emerald-600 text-white border-emerald-600 font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'"
+                                                        title="点击在当前对话中使用该模型">
+                                                        <span>{{ mid }}</span>
+                                                        <i v-if="currentModel === mid" class="ph ph-check text-[10px]"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </transition>
 

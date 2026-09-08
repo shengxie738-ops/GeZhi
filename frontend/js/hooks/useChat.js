@@ -3,6 +3,7 @@ import { sendStreamingMessage, parsedHtmlCache } from '../api/streamChat.js';
 import { buildVisualGuideSvg, createLocalVisualGuide, getVisualGuideSourceLabel, requestVisualGuideImage, resolveVisualGuideState } from '../api/visualGuide.js';
 import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
+import { getUserCustomModels } from '../api/userModelApi.js';
 import request from '../utils/request.js';
 import { formatChatTimestamp, getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
 import { CHAT_TASK_MODES, createModeMessageBuckets, createTaskConversationId, findConversationForMessage, flattenModeMessageBuckets, getSystemProjectIdForMode, groupMessagesIntoConversations, groupConversationsByProjects, reconcileModeHistory, resolveConversationIdForSend, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
@@ -52,11 +53,47 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     // AI 模型热切换状态与选项
     const currentModel = ref(localStorage.getItem('preferred_chat_model') || 'Auto Mode');
-    const modelOptions = ref([
+    const baseSystemModels = ref([
         { id: 'Auto Mode', label: 'Auto Mode', provider: '系统自适应', hint: '智能推荐' },
         ...TEXT_MODEL_OPTIONS
     ]);
+    const userCustomConfigs = ref([]);
+    const modelOptions = ref([...baseSystemModels.value]);
     const showModelDropdown = ref(false);
+
+    const rebuildMergedModelOptions = () => {
+        const customItems = [];
+        (userCustomConfigs.value || []).forEach(cfg => {
+            if (Array.isArray(cfg.model_ids)) {
+                cfg.model_ids.forEach(mId => {
+                    const cleanId = (mId || '').trim();
+                    if (cleanId && !customItems.some(item => item.id === cleanId)) {
+                        customItems.push({
+                            id: cleanId,
+                            label: cleanId,
+                            provider: cfg.provider || '自定义',
+                            hint: `${cfg.provider || '自定义'} · ${cfg.base_url || ''}`,
+                            isCustom: true,
+                            configId: cfg.id
+                        });
+                    }
+                });
+            }
+        });
+
+        const sysFiltered = baseSystemModels.value.filter(sm => !customItems.some(ci => ci.id === sm.id));
+        modelOptions.value = [
+            ...sysFiltered,
+            ...customItems
+        ];
+
+        // 若当前选中的自定义模型已被删除，则重置回 Auto Mode，避免请求崩溃
+        const currentStillExists = modelOptions.value.some(m => m.id === currentModel.value);
+        if (!currentStillExists && currentModel.value !== 'Auto Mode') {
+            currentModel.value = 'Auto Mode';
+            safeSetLocalStorage('preferred_chat_model', 'Auto Mode');
+        }
+    };
 
     const loadChatModelOptions = async () => {
         try {
@@ -72,16 +109,34 @@ export function useChat(currentUser, showToast, agentResolver = null) {
                     hint: m.hint || ''
                 }));
                 const merged = mergeModelOptions(backendModels, TEXT_MODEL_OPTIONS);
-                modelOptions.value = [
+                baseSystemModels.value = [
                     { id: 'Auto Mode', label: 'Auto Mode', provider: '系统自适应', hint: '智能推荐' },
                     ...merged
                 ];
+                rebuildMergedModelOptions();
             }
         } catch (e) {
             console.info('[Chat] Backend model registry unavailable, using fallback list.', e);
         }
     };
     loadChatModelOptions();
+
+    const loadUserCustomModels = async () => {
+        try {
+            const res = await getUserCustomModels();
+            if (res && res.status === 'success' && Array.isArray(res.data)) {
+                userCustomConfigs.value = res.data.filter(c => c.is_active);
+                rebuildMergedModelOptions();
+            }
+        } catch (e) {
+            console.debug('[Chat] User custom models load skipped or failed:', e);
+        }
+    };
+    loadUserCustomModels();
+
+    const refreshUserCustomModels = async () => {
+        await loadUserCustomModels();
+    };
 
     const switchModel = (modelId) => {
         currentModel.value = modelId;
@@ -1322,6 +1377,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         loadAllChatHistories();
         selectedRepositoryId.value = localStorage.getItem(`knowledge_repo:${getSessionId()}`) || '';
         loadKnowledgeRepositories();
+        // 用户登入或账号切换时，即刻刷新专属自定义模型列表
+        loadUserCustomModels();
     });
 
     return {
@@ -1354,6 +1411,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         showModelDropdown,
         switchModel,
         toggleModelDropdown,
+        userCustomConfigs,
+        loadUserCustomModels,
+        refreshUserCustomModels,
         switchWorkMode,
         showPaperSearchResults,
         paperActiveTab,

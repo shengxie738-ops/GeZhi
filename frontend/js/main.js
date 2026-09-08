@@ -36,6 +36,7 @@ import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
 import { usePlugins } from './hooks/usePlugins.js';
+import { useCustomModels } from './hooks/useCustomModels.js';
 import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
 import { resolvePaperHistoryState } from './utils/conversations.js';
 
@@ -125,6 +126,13 @@ const app = createApp({
 
         // 8. 对话与知识库 Hook (赋值给预先声明的 chat 变量)
         chat = useChat(auth.currentUser, showToast, agentsState.getAgentInfo);
+
+        // 8.1 用户自定义大模型配置 Hook (与一站式 Work 对话框热切换联动)
+        const customModelsState = useCustomModels(showToast, async () => {
+            if (chat && typeof chat.refreshUserCustomModels === 'function') {
+                await chat.refreshUserCustomModels();
+            }
+        });
 
         // 9. 用户中心 Hook
         const userCenter = useUserCenter(auth.currentUser, showToast);
@@ -657,6 +665,26 @@ const app = createApp({
             showModelDropdown: chat.showModelDropdown,
             switchModel: chat.switchModel,
             toggleModelDropdown: chat.toggleModelDropdown,
+            userCustomConfigs: chat.userCustomConfigs,
+            refreshUserCustomModels: chat.refreshUserCustomModels,
+            showCustomModelModal: customModelsState.showCustomModelModal,
+            customModelModalTab: customModelsState.customModelModalTab,
+            editingConfigId: customModelsState.editingConfigId,
+            isSavingCustomModel: customModelsState.isSaving,
+            isTestingCustomModel: customModelsState.isTesting,
+            customModelTestResult: customModelsState.testResult,
+            showCustomModelApiKey: customModelsState.showApiKey,
+            customModelProviderOptions: customModelsState.providerOptions,
+            customModelApiTypeOptions: customModelsState.apiTypeOptions,
+            customModelForm: customModelsState.customModelForm,
+            addCustomModelIdInput: customModelsState.addModelIdInput,
+            removeCustomModelIdInput: customModelsState.removeModelIdInput,
+            openCustomModelModal: customModelsState.openCustomModelModal,
+            closeCustomModelModal: customModelsState.closeCustomModelModal,
+            toggleShowCustomModelApiKey: customModelsState.toggleShowApiKey,
+            handleTestCustomModelConnection: customModelsState.handleTestConnection,
+            handleSaveCustomModelConfig: customModelsState.handleSaveModelConfig,
+            handleDeleteCustomModelConfig: customModelsState.handleDeleteModelConfig,
             switchWorkMode: chat.switchWorkMode,
             returnToChatDialog: chat.returnToChatDialog,
             openPaperTaskDialog: handleOpenPaperTaskDialog,
