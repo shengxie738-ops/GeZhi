@@ -73,15 +73,15 @@ class AgentPaperRuntimeTest(unittest.TestCase):
         self.assertEqual(paper_agent["name"], "PaperBot")
         self.assertEqual(paper_agent["role"], "学术论文与文献研读专家")
         self.assertEqual(paper_agent["modelCategory"], "text")
-        self.assertEqual(paper_agent["model"], "qwen3.7-plus")
+        self.assertEqual(paper_agent["model"], "glm-5.1")
         self.assertTrue(paper_agent["isActive"])
         self.assertIn("学术论文检索与文献研读专家", paper_agent["prompt"])
         self.assertIn("BibTeX", paper_agent["prompt"])
 
         # 验证默认模型注册
         self.assertIn("agent_paper", agent_workflow.DEFAULT_AGENT_MODELS)
-        self.assertEqual(agent_workflow.DEFAULT_AGENT_MODELS["agent_paper"], "qwen3.7-plus")
-        self.assertTrue(has_model("qwen3.7-plus", category="text"))
+        self.assertEqual(agent_workflow.DEFAULT_AGENT_MODELS["agent_paper"], "glm-5.1")
+        self.assertTrue(has_model("glm-5.1", category="text"))
 
         # 验证辅助读取方法
         agent = get_default_agent("agent_paper")
@@ -129,7 +129,7 @@ class AgentPaperRuntimeTest(unittest.TestCase):
         configurable = config["configurable"]
         self.assertEqual(configurable["agent_id"], "agent_paper")
         self.assertEqual(configurable["agent_mode"], "paper")
-        self.assertEqual(configurable["agent_model"], "qwen3.7-plus")
+        self.assertEqual(configurable["agent_model"], "glm-5.1")
         self.assertIn("学术论文检索与文献研读专家", configurable["agent_prompt"])
         self.assertIn("BibTeX", configurable["agent_prompt"])
 
@@ -226,15 +226,15 @@ class AgentPaperRuntimeTest(unittest.TestCase):
                 "configurable": {
                     "agent_id": "agent_paper",
                     "agent_mode": "paper",
-                    "agent_model": "qwen3.7-plus",
+                    "agent_model": "spark Ultra-32K",
                     "agent_prompt": get_default_agent_prompt("agent_paper"),
                 }
             }
             state = {"messages": [HumanMessage(content="查询 LoRA 微调论文")]}
             result = agent_workflow.call_model(state, config)
 
-        self.assertIn("PaperBot Review response for qwen3.7-plus", result["messages"][0].content)
-        self.assertTrue(any(c[0] == "bind_tools" and c[1] == "qwen3.7-plus" for c in calls))
+        self.assertIn("PaperBot Review response for spark Ultra-32K", result["messages"][0].content)
+        self.assertTrue(any(c[0] == "bind_tools" and c[1] == "spark Ultra-32K" for c in calls))
         # 验证提示词确实为 PaperBot 专属提示词
         self.assertTrue(any(c[0] == "stream" and "学术论文检索与文献研读专家" in c[2] for c in calls))
 

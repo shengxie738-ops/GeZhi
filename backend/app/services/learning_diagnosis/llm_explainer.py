@@ -27,7 +27,7 @@ class LlmExplainer:
         self.model_client = model_client
         self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None else os.getenv("LEARNING_DIAGNOSIS_AI_TIMEOUT_SECONDS", "3"))
         tutor = next((item for item in get_default_agents() if item.get("id") == "agent_tutor"), {})
-        self.model_id = tutor.get("model") or "qwen3.7-plus"
+        self.model_id = tutor.get("model") or "qwen3.7-flash"
 
     def validate_output(self, payload: dict[str, Any], valid_evidence_refs: set[str], valid_rag_refs: set[str]) -> ExplanationOutput:
         result = ExplanationOutput.model_validate(payload)

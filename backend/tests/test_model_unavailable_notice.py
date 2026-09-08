@@ -65,17 +65,17 @@ class ModelUnavailableHelperTest(unittest.TestCase):
         self.assertFalse(is_model_invocation_error(RuntimeError("boom")))
 
     def test_is_configured_model_unavailable(self):
-        request = ChatRequest(message="hi", agent_model="mimo-v2.5")
+        request = ChatRequest(message="hi", agent_model="unregistered-model-test")
         self.assertTrue(is_configured_model_unavailable(request))
-        request = ChatRequest(message="hi", agent_model="kimi-k2.6")
+        request = ChatRequest(message="hi", agent_model="kimi-k2.7-code")
         self.assertFalse(is_configured_model_unavailable(request))
         request = ChatRequest(message="hi")
         self.assertFalse(is_configured_model_unavailable(request))
 
     def test_build_model_unavailable_event_payload(self):
-        payload = json.loads(build_model_unavailable_event("mimo-v2.5")[len("data: "):])
+        payload = json.loads(build_model_unavailable_event("unregistered-model-test")[len("data: "):])
         self.assertEqual(payload["type"], "model_unavailable")
-        self.assertEqual(payload["model"], "mimo-v2.5")
+        self.assertEqual(payload["model"], "unregistered-model-test")
         self.assertIn("请更换模型", payload["message"])
 
 
@@ -83,25 +83,25 @@ class StreamModelUnavailableTest(unittest.TestCase):
     def test_unregistered_configured_model_emits_model_unavailable(self):
         stub = StubAgentGraph([_token_event()])
         with patch("app.api.endpoints.chat.agent_graph", stub):
-            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="mimo-v2.5")))
+            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="unregistered-model-test")))
 
         notice_events = [e for e in events if e["type"] == "model_unavailable"]
         self.assertEqual(len(notice_events), 1)
-        self.assertEqual(notice_events[0]["model"], "mimo-v2.5")
+        self.assertEqual(notice_events[0]["model"], "unregistered-model-test")
         self.assertIn("请更换模型", notice_events[0]["message"])
         # 回退默认模型后仍正常作答
-        self.assertEqual(stub.captured_config["configurable"]["agent_model"], "qwen3.7-plus")
+        self.assertEqual(stub.captured_config["configurable"]["agent_model"], "qwen3.7-flash")
         self.assertTrue(any(e["type"] == "token" for e in events))
         self.assertTrue(any(e["type"] == "complete" for e in events))
 
     def test_model_invocation_error_emits_notice_and_keeps_rag_fallback(self):
         stub = StubAgentGraph([_connection_error()])
         with patch("app.api.endpoints.chat.agent_graph", stub):
-            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.6")))
+            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.7-code")))
 
         notice_events = [e for e in events if e["type"] == "model_unavailable"]
         self.assertEqual(len(notice_events), 1)
-        self.assertEqual(notice_events[0]["model"], "kimi-k2.6")
+        self.assertEqual(notice_events[0]["model"], "kimi-k2.7-code")
         fallback_tokens = [e for e in events if e["type"] == "token"]
         self.assertTrue(fallback_tokens)
         self.assertIn("RAGFlow", fallback_tokens[0]["content"])
@@ -110,14 +110,14 @@ class StreamModelUnavailableTest(unittest.TestCase):
     def test_non_model_error_does_not_emit_notice(self):
         stub = StubAgentGraph([ValueError("tool failure")])
         with patch("app.api.endpoints.chat.agent_graph", stub):
-            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.6")))
+            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.7-code")))
 
         self.assertFalse(any(e["type"] == "model_unavailable" for e in events))
 
     def test_valid_model_streams_without_notice(self):
         stub = StubAgentGraph([_token_event()])
         with patch("app.api.endpoints.chat.agent_graph", stub):
-            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.6")))
+            events = asyncio.run(_collect_stream_events(ChatRequest(message="hi", agent_model="kimi-k2.7-code")))
 
         self.assertFalse(any(e["type"] == "model_unavailable" for e in events))
         self.assertTrue(any(e["type"] == "token" for e in events))

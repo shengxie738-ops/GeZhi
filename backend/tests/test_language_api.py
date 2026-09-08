@@ -75,19 +75,21 @@ class LanguageApiTestBase(unittest.TestCase):
 
 
 class ModelRegistryOmniTest(unittest.TestCase):
-    def test_omni_models_registered_with_omni_category(self):
+    def test_expired_omni_models_removed_from_registry(self):
         for model_id in ("qwen3.5-omni-flash", "qwen3.5-omni-plus", "qwen-omni-turbo", "qwen3-omni-flash-2025-12-01"):
-            config = get_model_config(model_id, category="omni")
-            self.assertEqual(config.category, "omni")
+            with self.assertRaises(ValueError):
+                get_model_config(model_id, category="omni")
 
-    def test_omni_models_listed_publicly(self):
+    def test_new_omni_models_registered_and_listed_publicly(self):
         models = list_public_models()
         self.assertIn("omni", models)
-        self.assertTrue(any(m["id"] == "qwen3.5-omni-flash" for m in models["omni"]))
+        self.assertEqual(len(models["omni"]), 5)
+        for expected_id in ("qwen-audio-3.0-asr-flash", "paraformer-v2", "paraformer-v1", "paraformer-mtl-v1", "paraformer-8k-v2"):
+            self.assertTrue(any(m["id"] == expected_id for m in models["omni"]), f"Missing omni model: {expected_id}")
 
     def test_omni_model_rejected_for_text_chat(self):
         with self.assertRaises(ValueError):
-            build_chat_model("qwen3.5-omni-flash")
+            build_chat_model("qwen-audio-3.0-asr-flash")
 
     def test_text_model_rejected_for_omni_category(self):
         with self.assertRaises(ValueError):
@@ -102,7 +104,7 @@ class LanguageAgentsTest(unittest.TestCase):
         self.assertTrue(foreign["model"])
         speaking = agents["agent_speaking"]
         self.assertEqual(speaking["modelCategory"], "omni")
-        self.assertEqual(speaking["model"], "qwen3.5-omni-flash")
+        self.assertEqual(speaking["model"], "qwen-audio-3.0-asr-flash")
 
 
 class ExtractJsonTest(unittest.TestCase):
@@ -142,7 +144,7 @@ class ModelCategoryGuardTest(LanguageApiTestBase):
         store = JsonStore(self.db)
         store.upsert("agents", "config", "agent_foreign_language", {"id": "agent_foreign_language", "model": "qwen3.5-omni-flash"}, owner_id="system")
         resolved = resolve_language_model(self.db, "agent_foreign_language", None, category="text")
-        self.assertEqual(resolved, "qwen3.7-plus")  # 回落默认文本模型
+        self.assertEqual(resolved, "qwen3.7-flash")  # 回落默认文本模型
 
 
 class WordbookApiTest(LanguageApiTestBase):
@@ -191,7 +193,7 @@ class AnalyzeEndpointsTest(LanguageApiTestBase):
             )
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["data"]["level"], "B2")
-        self.assertEqual(result["data"]["model"], "qwen3.7-plus")
+        self.assertEqual(result["data"]["model"], "qwen3.7-flash")
         self.assertGreater(result["data"]["wordCount"], 5)
 
     def test_writing_analyze_saves_session(self):
@@ -219,6 +221,18 @@ class AnalyzeEndpointsTest(LanguageApiTestBase):
         overview = asyncio.run(language_overview(AUTH, self.db))
         self.assertEqual(overview["data"]["today"]["exercises"], 1)
 
+    def test_speaking_analyze_rejects_when_omni_model_unavailable(self):
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(
+                speaking_analyze(
+                    SpeakingAnalyzeRequest(audioBase64="x" * 200, mode="read_aloud", referenceText="He went to school yesterday.", model="qwen3.5-omni-flash"),
+                    AUTH,
+                    self.db,
+                )
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("不是全模态模型", ctx.exception.detail)
+
     def test_speaking_analyze_saves_session(self):
         fake = {
             "transcript": "He went to school yesterday.",
@@ -228,15 +242,17 @@ class AnalyzeEndpointsTest(LanguageApiTestBase):
             "suggestionsZh": ["练习短元音"],
             "mode": "read_aloud",
         }
-        with patch("app.api.endpoints.language.analyze_speaking", return_value=fake) as mock_call:
-            asyncio.run(
+        with patch("app.api.endpoints.language.resolve_language_model", return_value="mock-omni-model"), \
+             patch("app.api.endpoints.language.analyze_speaking", return_value=fake) as mock_call:
+            res = asyncio.run(
                 speaking_analyze(
                     SpeakingAnalyzeRequest(audioBase64="x" * 200, mode="read_aloud", referenceText="He went to school yesterday."),
                     AUTH,
                     self.db,
                 )
             )
-            self.assertEqual(mock_call.call_args.args[0], "qwen3.5-omni-flash")
+            self.assertEqual(mock_call.call_args.args[0], "mock-omni-model")
+            self.assertEqual(res["data"]["scores"]["overall"], 82)
 
 
 class WritingHistoryApiTest(LanguageApiTestBase):

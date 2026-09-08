@@ -33,7 +33,7 @@ class AgentsApiTest(unittest.TestCase):
             self.assertEqual(ranked["name"], "排位赛AI教练")
             self.assertEqual(ranked["role"], "排位诊断与冲分策略教练")
             self.assertEqual(ranked["modelCategory"], "text")
-            self.assertEqual(ranked["model"], "qwen3.7-plus")
+            self.assertEqual(ranked["model"], "qwen3.7-flash")
             self.assertTrue(ranked["isActive"])
         finally:
             db.close()
@@ -44,14 +44,14 @@ class AgentsApiTest(unittest.TestCase):
             asyncio.run(
                 save_agent_config(
                     "agent_ranked_coach",
-                    AgentConfigPayload(model="deepseek-v4-pro", prompt="用排位赛视角分析学生失误。"),
+                    AgentConfigPayload(model="qwen3.8-max", prompt="用排位赛视角分析学生失误。"),
                     db,
                 )
             )
 
             response = asyncio.run(get_agents(db))
             ranked = next(agent for agent in response["data"] if agent["id"] == "agent_ranked_coach")
-            self.assertEqual(ranked["model"], "deepseek-v4-pro")
+            self.assertEqual(ranked["model"], "qwen3.8-max")
             self.assertEqual(ranked["prompt"], "用排位赛视角分析学生失误。")
         finally:
             db.close()

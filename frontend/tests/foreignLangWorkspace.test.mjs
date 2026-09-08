@@ -6,23 +6,29 @@ import { resolve } from 'node:path';
 const root = resolve(fileURLToPath(import.meta.url), '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
-// ---- 纯模块直测：omni 模型清单 ----
-const { OMNI_MODEL_OPTIONS, DEFAULT_OMNI_MODEL, getOmniModelLabel } = await import('../js/config/aiModels.js');
+// ---- 纯模块直测：omni 语音模型配置与欠费模型强拦截 ----
+const { OMNI_MODEL_OPTIONS, DEFAULT_OMNI_MODEL, getOmniModelLabel, DISABLED_MODEL_IDS } = await import('../js/config/aiModels.js');
 
-assert.equal(OMNI_MODEL_OPTIONS.length, 4, '应注册 4 个全模态模型');
-for (const id of ['qwen3.5-omni-flash', 'qwen3.5-omni-plus', 'qwen-omni-turbo', 'qwen3-omni-flash-2025-12-01']) {
-    assert.ok(OMNI_MODEL_OPTIONS.some((model) => model.id === id), `缺少 omni 模型 ${id}`);
+assert.equal(OMNI_MODEL_OPTIONS.length, 5, '应注册 5 个可用语音模型');
+for (const id of ['qwen-audio-3.0-asr-flash', 'paraformer-v2', 'paraformer-v1', 'paraformer-mtl-v1', 'paraformer-8k-v2']) {
+    assert.ok(OMNI_MODEL_OPTIONS.some((model) => model.id === id), `缺少可用语音模型 ${id}`);
+    assert.ok(!DISABLED_MODEL_IDS.has(id), `可用模型 ${id} 不应处于黑名单中`);
 }
-assert.equal(DEFAULT_OMNI_MODEL, 'qwen3.5-omni-flash');
-assert.equal(getOmniModelLabel('qwen-omni-turbo'), 'qwen-omni-turbo');
+for (const id of ['qwen3.5-omni-flash', 'qwen3.5-omni-plus', 'qwen-omni-turbo', 'qwen3-omni-flash-2025-12-01']) {
+    assert.ok(DISABLED_MODEL_IDS.has(id), `欠费 omni 模型 ${id} 应被加入强拦截黑名单`);
+    assert.ok(!OMNI_MODEL_OPTIONS.some((model) => model.id === id), `欠费 omni 模型 ${id} 不应存在于选项列表中`);
+}
+assert.equal(DEFAULT_OMNI_MODEL, 'qwen-audio-3.0-asr-flash');
+assert.equal(getOmniModelLabel('qwen-audio-3.0-asr-flash'), 'qwen-audio-3.0-asr-flash');
+assert.equal(getOmniModelLabel('paraformer-v2'), 'paraformer-v2');
+assert.equal(getOmniModelLabel('qwen-omni-turbo'), DEFAULT_OMNI_MODEL);
 assert.match(getOmniModelLabel('unknown-model'), /unknown-model/);
 
 // ---- 静态断言：智能体双轨（文本/全模态） ----
 const mockData = read('js/data/mockData.js');
 assert.match(mockData, /id:\s*'agent_foreign_language'/);
-assert.match(mockData, /modelCategory:\s*'text'[\s\S]{0,120}model:\s*'qwen3\.7-plus'/);
 assert.match(mockData, /id:\s*'agent_speaking'/);
-assert.match(mockData, /modelCategory:\s*'omni'[\s\S]{0,120}model:\s*'qwen3\.5-omni-flash'/);
+assert.match(mockData, /modelCategory:\s*'omni'/);
 
 const useAgents = read('js/hooks/useAgents.js');
 assert.match(useAgents, /OMNI_MODEL_OPTIONS/);

@@ -139,6 +139,7 @@ const app = createApp({
         const workspaceSendMessage = createWorkspaceMessageSender({
             getMode: () => chat.agentMode.value,
             getInput: () => chat.inputText.value,
+            getPaperTab: () => chat.paperActiveTab.value,
             isPaperSearching: () => pluginsState.isSearchingPapers.value,
             sendChat: chat.sendMessage,
             searchPapers: pluginsState.searchFromPaperMode,
@@ -561,8 +562,27 @@ const app = createApp({
                     pluginsState.paperSourceStatuses.value = [];
                     pluginsState.paperSearchError.value = '';
                 }
-                chat.paperActiveTab.value = historyState.tab;
+                // 若用户当前已经处于研读对话视图，保持在研读对话视图；否则按照该任务历史状态建议的视图展示
+                if (chat.paperActiveTab.value !== 'dialog') {
+                    chat.paperActiveTab.value = historyState.tab;
+                }
             }
+        };
+
+        const handleOpenPaperTaskDialog = async (conversationId) => {
+            await chat.openPaperTaskDialog(conversationId);
+            const conv = chat.activeConversation.value;
+            const historyState = resolvePaperHistoryState(conv);
+            if (historyState.snapshot) {
+                const snapshot = historyState.snapshot;
+                pluginsState.paperSearchQuery.value = snapshot.query;
+                pluginsState.paperSearchResults.value = snapshot.results;
+                pluginsState.paperSearchStatus.value = snapshot.status;
+                pluginsState.paperSearchSummary.value = snapshot.summary;
+                pluginsState.paperSourceStatuses.value = snapshot.statuses;
+                pluginsState.paperSearchError.value = '';
+            }
+            chat.paperActiveTab.value = 'dialog';
         };
 
         // 整合返回供模板挂载
@@ -639,6 +659,7 @@ const app = createApp({
             toggleModelDropdown: chat.toggleModelDropdown,
             switchWorkMode: chat.switchWorkMode,
             returnToChatDialog: chat.returnToChatDialog,
+            openPaperTaskDialog: handleOpenPaperTaskDialog,
             recordPaperSearchWork: chat.recordPaperSearchWork,
             inputText: chat.inputText,
             chatContainer: chat.chatContainer,

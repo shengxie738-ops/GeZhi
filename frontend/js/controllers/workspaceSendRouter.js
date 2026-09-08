@@ -35,6 +35,7 @@ export function createWorkspaceMessageSender(deps = {}) {
     const {
         getMode = () => '',
         getInput = () => '',
+        getPaperTab = () => 'results',
         isPaperSearching = () => false,
         sendChat = async () => {},
         searchPapers = async () => false,
@@ -63,6 +64,18 @@ export function createWorkspaceMessageSender(deps = {}) {
         const mode = String(getMode ? getMode() : '').toLowerCase();
 
         if (mode === 'paper') {
+            const paperTab = String(getPaperTab ? getPaperTab() : 'results').toLowerCase();
+            // 研读对话态：用户与 AI 论文研读助手进行深度对话与追问，进入聊天流
+            if (paperTab === 'dialog') {
+                try {
+                    isRouting = true;
+                    return await sendChat(text, options);
+                } finally {
+                    isRouting = false;
+                }
+            }
+
+            // 文献结果态：执行多来源学术文献检索
             // 处于检索中时防止重复提交
             if (isPaperSearching && isPaperSearching()) {
                 return false;

@@ -12,7 +12,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-max",
+        "model": "qwen3.8-max",
         "prompt": "你负责分析用户的总体目标，并将其拆解为具体的学习路径和待办任务。",
     },
     {
@@ -25,7 +25,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是一位资深教授。请用费曼技巧向用户解释复杂的技术理论与概念。",
     },
     {
@@ -38,7 +38,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.6-plus",
+        "model": "glm-4-flash",
         "prompt": "你负责在本地知识库中进行 RAG（检索增强生成）查询，提取关键信息。",
     },
     {
@@ -51,7 +51,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "glm-5.1",
         "prompt": (
             "你是一个权威的学术论文检索与文献研读专家（PaperBot / 学术文献导师）。"
             "你专注于计算机科学、人工智能、数据结构与算法及相关领域的学术文献查询、论文精读、技术脉络梳理与文献综述生成。\n\n"
@@ -74,7 +74,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是学生错题本的专属错题分析师。请基于题目、学生答案、正确答案、系统错因和知识标签，诊断学生的知识偏差，解释关键知识点，并生成具体练习建议与复习路径。",
     },
     {
@@ -115,7 +115,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是排位赛 AI 教练。请基于学生的排位积分、段位、对战记录、错题现象和知识点薄弱项，给出具体的错题诊断、补强训练、限时刷题、连胜/连败管理和赛季冲分计划。回答要具体、可执行，并优先服务于提升竞技排位赛表现。",
     },
     {
@@ -128,7 +128,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是多智能体协同作业诊断系统。请基于学生作业作答数据，从Alina（学习路线）、CodeNinja（代码质量）、Prof.X（理论理解）三个维度生成诊断评分(0-100)和评语。只返回JSON格式。",
     },
     {
@@ -141,7 +141,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是班级作业分析报告生成专家。请基于作业统计数据、题目错误率、学生提交情况，生成包含教师建议和学生洞察的结构化报告。只返回JSON格式。",
     },
     {
@@ -154,7 +154,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是教学干预策略AI助手。基于班级学情数据（学生列表、薄弱知识点、错题统计、高风险学生），生成具体的干预建议和行动队列。只返回JSON格式。",
     },
     {
@@ -167,7 +167,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "text",
-        "model": "qwen3.7-plus",
+        "model": "qwen3.7-flash",
         "prompt": "你是外语学习导师 Lexa，负责英语阅读理解、写作批改与词汇讲解。你的所有输出必须是严格的结构化 JSON（字段与个数以请求中的 schema 为准），禁止输出 JSON 之外的任何解释性文字。讲解用中文，示例与例句用英文。文本类任务只允许使用文本模型。",
     },
     {
@@ -180,7 +180,7 @@ DEFAULT_AGENTS = [
         "isThinking": False,
         "isActive": True,
         "modelCategory": "omni",
-        "model": "qwen3.5-omni-flash",
+        "model": "qwen-audio-3.0-asr-flash",
         "prompt": "你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。",
     },
 ]

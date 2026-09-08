@@ -3440,11 +3440,19 @@
                                                                 <i class="ph ph-chat-circle text-slate-400 group-hover/task:text-slate-600 text-xs"></i>
                                                                 <span class="truncate">{{ task.title }}</span>
                                                             </div>
-                                                            <button type="button" @click.stop="deleteConversation(task)"
-                                                                class="opacity-0 group-hover/task:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition-all rounded"
-                                                                title="删除此小任务">
-                                                                <i class="ph ph-trash text-xs"></i>
-                                                            </button>
+                                                            <div class="flex items-center gap-1 shrink-0">
+                                                                <button v-if="proj.id === 'proj-paper'" type="button" @click.stop="openPaperTaskDialog(task.id)"
+                                                                    class="opacity-0 group-hover/task:opacity-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200/80 rounded-md transition-all flex items-center gap-0.5"
+                                                                    title="打开当前论文任务的研读对话">
+                                                                    <i class="ph ph-chats-circle text-xs"></i>
+                                                                    <span>研读</span>
+                                                                </button>
+                                                                <button type="button" @click.stop="deleteConversation(task)"
+                                                                    class="opacity-0 group-hover/task:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition-all rounded"
+                                                                    title="删除此小任务">
+                                                                    <i class="ph ph-trash text-xs"></i>
+                                                                </button>
+                                                            </div>
                                                         </div>
 
                                                         <!-- 若项目下无任务 -->
@@ -3915,6 +3923,18 @@
                                         <div ref="chatContainer"
                                             class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 scroll-smooth pb-44 max-w-4xl mx-auto w-full">
                                             
+                                            <!-- 论文模式：当前任务研读引导卡片 (当当前任务尚无消息时呈现) -->
+                                            <div v-if="agentMode === 'paper' && activeConversationMessages.length === 0"
+                                                class="flex flex-col items-center justify-center py-16 text-center max-w-lg mx-auto animate-fade-in">
+                                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white flex items-center justify-center text-2xl shadow-md mb-4">
+                                                    <i class="ph ph-chats-circle"></i>
+                                                </div>
+                                                <h3 class="text-base font-bold text-slate-800 tracking-tight">论文专属研读工作区</h3>
+                                                <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                                                    当前任务的独立研读对话已就绪。您可在下方输入框针对检索到的文献深入提问，包括提炼核心创新点、方法论剖析或对比实验分析。
+                                                </p>
+                                            </div>
+
                                             <div v-for="msg in activeConversationMessages" :key="msg.id"
                                                 class="chat-message-anchor flex flex-col w-full"
                                                 :class="msg.senderType === 'user' ? 'items-end' : 'items-start'"
@@ -4127,18 +4147,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <!-- 论文模式检索后：右下角悬浮便捷返回对话框胶囊 -->
-                                    <div v-if="agentMode === 'paper' && (paperSearchResults.length > 0 || paperSearchStatus !== 'idle')"
-                                        class="absolute right-8 bottom-8 z-20 animate-fade-in pointer-events-auto">
-                                        <button type="button" @click="returnToChatDialog"
-                                            id="float-return-to-chat-btn"
-                                            class="px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-2xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 border border-white/20 backdrop-blur-sm cursor-pointer">
-                                            <i class="ph ph-arrow-left text-xs font-bold"></i>
-                                            <i class="ph ph-chats-circle text-base"></i>
-                                            <span>返回对话框</span>
-                                        </button>
                                     </div>
                                 </main>
 

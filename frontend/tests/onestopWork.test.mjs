@@ -20,9 +20,9 @@ test('Task 1: useAuth should have 一站式 Work menu configuration', () => {
 test('Task 2: buildChatPayload should support custom model selection for hot switching', () => {
     const payloadWithModel = buildChatPayload({
         message: 'Hello',
-        model: 'deepseek-v4-pro'
+        model: 'deepseek-v4-pro-0813'
     });
-    assert.equal(payloadWithModel.agent_model, 'deepseek-v4-pro');
+    assert.equal(payloadWithModel.agent_model, 'deepseek-v4-pro-0813');
 
     const payloadWithAuto = buildChatPayload({
         message: 'Hello',
@@ -70,11 +70,11 @@ test('Task 4: Return to chat dialog functionality when paper search completed', 
     assert.match(mainCode, /returnToChatDialog:\s*chat\.returnToChatDialog/);
     assert.match(mainCode, /insertPaperToChat:\s*\(paper\)\s*=>/);
 
-    // index.html 必须包含返回对话框按钮与其对应 id
+    // index.html 必须包含返回对话框按钮与其对应 id（已按需移除右下角悬浮按钮）
     assert.match(htmlCode, /header-return-to-chat-btn/);
     assert.match(htmlCode, /status-return-to-chat-btn/);
-    assert.match(htmlCode, /float-return-to-chat-btn/);
     assert.match(htmlCode, /bottom-return-to-chat-btn/);
+    assert.doesNotMatch(htmlCode, /float-return-to-chat-btn/);
     assert.match(htmlCode, /@click="returnToChatDialog"/);
     assert.match(htmlCode, /返回对话框/);
     // 检索结果较长时从顶部排版，避免统计栏和首条论文被垂直居中裁掉
@@ -112,3 +112,36 @@ test('Task 7: top-level new task must not pass the click event as a project id',
     assert.match(htmlCode, /@click="startNewConversation\(\)"/);
     assert.match(chatCode, /typeof projectId === ['"]string['"]/);
 });
+
+test('Task 8: recordPaperSearchWork must assign fresh task id to avoid hijacking older task', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+
+    // 验证新论文检索具有独立的 conversationId，杜绝复用已有历史任务导致任务列表不更新
+    assert.match(chatCode, /createTaskConversationId\(['"]paper['"]\)/);
+    assert.match(chatCode, /activeConversationId\.value = conversationId;/);
+});
+
+test('Task 9: returnToChatDialog in paper mode must switch paperActiveTab to dialog and never jump to chat mode', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+
+    // 验证 returnToChatDialog 严格保护论文模式：只切换 paperActiveTab 为 dialog，提前 return，避免破坏性跳回 AI 对话
+    assert.match(chatCode, /if\s*\(\s*agentMode\.value\s*===\s*['"]paper['"]\s*\)\s*\{[\s\S]*?paperActiveTab\.value\s*=\s*['"]dialog['"]/);
+    assert.match(chatCode, /paperActiveTab\.value\s*=\s*['"]dialog['"][\s\S]*?return;/);
+});
+
+test('Task 10: Claude Desktop single-task workflow exports openPaperTaskDialog and provides shortcut button in template', () => {
+    const chatCode = readFileSync(resolveFile('frontend/js/hooks/useChat.js'), 'utf-8');
+    const mainCode = readFileSync(resolveFile('frontend/js/main.js'), 'utf-8');
+    const htmlCode = readFileSync(resolveFile('frontend/index.html'), 'utf-8');
+
+    // 1. useChat.js 必须实现并导出 openPaperTaskDialog
+    assert.match(chatCode, /const openPaperTaskDialog = async/);
+    assert.match(chatCode, /openPaperTaskDialog,/);
+    // 2. main.js 必须将 openPaperTaskDialog 导出至模板
+    assert.match(mainCode, /openPaperTaskDialog:\s*handleOpenPaperTaskDialog/);
+    // 3. index.html 必须在论文任务项中挂载研读快捷入口
+    assert.match(htmlCode, /@click\.stop="openPaperTaskDialog\(task\.id\)"/);
+    // 4. index.html 必须包含论文专属研读工作区空状态卡片
+    assert.match(htmlCode, /论文专属研读工作区/);
+});
+

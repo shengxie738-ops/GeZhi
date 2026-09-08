@@ -228,3 +228,27 @@ test('paperSearchFlow: successful search leaves task history and exposes the pap
         '必须先用当前任务 ID 持久化，再切换结果页并清理草稿状态'
     );
 });
+
+test('paperSearchFlow: in paper study dialog tab, sendMessage routes to sendChat and strictly avoids searchPapers', async () => {
+    const sendChatSpy = createSpy(async () => true);
+    const searchPapersSpy = createSpy(async () => true);
+    let inputValue = '请详细总结该论文的核心创新点与公式3的推导逻辑';
+
+    const sendMessage = createWorkspaceMessageSender({
+        getMode: () => 'paper',
+        getPaperTab: () => 'dialog', // 处于研读对话页
+        getInput: () => inputValue,
+        isPaperSearching: () => false,
+        sendChat: sendChatSpy,
+        searchPapers: searchPapersSpy,
+        clearInput: () => { inputValue = ''; }
+    });
+
+    const result = await sendMessage();
+
+    assert.equal(result, true);
+    assert.equal(sendChatSpy.calls.length, 1, '在研读对话页提问必须调用 sendChat 进行流式对话');
+    assert.equal(sendChatSpy.calls[0][0], '请详细总结该论文的核心创新点与公式3的推导逻辑');
+    assert.equal(searchPapersSpy.calls.length, 0, '在研读对话页提问绝不能触发 searchPapers 重新搜索文献');
+});
+

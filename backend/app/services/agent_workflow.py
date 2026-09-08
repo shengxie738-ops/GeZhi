@@ -129,18 +129,18 @@ def generate_algorithm_diagram(structure_type: str, nodes: str, edges: str) -> s
         return f"Error while generating diagram: {str(e)}"
 
 DEFAULT_AGENT_MODELS = {
-    "agent_planner": "qwen3.7-max",
-    "agent_tutor": "qwen3.7-plus",
-    "agent_researcher": "qwen3.6-plus",
+    "agent_planner": "qwen3.8-max",
+    "agent_tutor": "qwen3.7-flash",
+    "agent_researcher": "glm-4-flash",
     "agent_coder": "kimi-k2.7-code",
-    "agent_visual_guide": "qwen-image-2.0-pro",
-    "agent_foreign_language": "qwen3.7-plus",
-    "agent_paper": "qwen3.7-plus",
+    "agent_visual_guide": "qwen3.8-max",
+    "agent_foreign_language": "qwen3.7-flash",
+    "agent_paper": "glm-5.1",
 }
 
 # 向下兼容引用，供画像分析和普通检索缺省调用。
 llm_max = build_chat_model(DEFAULT_AGENT_MODELS["agent_planner"], temperature=0)
-llm_flash = build_chat_model(DEFAULT_AGENT_MODELS["agent_researcher"], temperature=0.1)
+llm_flash = build_chat_model(DEFAULT_AGENT_MODELS["agent_tutor"], temperature=0.1)
 llm = llm_max
 
 tools = [query_data_structure_knowledge, execute_python_code, generate_algorithm_diagram]

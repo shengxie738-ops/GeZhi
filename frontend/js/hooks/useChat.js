@@ -145,7 +145,17 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const recordPaperSearchWork = async (query, meta = {}) => {
         const cleanQuery = String(query || '').trim();
         if (!cleanQuery) return;
-        const conversationId = getConversationIdForSend({ mode: 'paper', activate: false });
+        // 论文模式下的学术检索代表独立的研究主题。
+        // 若处于新建草稿态（draftConversationId 存在），使用该草稿 ID；
+        // 否则每次学术检索都必须创建独立的 conversationId，防止历史任务被追加污染，并确保左侧任务树即时呈现新检索任务。
+        let conversationId = draftConversationId.value;
+        if (!conversationId) {
+            conversationId = createTaskConversationId('paper');
+        }
+        if (agentMode.value === 'paper') {
+            activeConversationId.value = conversationId;
+            draftConversationId.value = '';
+        }
         const sessionId = getSessionId();
         const results = Array.isArray(meta.results) ? meta.results : [];
         const summary = meta.summary || {};
@@ -233,10 +243,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         if (isCurrentlyInPaperMode) {
             paperActiveTab.value = 'results';
             messages.value.push(userMsg, agentMsg);
-            if (activeConversationId.value === 'new') {
-                activeConversationId.value = null;
-                draftConversationId.value = '';
-            }
+            activeConversationId.value = conversationId;
+            draftConversationId.value = '';
             hydrateParsedMessages();
             safeSetLocalStorage(storageKey, messages.value);
         } else {
@@ -295,6 +303,27 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const returnToChatDialog = () => {
+        if (agentMode.value === 'paper') {
+            paperActiveTab.value = 'dialog';
+            if (typeof window !== 'undefined') {
+                setTimeout(() => {
+                    const textarea = document.querySelector('main textarea');
+                    if (textarea) {
+                        textarea.focus();
+                        try {
+                            const len = textarea.value ? textarea.value.length : 0;
+                            textarea.setSelectionRange(len, len);
+                        } catch (e) {}
+                        textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 60);
+            }
+            if (typeof showToast === 'function') {
+                showToast('已返回论文研读对话框', 'info');
+            }
+            return;
+        }
+
         switchWorkMode('chat');
         if (typeof window !== 'undefined') {
             setTimeout(() => {
@@ -492,7 +521,6 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const showPaperSearchResults = () => {
         if (agentMode.value !== 'paper') return;
         paperActiveTab.value = 'results';
-        activeConversationId.value = null;
         draftConversationId.value = '';
         activeProjectId.value = PROJECT_PAPER_ID;
     };
@@ -528,9 +556,40 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const activeConversationMessages = computed(() => {
         if (activeConversationId.value === 'new') return [];
         if (activeConversation.value) return activeConversation.value.messages;
+        if (agentMode.value === 'paper') {
+            // 论文模式遵循 Claude 桌面端单任务隔离原则：未明确激活会话时绝不跨会话倾倒历史消息
+            return [];
+        }
         const conversations = groupMessagesIntoConversations(messages.value);
         return conversations.length ? conversations[conversations.length - 1].messages : [];
     });
+
+    const openPaperTaskDialog = async (conversationId) => {
+        if (!conversationId) return;
+        if (agentMode.value !== 'paper') {
+            agentMode.value = 'paper';
+            forceRAG.value = false;
+        }
+        activeProjectId.value = PROJECT_PAPER_ID;
+        await selectConversation(conversationId);
+        paperActiveTab.value = 'dialog';
+        if (typeof window !== 'undefined') {
+            setTimeout(() => {
+                const textarea = document.querySelector('main textarea');
+                if (textarea) {
+                    textarea.focus();
+                    try {
+                        const len = textarea.value ? textarea.value.length : 0;
+                        textarea.setSelectionRange(len, len);
+                    } catch (e) {}
+                    textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 60);
+        }
+        if (typeof showToast === 'function') {
+            showToast('已加载当前任务研读对话', 'info');
+        }
+    };
 
     const scrollChatToBottom = async () => {
         await nextTick();
@@ -1299,6 +1358,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         showPaperSearchResults,
         paperActiveTab,
         returnToChatDialog,
+        openPaperTaskDialog,
         recordPaperSearchWork,
         messages,
         files,

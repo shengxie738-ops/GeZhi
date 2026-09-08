@@ -16,7 +16,7 @@ class HintService:
         self.model_client = model_client
         self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None else os.getenv("LEARNING_DIAGNOSIS_AI_TIMEOUT_SECONDS", "3"))
         tutor = next((item for item in get_default_agents() if item.get("id") == "agent_tutor"), {})
-        self.model_id = model_id or tutor.get("model") or "qwen3.7-plus"
+        self.model_id = model_id or tutor.get("model") or "qwen3.7-flash"
 
     async def generate(self, task: dict[str, Any], level: int, attempt: dict[str, Any] | None = None) -> dict[str, Any]:
         attempt = dict(attempt or {})

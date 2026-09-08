@@ -15,7 +15,7 @@ class AnswerEvaluator:
     def __init__(self, model_client=None, timeout_seconds: float | None = None):
         self.model_client = model_client
         agent = next((item for item in get_default_agents() if item.get("id") == "agent_homework_diagnoser"), {})
-        self.model_id = agent.get("model") or "qwen3.7-plus"
+        self.model_id = agent.get("model") or "qwen3.7-flash"
         self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None else os.getenv("LEARNING_DIAGNOSIS_AI_TIMEOUT_SECONDS", "3"))
 
     async def evaluate(self, task: dict[str, Any], answer: str) -> dict[str, Any]:

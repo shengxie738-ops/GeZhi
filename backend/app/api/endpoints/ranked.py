@@ -18,7 +18,7 @@ from app.services.model_registry import build_chat_model, has_model
 from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 
 router = APIRouter()
-DEFAULT_RANKED_COACH_MODEL = "qwen3.7-plus"
+DEFAULT_RANKED_COACH_MODEL = "qwen3.7-flash"
 _RANKED_SETTLEMENT_LOCK_STRIPES = 64
 _RANKED_SETTLEMENT_LOCKS = tuple(threading.Lock() for _ in range(_RANKED_SETTLEMENT_LOCK_STRIPES))
 

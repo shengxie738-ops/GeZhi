@@ -1,4 +1,5 @@
 import { ref, watch } from 'vue';
+import { DISABLED_MODEL_IDS, DEFAULT_AGENT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_OMNI_MODEL } from '../config/aiModels.js';
 
 export const mockStudents = ref([
     { id: 1, name: '张子豪', avatar: 'Felix', goal: '大语言模型底层架构 - Attention', progress: 35, status: 'active', currentAgent: 'Alina (规划师)', focus: 85, alert: false },
@@ -25,21 +26,31 @@ export const chartLinks = [
     { source: '检索增强生成 (RAG)', target: '多智能体框架开发', lineStyle: { color: '#CBD5E1', width: 2 } }
 ];
 
+function sanitizeAgentModel(agent) {
+    if (!agent) return agent;
+    if (!agent.model || DISABLED_MODEL_IDS.has(agent.model)) {
+        if (agent.modelCategory === 'image') agent.model = DEFAULT_IMAGE_MODEL;
+        else if (agent.modelCategory === 'omni') agent.model = DEFAULT_OMNI_MODEL;
+        else agent.model = DEFAULT_AGENT_MODEL;
+    }
+    return agent;
+}
+
 const DEFAULT_AGENTS = [
-    { id: 'agent_planner', name: 'Alina', role: '首席规划师', avatar: './assets/agents/alina.png', icon: 'ph-map-trifold', colorClass: 'bg-purple-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-max', prompt: '你负责分析用户的总体目标，并将其拆解为具体的学习路径和待办任务。' },
-    { id: 'agent_tutor', name: 'Prof. X', role: '知识讲授导师', avatar: './assets/agents/profx.png', icon: 'ph-graduation-cap', colorClass: 'bg-blue-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是一位资深教授。请用费曼技巧向用户解释复杂的技术理论与概念。' },
-    { id: 'agent_researcher', name: 'DataBot', role: '数据检索助手', avatar: './assets/agents/databot.png', icon: 'ph-magnifying-glass', colorClass: 'bg-emerald-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.6-plus', prompt: '你负责在本地知识库中进行 RAG (检索增强生成) 查询，提取关键信息。' },
-    { id: 'agent_mistake_analyst', name: '错题分析师', role: '错题诊断与复习路径规划师', avatar: '', icon: 'ph-warning-diamond', colorClass: 'bg-rose-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是学生错题本的专属错题分析师。请基于题目、学生答案、正确答案、系统错因和知识标签，诊断学生的认知偏差，解释关键知识点，并生成具体练习建议与复习路径。输出必须贴合当前错题，不要给模板化结论。' },
+    { id: 'agent_planner', name: 'Alina', role: '首席规划师', avatar: './assets/agents/alina.png', icon: 'ph-map-trifold', colorClass: 'bg-purple-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.8-max', prompt: '你负责分析用户的总体目标，并将其拆解为具体的学习路径和待办任务。' },
+    { id: 'agent_tutor', name: 'Prof. X', role: '知识讲授导师', avatar: './assets/agents/profx.png', icon: 'ph-graduation-cap', colorClass: 'bg-blue-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-flash', prompt: '你是一位资深教授。请用费曼技巧向用户解释复杂的技术理论与概念。' },
+    { id: 'agent_researcher', name: 'DataBot', role: '数据检索助手', avatar: './assets/agents/databot.png', icon: 'ph-magnifying-glass', colorClass: 'bg-emerald-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'glm-4-flash', prompt: '你负责在本地知识库中进行 RAG (检索增强生成) 查询，提取关键信息。' },
+    { id: 'agent_mistake_analyst', name: '错题分析师', role: '错题诊断与复习路径规划师', avatar: '', icon: 'ph-warning-diamond', colorClass: 'bg-rose-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-flash', prompt: '你是学生错题本的专属错题分析师。请基于题目、学生答案、正确答案、系统错因和知识标签，诊断学生的认知偏差，解释关键知识点，并生成具体练习建议与复习路径。输出必须贴合当前错题，不要给模板化结论。' },
     { id: 'agent_coder', name: 'CodeNinja', role: '代码演示助手', avatar: './assets/agents/codeninja.png', icon: 'ph-code', colorClass: 'bg-slate-700', isThinking: false, isActive: true, modelCategory: 'text', model: 'kimi-k2.7-code', prompt: '你专注于编写高质量的代码示例。提供带有详尽注释的代码片段。' },
-    { id: 'agent_visual_guide', name: 'Mira', role: 'AI引导图生成师', avatar: '', icon: 'ph-flow-arrow', colorClass: 'bg-white', avatarShellClass: 'bg-white shadow-[0_10px_24px_rgba(28,43,56,0.10)] border border-white/80', iconTextClass: 'text-[#1c2b38] text-[18px]', isThinking: false, isActive: true, modelCategory: 'image', model: 'qwen-image-2.0-pro', prompt: '把左侧问题转译成概念图与步骤图。你负责根据学习问题生成通俗易懂的 AI 引导图，帮助学生理解抽象知识结构。' },
-    { id: 'agent_ranked_coach', name: '排位赛AI教练', role: '排位诊断与冲分策略教练', avatar: '', icon: 'ph-robot', colorClass: 'bg-orange-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是排位赛 AI 教练。请基于学生的排位积分、段位、对战记录、错题现象和知识点薄弱项，给出具体的错题诊断、补强训练、限时刷题、连胜/连败管理和赛季冲分计划。回答要具体、可执行，并优先服务于提升竞技排位赛表现。' },
-    { id: 'agent_foreign_language', name: 'Lexa', role: '外语学习导师 · 阅读 / 写作 / 词汇', avatar: '', icon: 'ph-book-open-text', colorClass: 'bg-indigo-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是外语学习导师 Lexa，负责英语阅读理解、写作批改与词汇讲解。你的所有输出必须是严格的结构化 JSON（字段与个数以请求中的 schema 为准），禁止输出 JSON 之外的任何解释性文字。讲解用中文，示例与例句用英文。文本类任务只允许使用文本模型。' },
-    { id: 'agent_speaking', name: 'Echo', role: '口语教练 · 全模态语音评测', avatar: '', icon: 'ph-microphone-stage', colorClass: 'bg-fuchsia-500', isThinking: false, isActive: true, modelCategory: 'omni', model: 'qwen3.5-omni-flash', prompt: '你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。' },
-    { id: 'agent_paper', name: 'PaperBot', role: '学术文献与前沿论文研读专家', avatar: '', icon: 'ph-article', colorClass: 'bg-sky-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-plus', prompt: '你是一位资深学术文献与前沿论文研读专家 PaperBot。专注于核心创新点提炼、研究背景与方法论拆解、实验对比分析与 BibTeX 规范引用生成。' }
+    { id: 'agent_visual_guide', name: 'Mira', role: 'AI引导图生成师', avatar: '', icon: 'ph-flow-arrow', colorClass: 'bg-white', avatarShellClass: 'bg-white shadow-[0_10px_24px_rgba(28,43,56,0.10)] border border-white/80', iconTextClass: 'text-[#1c2b38] text-[18px]', isThinking: false, isActive: true, modelCategory: 'image', model: DEFAULT_IMAGE_MODEL, prompt: '把左侧问题转译成概念图与步骤图。你负责根据学习问题生成通俗易懂的 AI 引导图，帮助学生理解抽象知识结构。' },
+    { id: 'agent_ranked_coach', name: '排位赛AI教练', role: '排位诊断与冲分策略教练', avatar: '', icon: 'ph-robot', colorClass: 'bg-orange-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-flash', prompt: '你是排位赛 AI 教练。请基于学生的排位积分、段位、对战记录、错题现象和知识点薄弱项，给出具体的错题诊断、补强训练、限时刷题、连胜/连败管理和赛季冲分计划。回答要具体、可执行，并优先服务于提升竞技排位赛表现。' },
+    { id: 'agent_foreign_language', name: 'Lexa', role: '外语学习导师 · 阅读 / 写作 / 词汇', avatar: '', icon: 'ph-book-open-text', colorClass: 'bg-indigo-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'qwen3.7-flash', prompt: '你是外语学习导师 Lexa，负责英语阅读理解、写作批改与词汇讲解。你的所有输出必须是严格的结构化 JSON（字段与个数以请求中的 schema 为准），禁止输出 JSON 之外的任何解释性文字。讲解用中文，示例与例句用英文。文本类任务只允许使用文本模型。' },
+    { id: 'agent_speaking', name: 'Echo', role: '口语教练 · 全模态语音评测', avatar: '', icon: 'ph-microphone-stage', colorClass: 'bg-fuchsia-500', isThinking: false, isActive: true, modelCategory: 'omni', model: DEFAULT_OMNI_MODEL, prompt: '你是口语教练 Echo，基于全模态语音模型工作，只负责口语训练：听辨学生录音，输出转写文本与发音、流利度、准确度、语调评分及逐词反馈。你的所有输出必须是严格的结构化 JSON，禁止输出 JSON 之外的任何文字。除口语任务外不得调用本模型。' },
+    { id: 'agent_paper', name: 'PaperBot', role: '学术文献与前沿论文研读专家', avatar: '', icon: 'ph-article', colorClass: 'bg-sky-500', isThinking: false, isActive: true, modelCategory: 'text', model: 'glm-5.1', prompt: '你是一位资深学术文献与前沿论文研读专家 PaperBot。专注于核心创新点提炼、研究背景与方法论拆解、实验对比分析与 BibTeX 规范引用生成。' }
 ];
 
 const savedAgentsStr = localStorage.getItem('agents_config');
-let initialAgents = DEFAULT_AGENTS;
+let initialAgents = DEFAULT_AGENTS.map(a => sanitizeAgentModel({ ...a }));
 if (savedAgentsStr) {
     try {
         const parsed = JSON.parse(savedAgentsStr);
@@ -49,7 +60,7 @@ if (savedAgentsStr) {
                 const paperDef = DEFAULT_AGENTS.find(a => a.id === 'agent_paper');
                 if (paperDef) parsed.push(paperDef);
             }
-            initialAgents = parsed;
+            initialAgents = parsed.map(a => sanitizeAgentModel({ ...a }));
         }
     } catch (e) {
         console.error('Failed to parse agents from localStorage', e);

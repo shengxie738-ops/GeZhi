@@ -65,7 +65,7 @@ class RankedAiTest(unittest.TestCase):
                             userId="student-1",
                             agentId="agent_ranked_coach",
                             agentName="排位赛AI教练",
-                            agentModel="deepseek-v4-pro",
+                            agentModel="qwen3.8-max",
                             agentPrompt="Only give ranked improvement advice.",
                             question="我的失误在哪里？",
                             context={"score": 1980, "streak": 5},
@@ -76,8 +76,8 @@ class RankedAiTest(unittest.TestCase):
                 )["data"]
 
             build_model.assert_called_once()
-            self.assertEqual(build_model.call_args.args[0], "deepseek-v4-pro")
-            self.assertEqual(response["model"], "deepseek-v4-pro")
+            self.assertEqual(build_model.call_args.args[0], "qwen3.8-max")
+            self.assertEqual(response["model"], "qwen3.8-max")
             self.assertEqual(response["agentId"], "agent_ranked_coach")
             self.assertIn("Only give ranked improvement advice.", model.prompts[0])
             self.assertIn("我的失误在哪里？", model.prompts[0])
@@ -115,7 +115,7 @@ class RankedAiTest(unittest.TestCase):
             stored = JsonStore(db).get_payload("ranked", "mistake", mistake["id"])
             self.assertEqual(stored["aiAnalysis"]["model"], "glm-4.6v")
             self.assertEqual(stored["aiAnalysis"]["agentId"], "agent_ranked_coach")
-            self.assertIn("DFS", model.prompts[0])
+            self.assertIn("Dijkstra", model.prompts[0])
         finally:
             db.close()
 

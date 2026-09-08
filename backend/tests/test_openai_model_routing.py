@@ -16,14 +16,14 @@ from app.api.endpoints.chat import OpenAIChatMessage, OpenAIChatRequest, build_o
 class OpenAIModelRoutingTest(unittest.TestCase):
     def test_openai_compatible_request_model_is_passed_to_agent_runtime(self):
         request = OpenAIChatRequest(
-            model="qwen3.6-max-preview",
+            model="qwen3.8-max",
             messages=[OpenAIChatMessage(role="user", content="hi")],
         )
 
         config = build_openai_runtime_config(request, thread_id="thread-1", message="hi")
 
         self.assertEqual(config["configurable"]["thread_id"], "thread-1")
-        self.assertEqual(config["configurable"]["agent_model"], "qwen3.6-max-preview")
+        self.assertEqual(config["configurable"]["agent_model"], "qwen3.8-max")
 
     def test_openai_compatible_invalid_model_falls_back_to_tutor_default(self):
         request = OpenAIChatRequest(
@@ -33,7 +33,7 @@ class OpenAIModelRoutingTest(unittest.TestCase):
 
         config = build_openai_runtime_config(request, thread_id="thread-1", message="hi")
 
-        self.assertEqual(config["configurable"]["agent_model"], "qwen3.7-plus")
+        self.assertEqual(config["configurable"]["agent_model"], "qwen3.7-flash")
 
 
 if __name__ == "__main__":

@@ -649,6 +649,7 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             f"{combined_context}\n\n"
             f"请结合以上资料，直接且专业地回答用户的问题：{cleaned_msg}"
         )
+    
 
     ref_list = build_reference_source_block(ref_docs, agent_mode)
 
