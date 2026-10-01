@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client, page_items
 from app.core.responses import ok
+from app.core.username_policy import is_valid_student_username
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 from app.repositories.json_store import JsonStore, make_record_key
@@ -336,6 +338,9 @@ def _student_card(
 
 def _student_cards(db: Session) -> list[dict[str, Any]]:
     students = db.query(UserAccount).filter(UserAccount.role == "student").order_by(UserAccount.created_at.asc()).all()
+    # 纵深防御：即使库里混入非法账号（自动化测试残留、直接插库），
+    # 画像也只聚合"纯数字学号或含中文姓名"的学生
+    students = [student for student in students if is_valid_student_username(student.username)]
     profiles = {
         item.user_id: item
         for item in db.query(StudentProfile).filter(StudentProfile.user_id.in_([student.username for student in students] or [""])).all()
@@ -613,7 +618,7 @@ def _auto_generate_actions(store: JsonStore, students: list[dict[str, Any]]) -> 
 
 
 @router.get("/analytics/overview")
-async def get_overview_stats(db: Session = Depends(get_db)):
+async def get_overview_stats(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     students = _student_cards(db)
     progress_values = [item["progress"] for item in students]
     focus_values = [item["focus"] for item in students]
@@ -658,12 +663,12 @@ async def get_overview_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/analytics/students")
-async def get_student_list(db: Session = Depends(get_db)):
+async def get_student_list(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     return ok(_student_cards(db))
 
 
 @router.get("/analytics/students/search")
-async def search_students(q: str = "", db: Session = Depends(get_db)):
+async def search_students(q: str = "", payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     keyword = (q or "").strip().lower()
     students = _student_cards(db)
     if not keyword:
@@ -690,11 +695,12 @@ async def search_students(q: str = "", db: Session = Depends(get_db)):
 
 
 @router.get("/analytics/students/me")
-async def get_my_radar(user_id: str = "", db: Session = Depends(get_db)):
+async def get_my_radar(user_id: str = "", payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     """学生端同源六维雷达：与教师端同一套 _compute_radar_values。"""
     username = (user_id or "").strip()
     if not username:
         raise HTTPException(status_code=400, detail="user_id is required")
+    ensure_self_or_teacher(username, payload)
 
     students = _student_cards(db)
     matched = next(
@@ -744,7 +750,8 @@ async def get_my_radar(user_id: str = "", db: Session = Depends(get_db)):
 
 
 @router.get("/analytics/students/{student_id}")
-async def get_student_details(student_id: str, db: Session = Depends(get_db)):
+async def get_student_details(student_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(student_id, payload)
     store = JsonStore(db)
     students = _student_cards(db)
     matched = next(
@@ -808,7 +815,8 @@ async def get_student_details(student_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/analytics/students/{student_id}/nudge")
-async def send_nudge_message(student_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def send_nudge_message(student_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(student_id, auth)
     data = payload.model_dump()
     # 优先用 username 作为 owner_id，保证学生端 list_payloads(owner_id=username) 能读到
     students = _student_cards(db)
@@ -840,17 +848,18 @@ async def send_nudge_message(student_id: str, payload: FreePayload, db: Session 
 
 
 @router.get("/analytics/advices")
-async def get_ai_intervention_advices(db: Session = Depends(get_db)):
+async def get_ai_intervention_advices(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     return ok(JsonStore(db).list_payloads("analytics", "advice"))
 
 
 @router.get("/analytics/action-queue")
-async def get_action_queue(db: Session = Depends(get_db)):
+async def get_action_queue(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     return ok(JsonStore(db).list_payloads("analytics", "action"))
 
 
 @router.get("/analytics/interactions")
 async def get_interaction_records(
+    payload: dict = Depends(require_teacher),
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
 ):
@@ -861,7 +870,7 @@ async def get_interaction_records(
 
 
 @router.post("/analytics/interactions")
-async def dispatch_student_interaction(payload: FreePayload, db: Session = Depends(get_db)):
+async def dispatch_student_interaction(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     record_id = str(data.get("id") or make_record_key("ir"))
     target = data.get("target") or {}
@@ -926,7 +935,7 @@ async def dispatch_student_interaction(payload: FreePayload, db: Session = Depen
 
 
 @router.patch("/analytics/interactions/{record_id}")
-async def update_interaction_record(record_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def update_interaction_record(record_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
     data = payload.model_dump()
     updated = store.patch("analytics", "interaction", record_id, data)
@@ -950,7 +959,7 @@ async def update_interaction_record(record_id: str, payload: FreePayload, db: Se
 
 
 @router.post("/analytics/dispatch")
-async def dispatch_intervention_task(payload: FreePayload, db: Session = Depends(get_db)):
+async def dispatch_intervention_task(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     record_id = make_record_key("ir")
     record = {
@@ -973,7 +982,7 @@ async def dispatch_intervention_task(payload: FreePayload, db: Session = Depends
 
 
 @router.post("/analytics/interactions/{record_id}/complete")
-async def mark_interaction_complete(record_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """学生标记交互任务完成，自动更新 completionRate 等计数（防重复提交）"""
     store = JsonStore(db)
     record = store.get_payload("analytics", "interaction", record_id)
@@ -1024,7 +1033,7 @@ async def mark_interaction_complete(record_id: str, payload: FreePayload, db: Se
 
 
 @router.post("/analytics/advices/generate")
-async def generate_ai_advices(payload: FreePayload = None, db: Session = Depends(get_db)):
+async def generate_ai_advices(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """基于班级学情数据调用 AI 生成干预建议"""
     store = JsonStore(db)
     students = _student_cards(db)
@@ -1094,7 +1103,7 @@ async def generate_ai_advices(payload: FreePayload = None, db: Session = Depends
 
 
 @router.post("/analytics/action-queue/generate")
-async def generate_action_queue(payload: FreePayload = None, db: Session = Depends(get_db)):
+async def generate_action_queue(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """基于规则引擎 + AI 生成今日行动队列"""
     store = JsonStore(db)
     students = _student_cards(db)

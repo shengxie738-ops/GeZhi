@@ -86,12 +86,12 @@ assert.equal(stepsFallbackState.historySource, 'local_architecture');
 assert.equal(stepsFallbackState.image.provider, 'local_text_architecture');
 assert.match(stepsFallbackState.image.mermaid, /flowchart TD/);
 assert.match(stepsFallbackState.image.mermaid, /栈和队列/);
-assert.equal(getVisualGuideSourceLabel(stepsFallbackState.image), 'Prof.X代码架构图');
+assert.equal(getVisualGuideSourceLabel(stepsFallbackState.image), 'Prof.X知识结构图');
 
 assert.equal(getVisualGuideSourceLabel({ svg: '<svg></svg>', backgroundUrl: 'https://example.com/bg.png' }), '精准引导图+千问背景');
 assert.equal(getVisualGuideSourceLabel({ svg: '<svg></svg>' }), '精准引导图');
 assert.equal(getVisualGuideSourceLabel({ provider: 'fallback_svg', svg: '<svg></svg>' }), '精准引导图');
-assert.equal(getVisualGuideSourceLabel({ provider: 'prof_x_text_architecture', mermaid: 'flowchart TD' }), 'Prof.X代码架构图');
+assert.equal(getVisualGuideSourceLabel({ provider: 'prof_x_text_architecture', mermaid: 'flowchart TD' }), 'Prof.X知识结构图');
 assert.equal(getVisualGuideSourceLabel({ provider: 'qwen' }), '千问AI图');
 assert.equal(getVisualGuideSourceLabel(null), '本地草图');
 

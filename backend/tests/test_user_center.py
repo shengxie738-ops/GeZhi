@@ -28,6 +28,7 @@ class UserCenterEndpointTest(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=self.engine)
         self.db = self.SessionLocal()
         self.username = "user_center_test"
+        self.auth_payload = {"sub": self.username, "role": "student"}
         self.avatar_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "app",
@@ -55,6 +56,7 @@ class UserCenterEndpointTest(unittest.TestCase):
                     student_id=" 20260001 ",
                     class_name=" 计科一班 ",
                 ),
+                self.auth_payload,
                 self.db,
             )
         )
@@ -74,7 +76,7 @@ class UserCenterEndpointTest(unittest.TestCase):
             headers=Headers({"content-type": "image/png"}),
         )
 
-        response = asyncio.run(upload_avatar(username=self.username, file=upload, db=self.db))
+        response = asyncio.run(upload_avatar(username=self.username, file=upload, payload=self.auth_payload, db=self.db))
 
         account = self.db.query(UserAccount).filter_by(username=self.username).one()
         self.assertEqual(account.avatar_path, f"{self.username}.png")

@@ -1,6 +1,6 @@
 import { ref, reactive, computed } from 'vue';
 import { agents as mockAgents } from '../data/mockData.js';
-import { DEFAULT_AGENT_MODEL, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
+import { DEFAULT_AGENT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_OMNI_MODEL, DISABLED_MODEL_IDS, IMAGE_MODEL_OPTIONS, OMNI_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 import { agentApi } from '../api/agents.js';
 import request from '../utils/request.js';
 
@@ -8,6 +8,7 @@ export function useAgents(showToast) {
     const agents = mockAgents;
     const textModelOptions = ref([...TEXT_MODEL_OPTIONS]);
     const imageModelOptions = ref([...IMAGE_MODEL_OPTIONS]);
+    const omniModelOptions = ref([...OMNI_MODEL_OPTIONS]);
     const showAgentModal = ref(false);
     const isEditingAgent = ref(false);
 
@@ -25,11 +26,15 @@ export function useAgents(showToast) {
     });
 
     const getAgentModelOptions = (agent) => {
-        return agent?.modelCategory === 'image' ? imageModelOptions.value : textModelOptions.value;
+        if (agent?.modelCategory === 'image') return imageModelOptions.value;
+        if (agent?.modelCategory === 'omni') return omniModelOptions.value;
+        return textModelOptions.value;
     };
 
     const getDefaultModelForCategory = (modelCategory) => {
-        return modelCategory === 'image' ? DEFAULT_IMAGE_MODEL : DEFAULT_AGENT_MODEL;
+        if (modelCategory === 'image') return DEFAULT_IMAGE_MODEL;
+        if (modelCategory === 'omni') return DEFAULT_OMNI_MODEL;
+        return DEFAULT_AGENT_MODEL;
     };
 
     const activeAgentModelOptions = computed(() => getAgentModelOptions(agentForm));
@@ -47,16 +52,22 @@ export function useAgents(showToast) {
         try {
             const payload = await request('/ai/models');
             const data = payload?.data || {};
-            if (Array.isArray(data.text) && data.text.length) {
+            if (Array.isArray(data.text)) {
                 textModelOptions.value = mergeModelOptions(
                     data.text.map(normalizeBackendModel),
                     TEXT_MODEL_OPTIONS
                 );
             }
-            if (Array.isArray(data.image) && data.image.length) {
+            if (Array.isArray(data.image)) {
                 imageModelOptions.value = mergeModelOptions(
                     data.image.map(normalizeBackendModel),
                     IMAGE_MODEL_OPTIONS
+                );
+            }
+            if (Array.isArray(data.omni)) {
+                omniModelOptions.value = mergeModelOptions(
+                    data.omni.map(normalizeBackendModel),
+                    OMNI_MODEL_OPTIONS
                 );
             }
         } catch (error) {
@@ -68,7 +79,15 @@ export function useAgents(showToast) {
         try {
             const payload = await agentApi.getAgents();
             if (Array.isArray(payload?.data) && payload.data.length) {
-                agents.value = payload.data;
+                agents.value = payload.data.map(agent => {
+                    if (!agent.model || DISABLED_MODEL_IDS.has(agent.model)) {
+                        return {
+                            ...agent,
+                            model: getDefaultModelForCategory(agent.modelCategory)
+                        };
+                    }
+                    return agent;
+                });
             }
         } catch (error) {
             console.info('[Agents] Backend agent config unavailable, using local agents.', error);
@@ -171,6 +190,7 @@ export function useAgents(showToast) {
         agents,
         textModelOptions,
         imageModelOptions,
+        omniModelOptions,
         activeAgentModelOptions,
         showAgentModal,
         isEditingAgent,

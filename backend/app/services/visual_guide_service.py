@@ -142,15 +142,20 @@ class VisualGuideService:
 
         guide_spec = GUIDE_TYPES[guide_type]
         keyword = extract_keyword(clean_prompt)
-        model_config = self._resolve_model_config(request.model)
+        try:
+            model_config = self._resolve_model_config(request.model)
+            model_id = model_config.model_id
+        except ValueError:
+            model_config = None
+            model_id = request.model or self.model or ""
         background_prompt = build_background_prompt(clean_prompt, guide_type, request.context)
 
         metadata = {
             "guide_type": guide_type,
             "session_id": request.session_id,
             "render_mode": "structured_svg",
-            "qwen_enabled": self.image_enabled,
-            "model": model_config.model_id,
+            "qwen_enabled": self.image_enabled and (model_config is not None),
+            "model": model_id,
             "size": self.size,
             "background_prompt": background_prompt,
         }
@@ -162,7 +167,7 @@ class VisualGuideService:
             metadata=metadata,
         )
 
-        if not self.image_enabled:
+        if not self.image_enabled or not model_config:
             return svg_payload
 
         try:
@@ -193,10 +198,22 @@ class VisualGuideService:
 
     def _resolve_model_config(self, requested_model: str | None = None) -> AIModelConfig:
         for model_id in (requested_model, self.model, settings.QWEN_IMAGE_MODEL, "qwen-image-2.0-pro"):
+            if not model_id:
+                continue
             try:
                 return get_model_config(model_id, category="image")
             except ValueError:
                 continue
+        if self.image_client:
+            fallback_name = requested_model or self.model or "qwen-image-2.0-pro"
+            return AIModelConfig(
+                model_id=fallback_name,
+                label=fallback_name,
+                provider="阿里云百炼",
+                category="image",
+                base_url="",
+                api_key="",
+            )
         raise ValueError("No supported image model configured")
 
     def _generate_text_architecture(self, prompt: str, request: VisualGuideGenerationRequest) -> dict[str, Any]:
@@ -313,15 +330,17 @@ def _resolve_text_model_id(request: VisualGuideGenerationRequest) -> str:
         request.text_model,
         context.get("text_model"),
         context.get("agent_model"),
-        "qwen3.7-plus",
+        "qwen3.7-flash",
     ):
         if not candidate:
             continue
         try:
             return get_model_config(str(candidate), category="text").model_id
         except ValueError:
+            if candidate == request.text_model:
+                return str(candidate)
             continue
-    return "qwen3.7-plus"
+    return "qwen3.7-flash"
 
 
 def _message_content(response: Any) -> str:

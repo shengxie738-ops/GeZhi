@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client
 from app.core.responses import ok
@@ -42,7 +43,8 @@ async def _upload_knowledge_document_impl(
 
 
 @router.get("/user/knowledge")
-async def get_user_knowledge(user_id: str, db: Session = Depends(get_db)):
+async def get_user_knowledge(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     try:
         return ok(list_user_knowledge(db, user_id, sync_remote=True))
     except ValueError as exc:
@@ -56,7 +58,8 @@ async def get_course_knowledge_bases():
 
 
 @router.post("/user/knowledge/repositories")
-async def create_user_knowledge_repository(payload: RepositoryCreate, db: Session = Depends(get_db)):
+async def create_user_knowledge_repository(payload: RepositoryCreate, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(payload.user_id, auth)
     try:
         return ok(create_repository(db, payload.user_id, payload.name), message="repository created")
     except ValueError as exc:
@@ -68,9 +71,11 @@ async def upload_user_knowledge_document(
     user_id: str = Form(...),
     repository_id: str = Form(...),
     file: UploadFile = File(...),
+    auth: dict = Depends(get_auth_payload),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, auth)
     try:
         document = await _upload_knowledge_document_impl(user_id, repository_id, file, db)
         if is_miniprogram_client(x_gezhi_client):
@@ -87,9 +92,11 @@ async def upload_user_knowledge_document_alias(
     user_id: str = Form(...),
     repository_id: str = Form(...),
     file: UploadFile = File(...),
+    auth: dict = Depends(get_auth_payload),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, auth)
     try:
         document = await _upload_knowledge_document_impl(user_id, repository_id, file, db)
         if is_miniprogram_client(x_gezhi_client):
@@ -102,7 +109,8 @@ async def upload_user_knowledge_document_alias(
 
 
 @router.delete("/user/knowledge/documents/{document_id}")
-async def delete_user_knowledge_document(document_id: str, user_id: str, db: Session = Depends(get_db)):
+async def delete_user_knowledge_document(document_id: str, user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     try:
         return ok(delete_repository_document(db, user_id=user_id, document_id=document_id), message="document deleted")
     except ValueError as exc:
@@ -112,7 +120,8 @@ async def delete_user_knowledge_document(document_id: str, user_id: str, db: Ses
 
 
 @router.delete("/user/knowledge/repositories/{repository_id}")
-async def delete_user_knowledge_repository(repository_id: str, user_id: str, db: Session = Depends(get_db)):
+async def delete_user_knowledge_repository(repository_id: str, user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     try:
         return ok(delete_repository(db, user_id=user_id, repository_id=repository_id), message="repository deleted")
     except ValueError as exc:

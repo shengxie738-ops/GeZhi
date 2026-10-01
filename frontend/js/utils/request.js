@@ -52,28 +52,31 @@ export const request = async (url, options = {}) => {
 
         // 3. 处理全局响应状态码（差异化错误信息）
         if (!response.ok) {
+            let message;
             if (response.status === 401) {
                 window.dispatchEvent(new CustomEvent('auth-expired'));
-                throw new Error('登录已过期，请重新登录');
+                message = '登录已过期，请重新登录';
+            } else if (response.status === 403) {
+                message = data?.detail || data?.message || '没有权限执行此操作';
+            } else if (response.status === 404) {
+                message = data?.detail || data?.message || '请求的资源不存在';
+            } else if (response.status >= 500) {
+                message = data?.detail || data?.message || '服务器内部错误，请稍后重试';
+            } else {
+                message = data?.detail || data?.message || data?.error ||
+                    `HTTP error! status: ${response.status}`;
             }
-            if (response.status === 403) {
-                throw new Error(data?.detail || data?.message || '没有权限执行此操作');
-            }
-            if (response.status === 404) {
-                throw new Error(data?.detail || data?.message || '请求的资源不存在');
-            }
-            if (response.status >= 500) {
-                throw new Error(data?.detail || data?.message || '服务器内部错误，请稍后重试');
-            }
-            throw new Error(
-                data?.detail || data?.message || data?.error ||
-                `HTTP error! status: ${response.status}`
-            );
+            const error = new Error(message);
+            error.status = response.status;
+            throw error;
         }
         
         return data;
     } catch (error) {
-        console.error(`[API Request Error] ${url}:`, error);
+        if (error instanceof TypeError && /fetch/i.test(error.message || '')) {
+            error.message = `无法连接后端服务（${fullUrl}）。请确认服务正在运行，并检查浏览器跨域设置。`;
+        }
+        console.error(`[API Request Error] ${fullUrl}:`, error);
         throw error;
     }
 };

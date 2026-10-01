@@ -1,4 +1,5 @@
 const DEFAULT_API_ORIGIN = 'https://gezhisystem.com';
+// 当前 Windows 环境保留了 9516（9432-9531），本地后端使用可用的 8516
 const LOCAL_DEV_API_ORIGIN = 'http://127.0.0.1:8516';
 
 function normalizeApiOrigin(value) {

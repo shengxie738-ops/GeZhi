@@ -3,7 +3,8 @@ import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 
 const root = process.cwd();
-const port = Number(process.env.PORT || 8088);
+const defaultPort = 8188;
+const port = Number(process.env.PORT || defaultPort);
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -15,7 +16,7 @@ const types = {
   '.svg': 'image/svg+xml; charset=utf-8',
 };
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const pathname = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
   const filePath = normalize(join(root, pathname));
@@ -28,6 +29,9 @@ createServer((req, res) => {
 
   res.writeHead(200, { 'Content-Type': types[extname(filePath)] || 'application/octet-stream' });
   createReadStream(filePath).pipe(res);
-}).listen(port, '127.0.0.1', () => {
+});
+
+server.listen(port, '127.0.0.1', () => {
   console.log(`static server on ${port}`);
 });
+

@@ -65,7 +65,7 @@ class RankedApiTest(unittest.TestCase):
     def test_dashboard_endpoint_allows_public_positional_db_call(self):
         db = self.SessionLocal()
         try:
-            response = asyncio.run(get_ranked_dashboard("student-1", db))
+            response = asyncio.run(get_ranked_dashboard("student-1", {"sub": "student-1", "role": "student"}, db))
 
             self.assertEqual(response["status"], "success")
             self.assertEqual(response["data"]["player"]["studentId"], "student-1")
@@ -75,8 +75,8 @@ class RankedApiTest(unittest.TestCase):
     def test_start_match_persists_history_record(self):
         db = self.SessionLocal()
         try:
-            response = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
-            history = asyncio.run(get_match_history("student-1", db))["data"]
+            response = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
+            history = asyncio.run(get_match_history("student-1", {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertEqual(response["studentId"], "student-1")
             self.assertTrue(response["id"].startswith("ranked-match-"))
@@ -87,8 +87,8 @@ class RankedApiTest(unittest.TestCase):
     def test_mistakes_and_seasons_seed_for_student(self):
         db = self.SessionLocal()
         try:
-            mistakes = asyncio.run(get_ranked_mistakes("student-1", db))["data"]
-            seasons = asyncio.run(get_ranked_seasons("student-1", db))["data"]
+            mistakes = asyncio.run(get_ranked_mistakes("student-1", {"sub": "student-1", "role": "student"}, db))["data"]
+            seasons = asyncio.run(get_ranked_seasons("student-1", {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertGreaterEqual(len(mistakes), 1)
             self.assertEqual(mistakes[0]["studentId"], "student-1")
@@ -117,7 +117,7 @@ class RankedApiTest(unittest.TestCase):
                 owner_id="student-1",
                 status="active",
             )
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
 
             response = asyncio.run(
                 submit_ranked_match(
@@ -134,6 +134,7 @@ class RankedApiTest(unittest.TestCase):
                             {"label": "case 2", "status": "failed", "expected": 2, "actual": 0, "error": "wrong answer"},
                         ],
                     ),
+                    {"sub": "student-1", "role": "student"},
                     db,
                 )
             )["data"]
@@ -149,7 +150,7 @@ class RankedApiTest(unittest.TestCase):
             self.assertEqual(response["mistake"]["wrongCount"], 1)
             self.assertIn("case 2", response["mistake"]["errorPhenomenon"])
 
-            mistakes = asyncio.run(get_ranked_mistakes("student-1", db))["data"]
+            mistakes = asyncio.run(get_ranked_mistakes("student-1", {"sub": "student-1", "role": "student"}, db))["data"]
             self.assertTrue(any(item["id"] == response["mistake"]["id"] for item in mistakes))
         finally:
             db.close()
@@ -157,7 +158,7 @@ class RankedApiTest(unittest.TestCase):
     def test_duplicate_failed_match_submission_returns_existing_settlement(self):
         db = self.SessionLocal()
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             payload = RankedMatchSubmitPayload(
                 userId="student-1",
                 result="loss",
@@ -168,8 +169,8 @@ class RankedApiTest(unittest.TestCase):
                 testResults=[{"label": "case retry", "status": "failed", "expected": 1, "actual": 0}],
             )
 
-            first_response = asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
-            second_response = asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
+            first_response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
+            second_response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertEqual(second_response["match"], first_response["match"])
             self.assertEqual(second_response["profile"]["score"], first_response["profile"]["score"])
@@ -183,7 +184,7 @@ class RankedApiTest(unittest.TestCase):
         lock_calls = []
         original_with_for_update = Query.with_for_update
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             payload = RankedMatchSubmitPayload(
                 userId="student-1",
                 result="win",
@@ -199,7 +200,7 @@ class RankedApiTest(unittest.TestCase):
                 return original_with_for_update(query, *args, **kwargs)
 
             with patch.object(Query, "with_for_update", new=tracking_with_for_update):
-                asyncio.run(submit_ranked_match(match["id"], payload, db))
+                asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))
 
             self.assertGreaterEqual(len(lock_calls), 1)
         finally:
@@ -208,7 +209,7 @@ class RankedApiTest(unittest.TestCase):
     def test_match_submission_does_not_use_jsonstore_upsert_for_settlement(self):
         db = self.SessionLocal()
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             payload = RankedMatchSubmitPayload(
                 userId="student-1",
                 result="loss",
@@ -220,7 +221,7 @@ class RankedApiTest(unittest.TestCase):
             )
 
             with patch.object(JsonStore, "upsert", side_effect=AssertionError("JsonStore.upsert commits per record")):
-                response = asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
+                response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertEqual(response["match"]["status"], "settled")
             self.assertIsNotNone(response["mistake"])
@@ -273,7 +274,7 @@ class RankedApiTest(unittest.TestCase):
 
             with patch.object(JsonStore, "upsert", side_effect=AssertionError("JsonStore.upsert called during submit")):
                 with patch.object(db, "commit", wraps=db.commit) as commit:
-                    response = asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
+                    response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-legacy", "role": "student"}, db))["data"]
 
             profile = JsonStore(db).get_payload("ranked", "profile", "student-legacy", owner_id="student-legacy")
             mistake = JsonStore(db).get_payload(
@@ -293,7 +294,7 @@ class RankedApiTest(unittest.TestCase):
     def test_match_submission_commits_settlement_once(self):
         db = self.SessionLocal()
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             payload = RankedMatchSubmitPayload(
                 userId="student-1",
                 result="loss",
@@ -305,7 +306,7 @@ class RankedApiTest(unittest.TestCase):
             )
 
             with patch.object(db, "commit", wraps=db.commit) as commit:
-                response = asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
+                response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-legacy", "role": "student"}, db))["data"]
 
             self.assertEqual(response["match"]["status"], "settled")
             self.assertEqual(commit.call_count, 1)
@@ -340,7 +341,7 @@ class RankedApiTest(unittest.TestCase):
                     owner_id="student-1",
                     status="active",
                 )
-                match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), setup_db))["data"]
+                match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, setup_db))["data"]
             finally:
                 setup_db.close()
 
@@ -393,7 +394,7 @@ class RankedApiTest(unittest.TestCase):
                 db = session_local()
                 try:
                     requests_ready.wait(timeout=2)
-                    return asyncio.run(submit_ranked_match(match["id"], payload, db))["data"]
+                    return asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
                 finally:
                     db.close()
 
@@ -421,7 +422,7 @@ class RankedApiTest(unittest.TestCase):
     def test_repeated_failed_match_submission_increments_ranked_mistake(self):
         db = self.SessionLocal()
         try:
-            first_match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            first_match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             question = first_match["question"]
             second_match = dict(first_match)
             second_match["id"] = "ranked-match-repeat"
@@ -437,8 +438,8 @@ class RankedApiTest(unittest.TestCase):
                 totalCount=1,
                 testResults=[{"label": "case repeat", "status": "failed", "expected": 1, "actual": 0}],
             )
-            first_response = asyncio.run(submit_ranked_match(first_match["id"], payload, db))["data"]
-            second_response = asyncio.run(submit_ranked_match(second_match["id"], payload, db))["data"]
+            first_response = asyncio.run(submit_ranked_match(first_match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
+            second_response = asyncio.run(submit_ranked_match(second_match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertEqual(first_response["mistake"]["questionId"], question["questionId"])
             self.assertEqual(second_response["mistake"]["id"], first_response["mistake"]["id"])
@@ -466,7 +467,7 @@ class RankedApiTest(unittest.TestCase):
                 owner_id="student-1",
                 status="active",
             )
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
 
             response = asyncio.run(
                 submit_ranked_match(
@@ -483,6 +484,7 @@ class RankedApiTest(unittest.TestCase):
                             {"label": "case 2", "status": "passed"},
                         ],
                     ),
+                    {"sub": "student-1", "role": "student"},
                     db,
                 )
             )["data"]
@@ -497,7 +499,7 @@ class RankedApiTest(unittest.TestCase):
     def test_cheat_loss_creates_mistake_with_reason(self):
         db = self.SessionLocal()
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             response = asyncio.run(
                 submit_ranked_match(
                     match["id"],
@@ -511,6 +513,7 @@ class RankedApiTest(unittest.TestCase):
                         testResults=[],
                         cheatReason="fullscreen-exit",
                     ),
+                    {"sub": "student-1", "role": "student"},
                     db,
                 )
             )["data"]
@@ -524,7 +527,7 @@ class RankedApiTest(unittest.TestCase):
     def test_soft_delete_ranked_mistake_hides_from_active_listing(self):
         db = self.SessionLocal()
         try:
-            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), db))["data"]
+            match = asyncio.run(start_ranked_match(MatchStartPayload(userId="student-1"), {"sub": "student-1", "role": "student"}, db))["data"]
             response = asyncio.run(
                 submit_ranked_match(
                     match["id"],
@@ -537,13 +540,14 @@ class RankedApiTest(unittest.TestCase):
                         totalCount=1,
                         testResults=[{"label": "case delete", "status": "failed"}],
                     ),
+                    {"sub": "student-1", "role": "student"},
                     db,
                 )
             )["data"]
             mistake_id = response["mistake"]["id"]
 
-            deleted = asyncio.run(delete_ranked_mistake(mistake_id, userId="student-1", db=db))["data"]
-            active = asyncio.run(get_ranked_mistakes("student-1", db))["data"]
+            deleted = asyncio.run(delete_ranked_mistake(mistake_id, userId="student-1", payload={"sub": "student-1", "role": "student"}, db=db))["data"]
+            active = asyncio.run(get_ranked_mistakes("student-1", {"sub": "student-1", "role": "student"}, db))["data"]
             stored = JsonStore(db).get_payload("ranked", "mistake", mistake_id)
 
             self.assertEqual(deleted["status"], "deleted")

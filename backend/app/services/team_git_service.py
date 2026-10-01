@@ -1886,7 +1886,7 @@ def search_team_members(
     return [
         item
         for item in MOCK_CLASS_STUDENTS
-        if (not target_class or item["className"] == target_class)
+        if (not class_name or item["className"] == class_name)
         and (query_text in item["studentId"] or query_text in item["name"] or lowered in item["username"])
     ][:8]
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, page_items
 from app.repositories.json_store import JsonStore, make_record_key
@@ -22,7 +23,8 @@ class JournalEventPayload(BaseModel):
 
 
 @router.post("/journal/events")
-async def create_journal_event(payload: JournalEventPayload, db: Session = Depends(get_db)):
+async def create_journal_event(payload: JournalEventPayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(payload.userId, auth)
     event_id = make_record_key("evt")
     event = {
         "id": event_id,
@@ -58,8 +60,10 @@ async def list_journal_events(
     cursor: str = "",
     limit: int = 20,
     type: str = "",
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, payload)
     events = JsonStore(db).list_payloads("journal", "event", owner_id=user_id)
     if type:
         events = [event for event in events if event.get("type") == type]
@@ -72,8 +76,10 @@ async def get_journal_events_by_day(
     user_id: str = "guest_user",
     cursor: str = "",
     limit: int = 20,
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, payload)
     events = [
         event
         for event in JsonStore(db).list_payloads("journal", "event", owner_id=user_id)

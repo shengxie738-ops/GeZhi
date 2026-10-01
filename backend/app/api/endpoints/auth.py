@@ -2,13 +2,14 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client
 from app.core.responses import auth_fail, auth_ok
 from app.core.security import create_access_token, decode_access_token, get_password_hash, verify_password
+from app.core.username_policy import NUMERIC_ID_RE, has_chinese, is_valid_teacher_username
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 from app.services.sms_service import is_valid_phone, send_sms_code, verify_sms_code
@@ -106,8 +107,12 @@ def _register_student(db: Session, data: RegisterRequest):
 
     if not real_name:
         return auth_fail("学生名不能为空")
+    if not has_chinese(real_name):
+        return auth_fail("学生姓名必须为中文")
     if not student_id:
         return auth_fail("学号不能为空")
+    if not NUMERIC_ID_RE.match(student_id):
+        return auth_fail("学号必须为 4-20 位数字")
     if not class_name:
         return auth_fail("班级号不能为空")
     if not is_valid_phone(phone):
@@ -163,14 +168,16 @@ def _register(db: Session, data: RegisterRequest, role: Role):
 
     if role == "teacher" and not data.teacher_id:
         return auth_fail("teacher_id is required")
-    if not _clean(data.username):
+    username = _clean(data.username)
+    if not username:
         return auth_fail("username is required")
+    if not is_valid_teacher_username(username):
+        return auth_fail("用户名只能包含中文、字母、数字、下划线或连字符（2-30 位）")
     if data.confirm_password is not None and data.password != data.confirm_password:
         return auth_fail("两次密码输入不一致")
     if len(data.password) < 6:
         return auth_fail("password must be at least 6 characters")
 
-    username = _clean(data.username)
     existing = db.query(UserAccount).filter(UserAccount.username == username).first()
     if existing:
         if existing.role != role:
@@ -198,7 +205,11 @@ def _login(db: Session, data: LoginRequest, role: Role):
         return auth_fail("role mismatch")
 
     account = db.query(UserAccount).filter(
-        or_(UserAccount.username == data.username, UserAccount.phone == data.username)
+        or_(
+            UserAccount.username == data.username,
+            UserAccount.phone == data.username,
+            and_(UserAccount.teacher_id == data.username, UserAccount.role == "teacher"),
+        )
     ).first()
     if not account:
         return auth_fail("username or password is incorrect")

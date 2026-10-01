@@ -2,6 +2,7 @@ import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { analyticsApi } from '../api/analytics.js';
 import LineChart from './LineChart.js';
 import RadarChart from './RadarChart.js';
+import TeacherLearningDiagnosisReview from './TeacherLearningDiagnosisReview.js';
 
 const TYPE_META = {
     nudge: { label: '教师提醒', icon: 'ph-bell-ringing', cls: 'bg-sky-50 text-sky-700 border-sky-100' },
@@ -28,7 +29,8 @@ export default {
     name: 'TeacherAnalyticsCenter',
     components: {
         LineChart,
-        RadarChart
+        RadarChart,
+        TeacherLearningDiagnosisReview
     },
     emits: ['show-toast'],
     setup(_, { emit }) {
@@ -52,6 +54,7 @@ export default {
         const taskType = ref('homework');
         const isDispatching = ref(false);
         const isSendingNudge = ref(false);
+        const forwardDiagnosisToast = (...args) => emit('show-toast', ...args);
 
         const selectedHourData = ref(null);
         const hoveredHourData = ref(null);
@@ -733,7 +736,8 @@ export default {
             hoveredHourData,
             hourlyStats,
             openInteractionTaskFromScheduler,
-            handleSpotlightMove
+            handleSpotlightMove,
+            forwardDiagnosisToast
         };
     },
     template: `
@@ -870,6 +874,10 @@ export default {
                     <button @click="activeTab = 'advices'" class="px-4 py-2 rounded-xl text-xs font-bold border transition-all"
                         :class="activeTab === 'advices' ? 'bg-[#1c2b38] text-white border-[#1c2b38]' : 'bg-white text-slate-600 border-slate-200 hover:bg-white'">
                         AI 干预策略
+                    </button>
+                    <button @click="activeTab = 'diagnosis-review'" class="px-4 py-2 rounded-xl text-xs font-bold border transition-all"
+                        :class="activeTab === 'diagnosis-review' ? 'bg-[#1c2b38] text-white border-[#1c2b38]' : 'bg-white text-slate-600 border-slate-200 hover:bg-white'">
+                        学习诊断审查
                     </button>
                 </div>
 
@@ -1389,6 +1397,10 @@ export default {
                             </article>
                         </div>
                     </div>
+                    <div v-show="activeTab === 'diagnosis-review'" id="teacher-learning-diagnosis-review" class="flex flex-col gap-6">
+                        <TeacherLearningDiagnosisReview @show-toast="forwardDiagnosisToast" />
+                    </div>
+
                 </template>
             </div>
 
@@ -1462,3 +1474,4 @@ export default {
         </section>
     `
 };
+

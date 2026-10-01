@@ -4,7 +4,7 @@ import { teamGitApi } from '../api/teamGit.js';
 export default {
     name: 'TeacherProjectManager',
     template: `
-        <div class="absolute inset-0 overflow-hidden" style="background: transparent;">
+        <div class="absolute inset-0 overflow-hidden tpm-root" style="background: #ffffff;">
             
             <!-- PORTAL HUB (门户页) -->
             <transition name="fade">
@@ -17,23 +17,23 @@ export default {
                     <div class="flex flex-col md:flex-row gap-8 w-full max-w-6xl mx-auto px-4">
                         
                         <!-- Card A: Assignment -->
-                        <div @click="activeModule = 'assignment'" class="flex-1 group cursor-pointer relative overflow-hidden rounded-[2.5rem] bg-[#1c2b38]/90 backdrop-blur-xl border border-white/10 shadow-2xl transition-all duration-500 hover:shadow-cyan-900/30 hover:border-cyan-500/30 active:scale-[0.98] reveal-up p-10 lg:p-14" :class="{ 'revealed': mounted }" style="transition-delay: 100ms">
+                        <div @click="activeModule = 'assignment'" @keydown.enter.prevent="activeModule = 'assignment'" role="button" tabindex="0" class="flex-1 group cursor-pointer relative overflow-hidden rounded-[2.5rem] bg-white border border-slate-200/80 shadow-cinematic transition-all duration-500 hover:border-cyan-300/60 hover:shadow-lg active:scale-[0.98] reveal-up p-10 lg:p-14 outline-none focus:ring-4 focus:ring-cyan-200/70" :class="{ 'revealed': mounted }" style="transition-delay: 100ms">
                             <!-- Halo effect -->
                             <div class="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl group-hover:bg-cyan-500/20 transition-all duration-700 ease-out transform group-hover:scale-150 pointer-events-none"></div>
                             
                             <div class="relative z-10">
-                                <div class="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-8 shadow-inner group-hover:bg-white/10 transition-colors duration-500">
-                                    <i class="ph ph-folder-open text-4xl text-cyan-400 group-hover:text-cyan-300"></i>
+                                <div class="w-20 h-20 rounded-2xl bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-8 shadow-sm group-hover:bg-cyan-100 transition-colors duration-500">
+                                    <i class="ph ph-folder-open text-4xl text-cyan-600 group-hover:text-cyan-700"></i>
                                 </div>
-                                <h2 class="text-3xl font-bold font-serif text-white mb-4">大作业项目管理</h2>
-                                <p class="text-slate-300 text-lg leading-relaxed max-w-sm">
+                                <h2 class="text-3xl font-bold font-serif text-slate-900 mb-4">大作业项目管理</h2>
+                                <p class="text-slate-600 text-lg leading-relaxed max-w-sm">
                                     掌控班级大作业的阶段递交、流水线打分与最终 AI 联评验收。
                                 </p>
                             </div>
                         </div>
 
                         <!-- Card B: Team Training -->
-                        <div @click.stop="activeModule = 'training'; loadTrainingProjects()" @keydown.enter.prevent="activeModule = 'training'; loadTrainingProjects()" role="button" tabindex="0" class="flex-1 group cursor-pointer relative overflow-hidden rounded-[2.5rem] bg-white/70 backdrop-blur-xl border border-white shadow-cinematic transition-all duration-500 hover:border-indigo-200 hover:bg-white/90 active:scale-[0.98] reveal-up p-10 lg:p-14 outline-none focus:ring-4 focus:ring-indigo-200/70" :class="{ 'revealed': mounted }" style="transition-delay: 200ms">
+                        <div @click.stop="activeModule = 'training'; loadTrainingProjects()" @keydown.enter.prevent="activeModule = 'training'; loadTrainingProjects()" role="button" tabindex="0" class="flex-1 group cursor-pointer relative overflow-hidden rounded-[2.5rem] bg-white border border-slate-200/80 shadow-cinematic transition-all duration-500 hover:border-indigo-200 hover:shadow-lg active:scale-[0.98] reveal-up p-10 lg:p-14 outline-none focus:ring-4 focus:ring-indigo-200/70" :class="{ 'revealed': mounted }" style="transition-delay: 200ms">
                             <!-- Halo effect -->
                             <div class="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/15 transition-all duration-700 ease-out transform group-hover:scale-150 pointer-events-none"></div>
                             
@@ -66,17 +66,57 @@ export default {
                             <p class="text-slate-500 font-medium">全局掌控大作业递交与验收生命周期。</p>
                         </div>
                         <div class="flex items-center gap-4">
-                            <button class="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:shadow hover:border-slate-300 transition-all active:scale-95 flex items-center gap-2">
+                            <button @click="notifyFeature('大作业报表导出')" class="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:shadow hover:border-slate-300 transition-all active:scale-95 flex items-center gap-2">
                                 <i class="ph ph-export"></i> 导出报表
                             </button>
-                            <button class="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl shadow-md hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-2">
+                            <button @click="notifyFeature('新建大作业向导')" class="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl shadow-md hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-2">
                                 <i class="ph ph-plus-circle"></i> 新建大作业
                             </button>
                         </div>
                     </div>
 
+            <!-- Class Stats Overview -->
+            <div class="mb-8 grid grid-cols-2 lg:grid-cols-4 gap-4 reveal-up" :class="{ 'revealed': mounted }">
+                <div class="bg-white border border-slate-200/70 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
+                    <div class="w-11 h-11 rounded-xl bg-slate-900/5 border border-slate-200/60 flex items-center justify-center shrink-0">
+                        <i class="ph ph-users-three text-xl text-slate-700"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 tracking-wider">在管团队</p>
+                        <p class="text-2xl font-bold font-serif text-slate-900 leading-tight">{{ teamStats.total }} <span class="text-xs font-bold text-slate-400">组</span></p>
+                    </div>
+                </div>
+                <div class="bg-white border border-slate-200/70 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
+                    <div class="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                        <i class="ph ph-gauge text-xl text-emerald-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 tracking-wider">平均健康分</p>
+                        <p class="text-2xl font-bold font-serif text-slate-900 leading-tight">{{ teamStats.avg }} <span class="text-xs font-bold text-slate-400">/100</span></p>
+                    </div>
+                </div>
+                <div class="bg-white border border-slate-200/70 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
+                    <div class="w-11 h-11 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                        <i class="ph ph-warning-circle text-xl text-red-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 tracking-wider">高风险团队</p>
+                        <p class="text-2xl font-bold font-serif leading-tight" :class="teamStats.risk > 0 ? 'text-red-600' : 'text-slate-900'">{{ teamStats.risk }} <span class="text-xs font-bold text-slate-400">组</span></p>
+                    </div>
+                </div>
+                <div class="bg-white border border-slate-200/70 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
+                    <div class="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                        <i class="ph ph-git-commit text-xl text-indigo-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 tracking-wider">累计提交</p>
+                        <p class="text-2xl font-bold font-serif text-slate-900 leading-tight">{{ teamStats.commits }} <span class="text-xs font-bold text-slate-400">次</span></p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Pipeline Tabs (流水线全局导航) -->
-            <div class="mb-8 p-1.5 bg-white/60 backdrop-blur-md rounded-2xl border border-white flex gap-2 shadow-sm reveal-up" :class="{ 'revealed': mounted }" style="transition-delay: 100ms">
+            <div class="mb-8 p-1.5 bg-white rounded-2xl border border-slate-200/80 flex gap-2 shadow-sm reveal-up" :class="{ 'revealed': mounted }" style="transition-delay: 100ms">
                 <button 
                     v-for="(stage, idx) in pipelineStages" :key="stage.id"
                     @click="activeStage = stage.id"
@@ -100,22 +140,22 @@ export default {
                     @click="openTeamDetail(team)"
                     class="glass-light p-6 cursor-pointer group flex flex-col justify-between"
                     :class="[
-                        team.isHot ? 'col-span-12 md:col-span-8 lg:col-span-8 row-span-2' : 'col-span-12 md:col-span-6 lg:col-span-4',
-                        team.health === 'danger' ? 'border-red-200/50 hover:border-red-300' : ''
+                        team.isHot ? 'col-span-12 md:col-span-8 lg:col-span-8 min-h-[320px]' : 'col-span-12 md:col-span-6 lg:col-span-4 min-h-[280px]',
+                        team.health === 'danger' ? 'border-red-200/60 hover:border-red-300' : ''
                     ]"
                 >
                     <!-- Top section: Title & Gauge -->
                     <div class="flex justify-between items-start mb-4">
-                        <div class="pr-4">
+                        <div class="pr-4 min-w-0">
                             <div class="flex items-center gap-2 mb-1">
-                                <h3 class="text-xl font-bold text-slate-800">{{ team.name }}</h3>
-                                <span v-if="team.isHot" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">高活跃</span>
+                                <h3 class="text-xl font-bold text-slate-800 truncate">{{ team.name }}</h3>
+                                <span v-if="team.isHot" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 shrink-0">高活跃</span>
                             </div>
-                            <p class="text-sm font-bold text-slate-500 font-serif leading-tight">{{ team.projectTopic }}</p>
+                            <p class="text-sm font-bold text-slate-500 font-serif leading-tight line-clamp-2">{{ team.projectTopic }}</p>
                         </div>
                         
                         <!-- Circular Gauge Dashboard -->
-                        <div class="relative w-16 h-16 flex-shrink-0 drop-shadow-sm" title="完成度 / 综合健康分">
+                        <div class="relative w-[76px] h-[76px] flex-shrink-0 drop-shadow-sm" title="完成度 / 综合健康分">
                             <svg viewBox="0 0 36 36" class="w-full h-full transform -rotate-90">
                                 <!-- Background Track -->
                                 <path class="text-slate-200/80 drop-shadow-sm" stroke-width="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -127,21 +167,41 @@ export default {
                                 }" stroke-width="3" :stroke-dasharray="(mounted ? team.score : 0) + ', 100'" stroke-linecap="round" stroke="currentColor" fill="none" class="transition-all duration-1000 ease-out" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                             </svg>
                             <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span class="text-base font-bold font-serif" :class="{
+                                <span class="text-lg font-bold font-serif leading-none" :class="{
                                     'text-emerald-700': team.health === 'good',
                                     'text-amber-700': team.health === 'warning',
                                     'text-red-700': team.health === 'danger'
                                 }">{{ team.score }}<span class="text-[10px]">%</span></span>
+                                <span class="text-[8px] font-bold text-slate-400 tracking-wider mt-0.5">健康分</span>
                             </div>
                         </div>
                     </div>
 
                     <!-- Progress / Activity Visualization based on Bento Size -->
                     <div class="flex-1 flex flex-col justify-end">
-                        <div v-if="team.isHot" class="mb-4 w-full h-24 bg-slate-50/50 rounded-xl border border-slate-100 relative overflow-hidden flex items-end px-2 pb-2 gap-1">
+                        <div v-if="team.isHot" class="mb-4 w-full h-28 bg-gradient-to-b from-slate-50 to-white rounded-xl border border-slate-200/70 relative overflow-hidden flex items-end px-3 pb-2.5 gap-1.5 shadow-inner">
                             <!-- Mock Mini Chart -->
-                            <div v-for="(val, i) in team.activityData" :key="i" class="flex-1 bg-indigo-400 rounded-t-sm transition-all duration-700 ease-out"
-                                :style="{ height: mounted ? val + '%' : '0%', opacity: 0.3 + (val/100)*0.7 }"></div>
+                            <div v-for="(val, i) in team.activityData" :key="i"
+                                class="flex-1 bg-gradient-to-t from-indigo-500/80 to-indigo-400 rounded-t-[4px] transition-all duration-700 ease-out group-hover:from-indigo-500 group-hover:to-indigo-300"
+                                :style="{ height: mounted ? val + '%' : '0%', opacity: 0.35 + (val/100)*0.65 }"></div>
+                            <span class="absolute top-2 left-3 text-[10px] font-bold text-slate-400 tracking-wider">近期提交活跃度</span>
+                        </div>
+
+                        <!-- Milestone Progress -->
+                        <div class="mb-4">
+                            <div class="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                <span>里程碑进度</span>
+                                <span>{{ milestoneProgress(team).done }} / {{ milestoneProgress(team).total }}</span>
+                            </div>
+                            <div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-1000 ease-out"
+                                    :class="{
+                                        'bg-gradient-to-r from-emerald-400 to-emerald-500': team.health === 'good',
+                                        'bg-gradient-to-r from-amber-400 to-amber-500': team.health === 'warning',
+                                        'bg-gradient-to-r from-red-400 to-red-500': team.health === 'danger'
+                                    }"
+                                    :style="{ width: (mounted ? milestoneProgress(team).pct : 0) + '%' }"></div>
+                            </div>
                         </div>
                         
                         <!-- Members (Full Chips) & Stats -->
@@ -185,7 +245,7 @@ export default {
                 <div v-if="selectedTeam" class="fixed top-4 bottom-4 right-4 w-full max-w-3xl glass-panel-liquid shadow-cinematic z-[110] flex flex-col overflow-hidden border border-white/60">
                     
                     <!-- Drawer Header -->
-                    <div class="px-8 py-6 border-b border-slate-200/50 bg-white/40 flex justify-between items-center relative z-10">
+                    <div class="px-8 py-6 border-b border-slate-200/60 bg-white/80 flex justify-between items-center relative z-10">
                         <div>
                             <div class="flex items-center gap-3 mb-1">
                                 <h2 class="text-2xl font-bold font-serif text-slate-900">{{ selectedTeam.name }}</h2>
@@ -202,7 +262,7 @@ export default {
                     </div>
 
                     <!-- Drawer Tabs -->
-                    <div class="px-8 pt-4 bg-white/20 border-b border-slate-200/50 flex gap-6 relative z-10">
+                    <div class="px-8 pt-4 bg-white/70 border-b border-slate-200/60 flex gap-6 relative z-10">
                         <button v-for="tab in drawerTabs" :key="tab.id"
                             @click="activeDrawerTab = tab.id"
                             class="pb-3 text-sm font-bold transition-all relative"
@@ -219,7 +279,7 @@ export default {
                         <!-- Tab A: 里程碑 (Milestones) -->
                         <div v-if="activeDrawerTab === 'milestone'" class="space-y-6">
                             <div v-for="(ms, index) in selectedTeam.milestones" :key="index"
-                                class="bg-white/60 border border-slate-200/60 rounded-2xl p-6 transition-all hover:shadow-md hover:bg-white/80"
+                                class="bg-white border border-slate-200/70 rounded-2xl p-6 transition-all hover:shadow-md"
                             >
                                 <div class="flex justify-between items-start mb-4">
                                     <div class="flex items-center gap-3">
@@ -231,41 +291,53 @@ export default {
                                         </div>
                                         <div>
                                             <h4 class="font-bold text-slate-800">{{ ms.name }}</h4>
-                                            <p class="text-xs font-bold text-slate-400 mt-0.5">{{ ms.date }}</p>
+                                            <p class="text-xs font-bold text-slate-500 mt-0.5">{{ ms.date }}</p>
                                         </div>
                                     </div>
                                     <div v-if="ms.status === 'done'" class="text-right">
                                         <span class="text-2xl font-bold font-serif text-slate-900">{{ ms.score }}</span><span class="text-sm font-bold text-slate-400">/100</span>
                                     </div>
                                     <div v-else-if="ms.status === 'doing'" class="flex gap-2">
-                                        <input type="number" placeholder="打分" class="w-20 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-indigo-400">
-                                        <button class="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800">确认</button>
+                                        <input v-model.number="milestoneScoreDraft[selectedTeam.id + '-' + index]" type="number" min="0" max="100" placeholder="打分" class="w-20 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-indigo-400">
+                                        <button @click="confirmMilestoneScore(ms, index)" class="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800">确认</button>
                                     </div>
                                 </div>
-                                <p class="text-sm text-slate-600 bg-slate-50/50 p-3 rounded-xl border border-slate-100">{{ ms.desc }}</p>
+                                <p class="text-sm text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/60">{{ ms.desc }}</p>
                             </div>
                         </div>
 
                         <!-- Tab B: 协作监控 (Collaboration) -->
                         <div v-if="activeDrawerTab === 'collaboration'" class="space-y-6">
                             
-                            <div class="bg-white/60 border border-slate-200/60 rounded-2xl p-6">
+                            <div class="bg-white border border-slate-200/70 rounded-2xl p-6">
                                 <h4 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
                                     <i class="ph ph-squares-four text-indigo-500"></i> 代码提交热力图
                                 </h4>
                                 <!-- Mock GitHub style heat map -->
-                                <div class="flex gap-1 overflow-x-auto pb-2">
-                                    <div v-for="col in 24" :key="col" class="flex flex-col gap-1">
+                                <div class="flex gap-1.5 overflow-x-auto pb-2">
+                                    <div v-for="col in 24" :key="col" class="flex flex-col gap-1.5">
                                         <div v-for="row in 7" :key="row" 
-                                            class="w-4 h-4 rounded-sm"
-                                            :style="{ backgroundColor: getHeatColor() }"
-                                            :title="'Contributions'"
+                                            class="w-[18px] h-[18px] rounded-[4px] transition-transform hover:scale-125"
+                                            :style="{ backgroundColor: getHeatColor(col, row) }"
+                                            title="当日提交次数"
                                         ></div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                                    <span class="text-[10px] font-bold text-slate-400 tracking-wider">近 24 周代码提交热力</span>
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-[10px] text-slate-400 mr-0.5">少</span>
+                                        <span class="w-2.5 h-2.5 rounded-[3px]" style="background-color: #f1f5f9;"></span>
+                                        <span class="w-2.5 h-2.5 rounded-[3px]" style="background-color: #c7d2fe;"></span>
+                                        <span class="w-2.5 h-2.5 rounded-[3px]" style="background-color: #818cf8;"></span>
+                                        <span class="w-2.5 h-2.5 rounded-[3px]" style="background-color: #4f46e5;"></span>
+                                        <span class="w-2.5 h-2.5 rounded-[3px]" style="background-color: #312e81;"></span>
+                                        <span class="text-[10px] text-slate-400 ml-0.5">多</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="bg-white/60 border border-slate-200/60 rounded-2xl p-6">
+                            <div class="bg-white border border-slate-200/70 rounded-2xl p-6">
                                 <h4 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
                                     <i class="ph ph-users-three text-blue-500"></i> 成员贡献度
                                 </h4>
@@ -275,12 +347,12 @@ export default {
                                             {{ member.substring(0, 1) }}
                                         </div>
                                         <div class="flex-1">
-                                            <div class="flex justify-between text-xs font-bold mb-1">
+                                            <div class="flex justify-between text-xs font-bold mb-1.5">
                                                 <span class="text-slate-700">{{ member }}</span>
-                                                <span class="text-slate-500">{{ [45, 30, 25][mIdx] || 20 }}%</span>
+                                                <span class="text-slate-500">{{ memberShare(mIdx, selectedTeam.members.length) }}%</span>
                                             </div>
-                                            <div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                <div class="h-full bg-indigo-400 rounded-full" :style="{ width: ([45, 30, 25][mIdx] || 20) + '%' }"></div>
+                                            <div class="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div class="h-full bg-gradient-to-r from-indigo-400 to-indigo-500 rounded-full transition-all duration-700 ease-out" :style="{ width: memberShare(mIdx, selectedTeam.members.length) + '%' }"></div>
                                             </div>
                                         </div>
                                     </div>
@@ -298,13 +370,13 @@ export default {
                                 <p class="text-sm text-indigo-700/80 mb-4 relative z-10 leading-relaxed">
                                     基于提交的最终代码与文档，架构完整性得分为 85/100，代码规范度 A-。未发现明显的安全漏洞，但在大并发场景下的状态管理可能存在性能瓶颈。
                                 </p>
-                                <button class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all relative z-10">
+                                <button @click="notifyFeature('完整 AI 审阅报告')" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all relative z-10">
                                     查看完整 AI 报告
                                 </button>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div class="bg-white/60 border border-slate-200/60 rounded-2xl p-5 hover:bg-white transition-all cursor-pointer group flex items-center gap-4">
+                                <div class="bg-white border border-slate-200/70 rounded-2xl p-5 hover:bg-slate-50 transition-all cursor-pointer group flex items-center gap-4">
                                     <div class="w-12 h-12 rounded-xl bg-red-50 text-red-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                                         <i class="ph ph-file-pdf"></i>
                                     </div>
@@ -314,7 +386,7 @@ export default {
                                     </div>
                                 </div>
                                 
-                                <div class="bg-white/60 border border-slate-200/60 rounded-2xl p-5 hover:bg-white transition-all cursor-pointer group flex items-center gap-4">
+                                <div class="bg-white border border-slate-200/70 rounded-2xl p-5 hover:bg-slate-50 transition-all cursor-pointer group flex items-center gap-4">
                                     <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                                         <i class="ph ph-file-zip"></i>
                                     </div>
@@ -324,7 +396,7 @@ export default {
                                     </div>
                                 </div>
                                 
-                                <div class="bg-white/60 border border-slate-200/60 rounded-2xl p-5 hover:bg-white transition-all cursor-pointer group flex items-center gap-4">
+                                <div class="bg-white border border-slate-200/70 rounded-2xl p-5 hover:bg-slate-50 transition-all cursor-pointer group flex items-center gap-4">
                                     <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                                         <i class="ph ph-video-camera"></i>
                                     </div>
@@ -385,9 +457,9 @@ export default {
                                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.18em]">Training teams</p>
                                     <h3 class="text-lg font-serif font-bold text-slate-900">实训团队</h3>
                                 </div>
-                                <span class="text-xs font-bold text-slate-500 bg-white/70 border border-white rounded-xl px-2 py-1">{{ trainingProjects.length }} 组</span>
+                                <span class="text-xs font-bold text-slate-500 bg-white/80 border border-slate-200/70 rounded-xl px-2 py-1">{{ trainingProjects.length }} 组</span>
                             </div>
-                            <div v-if="trainingProjects.length === 0" class="rounded-2xl bg-white/60 border border-white p-6 text-center text-xs text-slate-500">暂无团队数据，点击“分配实训团队”创建演示团队。</div>
+                            <div v-if="trainingProjects.length === 0" class="rounded-2xl bg-white/70 border border-slate-200/70 p-6 text-center text-xs text-slate-500">暂无团队数据，点击“分配实训团队”创建演示团队。</div>
                             <button v-for="project in trainingProjects" :key="project.id" @click="selectTrainingProject(project)" class="text-left rounded-2xl border p-4 transition-all duration-300"
                                 :class="selectedTrainingProject && selectedTrainingProject.id === project.id
                                     ? 'bg-[#1c2b38]/85 backdrop-blur-sm text-white border-white/10 shadow-xl ring-1 ring-white/5'
@@ -427,11 +499,11 @@ export default {
                                     </button>
                                 </div>
                                 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-6">
-                                    <div class="bg-white/65 border border-white rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">成员数</p><p class="text-xl font-bold text-slate-900">{{ selectedTrainingProject.teamSummary.totalMembers }}</p></div>
-                                    <div class="bg-white/65 border border-white rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">已完成</p><p class="text-xl font-bold text-emerald-700">{{ selectedTrainingProject.teamSummary.completedMembers }}</p></div>
-                                    <div class="bg-white/65 border border-white rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">未提交</p><p class="text-xl font-bold text-amber-700">{{ selectedTrainingProject.teamSummary.unsubmittedMembers }}</p></div>
-                                    <div class="bg-white/65 border border-white rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">待审 PR</p><p class="text-xl font-bold text-blue-700">{{ selectedTrainingProject.teamSummary.openPullRequests }}</p></div>
-                                    <div class="bg-white/65 border border-white rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">平均进度</p><p class="text-xl font-bold text-slate-900">{{ selectedTrainingProject.teamSummary.averageProgress }}%</p></div>
+                                    <div class="bg-white/80 border border-slate-200/70 rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">成员数</p><p class="text-xl font-bold text-slate-900">{{ selectedTrainingProject.teamSummary.totalMembers }}</p></div>
+                                    <div class="bg-white/80 border border-slate-200/70 rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">已完成</p><p class="text-xl font-bold text-emerald-700">{{ selectedTrainingProject.teamSummary.completedMembers }}</p></div>
+                                    <div class="bg-white/80 border border-slate-200/70 rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">未提交</p><p class="text-xl font-bold text-amber-700">{{ selectedTrainingProject.teamSummary.unsubmittedMembers }}</p></div>
+                                    <div class="bg-white/80 border border-slate-200/70 rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">待审 PR</p><p class="text-xl font-bold text-blue-700">{{ selectedTrainingProject.teamSummary.openPullRequests }}</p></div>
+                                    <div class="bg-white/80 border border-slate-200/70 rounded-2xl p-4"><p class="text-[10px] text-slate-400 font-bold">平均进度</p><p class="text-xl font-bold text-slate-900">{{ selectedTrainingProject.teamSummary.averageProgress }}%</p></div>
                                 </div>
                             </section>
 
@@ -478,9 +550,9 @@ export default {
                                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.18em]">Pull request audit</p>
                                     <h3 class="text-lg font-serif font-bold text-slate-900 mt-1 mb-4">审核 Pull Request</h3>
                                     <textarea v-model="teacherReviewComment" rows="3" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900 resize-none mb-3" placeholder="教师审核意见"></textarea>
-                                    <div v-if="selectedTrainingProject.pullRequests.length === 0" class="rounded-2xl bg-white/60 border border-white p-5 text-center text-xs text-slate-500">暂无 PR。</div>
+                                    <div v-if="selectedTrainingProject.pullRequests.length === 0" class="rounded-2xl bg-white/70 border border-slate-200/70 p-5 text-center text-xs text-slate-500">暂无 PR。</div>
                                     <div v-else class="flex flex-col gap-3">
-                                        <article v-for="pr in selectedTrainingProject.pullRequests" :key="pr.id" class="bg-white/70 border border-white rounded-2xl p-4">
+                                        <article v-for="pr in selectedTrainingProject.pullRequests" :key="pr.id" class="bg-white/80 border border-slate-200/70 rounded-2xl p-4">
                                             <div class="flex items-start justify-between gap-3">
                                                 <div class="min-w-0">
                                                     <h4 class="text-sm font-bold text-slate-900 truncate">#{{ pr.number }} {{ pr.title }}</h4>
@@ -510,7 +582,7 @@ export default {
                                     <button @click="saveTeacherContribution" class="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">保存贡献评价</button>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-3">
-                                    <div v-for="member in filteredMemberProgress" :key="member.id" class="bg-white/65 border border-white rounded-2xl p-4">
+                                    <div v-for="member in filteredMemberProgress" :key="member.id" class="bg-white/80 border border-slate-200/70 rounded-2xl p-4">
                                         <h4 class="text-sm font-bold text-slate-900">{{ member.name }}</h4>
                                         <p class="text-[11px] text-slate-500 line-clamp-2 mt-1">{{ member.task }}</p>
                                         <label class="block mt-3 text-[10px] font-bold text-slate-500">得分</label>
@@ -534,7 +606,7 @@ export default {
                     <!-- Repository Home Modal -->
                     <transition name="fade">
                         <div v-if="teacherRepositoryOpen" class="fixed inset-0 z-[300] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 md:p-6" @click.self="teacherRepositoryOpen = false">
-                            <div class="relative w-full max-w-5xl flex flex-col border border-white/60 rounded-[1.25rem] shadow-2xl overflow-hidden" style="background: rgba(255,255,255,0.88); backdrop-filter: blur(32px) saturate(180%); max-height: calc(100vh - 3rem);">
+                            <div class="relative w-full max-w-5xl flex flex-col border border-slate-200/70 rounded-[1.25rem] shadow-2xl overflow-hidden" style="background: rgba(255,255,255,0.88); backdrop-filter: blur(32px) saturate(180%); max-height: calc(100vh - 3rem);">
                                 <!-- Sticky Modal Header -->
                                 <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 shrink-0" style="background: rgba(255,255,255,0.75);">
                                     <div>
@@ -548,14 +620,14 @@ export default {
                                 </div>
                                 <!-- Scrollable Modal Body -->
                                 <div class="flex-1 overflow-y-auto dark-scroll p-6">
-                                    <div v-if="teacherRepositoryLoading" class="rounded-2xl bg-white/65 border border-white p-6 animate-pulse">
+                                    <div v-if="teacherRepositoryLoading" class="rounded-2xl bg-white/80 border border-slate-200/70 p-6 animate-pulse">
                                         <div class="h-4 w-40 bg-slate-200 rounded mb-4"></div>
                                         <div class="h-32 bg-slate-100 rounded-xl"></div>
                                     </div>
                                     <div v-else-if="teacherRepositoryHome" class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
                                         <div class="min-w-0 space-y-4">
                                             <!-- 仓库头信息 -->
-                                            <div class="rounded-2xl bg-white/70 border border-white p-4">
+                                            <div class="rounded-2xl bg-white/80 border border-slate-200/70 p-4">
                                                 <div class="flex flex-wrap items-center justify-between gap-3">
                                                     <div class="min-w-0">
                                                         <p class="text-xs text-slate-500"><span class="font-bold text-slate-700">{{ teacherRepositoryHomeInfo.namespace || 'campus' }}</span> /</p>
@@ -567,7 +639,7 @@ export default {
                                             </div>
 
                                             <!-- 文件浏览器 -->
-                                            <div class="rounded-2xl bg-white/70 border border-white overflow-hidden">
+                                            <div class="rounded-2xl bg-white/80 border border-slate-200/70 overflow-hidden">
                                                 <div class="px-4 py-3 border-b border-slate-100 bg-slate-50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                                     <div>
                                                         <span class="text-xs font-bold text-slate-700"><i class="ph ph-git-branch mr-1"></i>{{ teacherRepositoryHomeInfo.defaultBranch || 'main' }}</span>
@@ -625,13 +697,13 @@ export default {
                                             </div>
 
                                             <!-- README -->
-                                            <section class="rounded-2xl bg-white/70 border border-white overflow-hidden">
+                                            <section class="rounded-2xl bg-white/80 border border-slate-200/70 overflow-hidden">
                                                 <h4 class="px-4 py-3 bg-slate-50 border-b border-slate-100 text-sm font-extrabold text-slate-900">README.md</h4>
                                                 <pre class="p-5 text-sm leading-relaxed whitespace-pre-wrap text-slate-700">{{ teacherRepositoryHomeInfo.readme }}</pre>
                                             </section>
 
                                             <!-- 项目类图 -->
-                                            <section class="rounded-2xl bg-white/70 border border-white overflow-hidden">
+                                            <section class="rounded-2xl bg-white/80 border border-slate-200/70 overflow-hidden">
                                                 <h4 class="px-4 py-3 bg-slate-50 border-b border-slate-100 text-sm font-extrabold text-slate-900">项目类图</h4>
                                                 <div class="p-5">
                                                     <div class="rounded-xl bg-slate-950 text-slate-100 p-4 font-mono text-xs whitespace-pre-wrap">{{ teacherRepositoryHomeInfo.classDiagram }}</div>
@@ -642,7 +714,7 @@ export default {
                                         <!-- 右栏侧边栏 -->
                                         <aside class="space-y-4">
                                             <!-- About + Clone地址 -->
-                                            <section class="rounded-2xl bg-white/70 border border-white p-4">
+                                            <section class="rounded-2xl bg-white/80 border border-slate-200/70 p-4">
                                                 <h4 class="text-sm font-extrabold text-slate-900">About</h4>
                                                 <p class="mt-2 text-xs text-slate-600 leading-relaxed">{{ teacherRepositoryHomeInfo.about }}</p>
                                                 <div class="mt-4 grid gap-2 text-xs text-slate-500">
@@ -667,7 +739,7 @@ export default {
                                             </section>
 
                                             <!-- Languages -->
-                                            <section class="rounded-2xl bg-white/70 border border-white p-4">
+                                            <section class="rounded-2xl bg-white/80 border border-slate-200/70 p-4">
                                                 <h4 class="text-sm font-extrabold text-slate-900">Languages</h4>
                                                 <div v-if="(teacherRepoBrowserLanguages.length ? teacherRepoBrowserLanguages : teacherRepositoryHomeLanguages).length" class="mt-3 h-2 rounded-full overflow-hidden flex bg-slate-100">
                                                     <span
@@ -691,7 +763,7 @@ export default {
                                             </section>
 
                                             <!-- 教师评语与修改建议 -->
-                                            <section class="rounded-2xl bg-white/70 border border-white p-4">
+                                            <section class="rounded-2xl bg-white/80 border border-slate-200/70 p-4">
                                                 <h4 class="text-sm font-extrabold text-slate-900">教师评语</h4>
                                                 <textarea v-model="teacherFeedbackDraft.teacherComment" rows="4" class="mt-3 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900 resize-none" placeholder="写下对项目主页、架构和实现质量的评语"></textarea>
                                                 <h4 class="text-sm font-extrabold text-slate-900 mt-4">修改建议</h4>
@@ -845,6 +917,23 @@ export default {
             return teams.value.filter(t => t.stage === activeStage.value || activeStage.value === 'dev' && t.stage === 'review');
         });
 
+        // 里程碑完成进度（用于卡片上的进度条）
+        const milestoneProgress = (team) => {
+            const list = team?.milestones || [];
+            const done = list.filter(m => m.status === 'done').length;
+            return { total: list.length, done, pct: list.length ? Math.round(done / list.length * 100) : 0 };
+        };
+
+        // 班级总览统计（基于全部团队）
+        const teamStats = computed(() => {
+            const list = teams.value;
+            const total = list.length;
+            const avg = total ? Math.round(list.reduce((a, t) => a + t.score, 0) / total) : 0;
+            const risk = list.filter(t => t.health === 'danger').length;
+            const commits = list.reduce((a, t) => a + t.commits, 0);
+            return { total, avg, risk, commits };
+        });
+
         // 过滤掉 Gitea 同步时误写入的系统账号幽灵成员
         // 匹配：纯英文用户名、或"xxx (未绑定 Gitea 用户)"格式、或已知系统账号前缀
         const GITEA_SYSTEM_PREFIXES = ['campus-admin', 'gitea-actions', 'teacher', 'admin', 'git', 'root', 'system', 'bot', 'ci'];
@@ -878,16 +967,44 @@ export default {
             selectedTeam.value = null;
         };
 
-        // Helper to generate random heat map colors for Github style
-        const getHeatColor = () => {
+        // Helper to generate heat map colors for Github style
+        // 基于坐标的确定性取色，避免每次重渲染随机变色
+        const getHeatColor = (col, row) => {
             const colors = ['#f1f5f9', '#c7d2fe', '#818cf8', '#4f46e5', '#312e81'];
+            const seed = ((col * 31 + row * 17) % 97) / 97;
             // Bias towards lighter colors
-            const rand = Math.random();
-            if (rand < 0.6) return colors[0];
-            if (rand < 0.8) return colors[1];
-            if (rand < 0.9) return colors[2];
-            if (rand < 0.96) return colors[3];
+            if (seed < 0.6) return colors[0];
+            if (seed < 0.8) return colors[1];
+            if (seed < 0.9) return colors[2];
+            if (seed < 0.96) return colors[3];
             return colors[4];
+        };
+
+        // 成员贡献度：按序号递减的确定性权重归一化，保证各成员占比之和恒为 100%
+        const memberShare = (mIdx, total) => {
+            if (!total || total <= 0) return 0;
+            const weights = Array.from({ length: total }, (_, i) => total - i);
+            const sum = weights.reduce((a, b) => a + b, 0);
+            return Math.round((weights[mIdx] / sum) * 100);
+        };
+
+        // 演示功能提示：避免按钮点击无响应
+        const notifyFeature = (name) => {
+            emit('show-toast', `${name}为演示功能，正式版即将开放`, 'info');
+        };
+
+        // 里程碑评分（演示数据本地生效）
+        const milestoneScoreDraft = ref({});
+        const confirmMilestoneScore = (ms, index) => {
+            const key = selectedTeam.value?.id + '-' + index;
+            const val = Number(milestoneScoreDraft.value[key]);
+            if (Number.isNaN(val) || val < 0 || val > 100) {
+                emit('show-toast', '请输入 0-100 之间的评分', 'warning');
+                return;
+            }
+            ms.score = val;
+            ms.status = 'done';
+            emit('show-toast', `已记录「${ms.name}」评分：${val} 分`, 'success');
         };
 
         const syncContributionDraft = (project) => {
@@ -1202,11 +1319,17 @@ export default {
             drawerTabs,
             activeDrawerTab,
             filteredTeams,
+            milestoneProgress,
+            teamStats,
             filteredMemberProgress,
             selectedTeam,
             openTeamDetail,
             closeTeamDetail,
             getHeatColor,
+            memberShare,
+            notifyFeature,
+            milestoneScoreDraft,
+            confirmMilestoneScore,
             trainingProjects,
             selectedTrainingProject,
             trainingLoading,

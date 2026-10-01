@@ -13,6 +13,7 @@ from app.core.security import decode_access_token
 from app.repositories.json_store import JsonStore, make_record_key
 from app.core.config import Settings
 from app.services.model_registry import build_chat_model
+from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 from app.utils.datetime import utc_now_iso
 
 
@@ -569,6 +570,15 @@ async def submit_homework(homework_id: str, payload: FreePayload, authorization:
         "diagnosis": data.get("diagnosis"),
     }
     JsonStore(db).upsert("homework", "submission", submission_id, submission, owner_id=str(student_id), status="pending")
+    try:
+        await publish_learning_activity_safely(db, {
+            "student_id": str(student_id), "source_module": "homework", "content_type": "HOMEWORK",
+            "content_id": homework_id, "attempt_id": submission_id,
+            "result_payload": {"status": "submitted", "answer_count": len(submission["answers"]) if isinstance(submission["answers"], dict) else 1},
+            "status": "COMPLETED", "occurred_at": submission["submittedAt"],
+        })
+    except Exception:
+        pass
     return ok({"success": True, "submittedAt": submission["submittedAt"], "attemptId": submission_id})
 
 

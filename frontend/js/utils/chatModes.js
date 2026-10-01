@@ -1,4 +1,9 @@
 export const CHAT_AGENT_MODES = {
+    chat: {
+        id: 'chat',
+        label: 'AI 对话',
+        defaultAgentId: 'agent_tutor'
+    },
     tutor: {
         id: 'tutor',
         label: '引导式学习',
@@ -8,11 +13,19 @@ export const CHAT_AGENT_MODES = {
         id: 'rag',
         label: '知识库检索',
         defaultAgentId: 'agent_researcher'
+    },
+    paper: {
+        id: 'paper',
+        label: '论文查询',
+        defaultAgentId: 'agent_paper'
     }
 };
 
 export function normalizeAgentMode(mode) {
-    return mode === 'rag' ? 'rag' : 'tutor';
+    if (mode === 'chat' || mode === 'default' || mode === 'general') return 'chat';
+    if (mode === 'paper' || mode === 'academic' || mode === 'scholar') return 'paper';
+    if (mode === 'rag') return 'rag';
+    return 'tutor';
 }
 
 export function getChatStorageKey(sessionId = 'guest_user', agentMode = 'tutor') {
@@ -21,22 +34,29 @@ export function getChatStorageKey(sessionId = 'guest_user', agentMode = 'tutor')
 }
 
 export function shouldShowHistoryButton(agentMode = 'tutor') {
-    return ['tutor', 'rag'].includes(normalizeAgentMode(agentMode));
+    return ['chat', 'tutor', 'rag', 'paper'].includes(normalizeAgentMode(agentMode));
 }
 
 export function getHistoryPanelTitle(agentMode = 'tutor') {
-    return normalizeAgentMode(agentMode) === 'rag' ? '知识库检索历史记录' : '引导式学习历史记录';
+    const normalized = normalizeAgentMode(agentMode);
+    if (normalized === 'chat') return 'AI 对话历史记录';
+    if (normalized === 'rag') return '知识库检索历史记录';
+    if (normalized === 'paper') return '论文查询历史记录';
+    return '引导式学习历史记录';
 }
 
-export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', repositoryId = '', agent = null, courseDatasetIds = null }) {
+export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', conversationId = '', projectId = '', repositoryId = '', agent = null, courseDatasetIds = null, model = '' }) {
     const normalizedMode = normalizeAgentMode(agentMode);
+    const resolvedModel = (model && model !== 'Auto Mode') ? model : agent?.model;
     const payload = {
         message,
         force_rag: forceRAG || normalizedMode === 'rag',
         sessionId,
         agent_mode: normalizedMode,
+        conversation_id: conversationId || undefined,
+        project_id: projectId || undefined,
         agent_id: agent?.id,
-        agent_model: agent?.model,
+        agent_model: resolvedModel,
         agent_prompt: agent?.prompt
     };
     if (repositoryId) {
@@ -89,12 +109,30 @@ export function mapHistoryRecordToMessage(record) {
     const agentMode = normalizeAgentMode(record?.agent_mode);
     const rawContent = record?.content || '';
     const content = sanitizeMessageContentForMode(rawContent, agentMode);
-    return {
+    const defaultAgentId = CHAT_AGENT_MODES[agentMode]?.defaultAgentId || 'agent_tutor';
+    const fallbackProjectId = agentMode === 'paper' ? 'proj-paper' : (agentMode === 'rag' ? 'proj-rag' : (agentMode === 'tutor' ? 'proj-tutor' : 'proj-default'));
+    const message = {
         id: `db-${record?.id}`,
         senderType: role === 'user' ? 'user' : 'agent',
-        senderId: role === 'user' ? undefined : (record?.sender_id || 'agent_tutor'),
+        senderId: role === 'user' ? undefined : (record?.sender_id || defaultAgentId),
         content,
         time: createdAt,
-        createdAt
+        createdAt,
+        mode: agentMode,
+        projectId: record?.project_id || fallbackProjectId
     };
+    if (record?.conversation_id) message.conversationId = record.conversation_id;
+    const payload = record?.payload;
+    if (agentMode === 'paper' && payload?.kind === 'paper_search' && Array.isArray(payload.results)) {
+        const snapshot = {
+            query: String(payload.query || ''),
+            status: String(payload.status || (payload.results.length > 0 ? 'success' : 'empty')),
+            results: payload.results,
+            summary: payload.summary && typeof payload.summary === 'object' ? payload.summary : {},
+            statuses: Array.isArray(payload.statuses) ? payload.statuses : []
+        };
+        message.attachedPapers = snapshot.results;
+        message.paperSearchSnapshot = snapshot;
+    }
+    return message;
 }

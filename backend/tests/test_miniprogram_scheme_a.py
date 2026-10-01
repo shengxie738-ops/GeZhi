@@ -51,12 +51,45 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
-from app.core.security import get_password_hash
+from app.core.security import create_access_token, get_password_hash
 from app.main import app
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 from app.models.domain_record import DomainRecord
 from app.repositories.json_store import JsonStore
+
+
+class _AuthedClient:
+    """注入学生 token 的 TestClient 包装（端点已要求登录）。"""
+
+    def __init__(self, client, username, role="student"):
+        self._client = client
+        self._headers = {"Authorization": f"Bearer {create_access_token(username, role)}"}
+
+    def get(self, path, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        kwargs["headers"] = {**self._headers, **headers}
+        return self._client.get(path, **kwargs)
+
+    def post(self, path, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        kwargs["headers"] = {**self._headers, **headers}
+        return self._client.post(path, **kwargs)
+
+    def patch(self, path, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        kwargs["headers"] = {**self._headers, **headers}
+        return self._client.patch(path, **kwargs)
+
+    def put(self, path, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        kwargs["headers"] = {**self._headers, **headers}
+        return self._client.put(path, **kwargs)
+
+    def delete(self, path, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        kwargs["headers"] = {**self._headers, **headers}
+        return self._client.delete(path, **kwargs)
 
 
 class MiniprogramAuthCompatibilityTest(unittest.TestCase):
@@ -91,7 +124,7 @@ class MiniprogramAuthCompatibilityTest(unittest.TestCase):
         db.add(StudentProfile(user_id="24001020106", knowledge=72, pace=65, cognitive="娓愯繘鐞嗚В鍨?"))
         db.commit()
         db.close()
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -146,7 +179,7 @@ class MiniprogramProfileEndpointTest(unittest.TestCase):
         db.add(StudentProfile(user_id="24001020106", knowledge=72, pace=65, cognitive="娓愯繘鐞嗚В鍨?", goal="鎺屾彙鏍稿績鏁版嵁缁撴瀯涓庣畻娉?"))
         db.commit()
         db.close()
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -192,7 +225,7 @@ class MiniprogramJournalEndpointTest(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -248,7 +281,7 @@ class MiniprogramKnowledgeAliasTest(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -307,7 +340,7 @@ class MiniprogramEvaluatorEndpointTest(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -361,6 +394,7 @@ class MiniprogramEvaluatorEndpointTest(unittest.TestCase):
 
 
 class MiniprogramExistingEndpointWrapperTest(unittest.TestCase):
+    CLIENT_ROLE = "teacher"
     def setUp(self):
         self.engine = create_engine(
             "sqlite:///:memory:",
@@ -378,7 +412,7 @@ class MiniprogramExistingEndpointWrapperTest(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_get_db
-        self.client = TestClient(app)
+        self.client = _AuthedClient(TestClient(app), "24001020106", getattr(self, "CLIENT_ROLE", "student"))
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)

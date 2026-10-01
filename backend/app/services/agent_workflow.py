@@ -12,7 +12,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -129,16 +129,18 @@ def generate_algorithm_diagram(structure_type: str, nodes: str, edges: str) -> s
         return f"Error while generating diagram: {str(e)}"
 
 DEFAULT_AGENT_MODELS = {
-    "agent_planner": "qwen3.7-max",
-    "agent_tutor": "qwen3.7-plus",
-    "agent_researcher": "qwen3.6-plus",
+    "agent_planner": "qwen3.8-max",
+    "agent_tutor": "qwen3.7-flash",
+    "agent_researcher": "glm-4-flash",
     "agent_coder": "kimi-k2.7-code",
-    "agent_visual_guide": "qwen-image-2.0-pro",
+    "agent_visual_guide": "qwen3.8-max",
+    "agent_foreign_language": "qwen3.7-flash",
+    "agent_paper": "glm-5.1",
 }
 
 # 向下兼容引用，供画像分析和普通检索缺省调用。
 llm_max = build_chat_model(DEFAULT_AGENT_MODELS["agent_planner"], temperature=0)
-llm_flash = build_chat_model(DEFAULT_AGENT_MODELS["agent_researcher"], temperature=0.1)
+llm_flash = build_chat_model(DEFAULT_AGENT_MODELS["agent_tutor"], temperature=0.1)
 llm = llm_max
 
 tools = [query_data_structure_knowledge, execute_python_code, generate_algorithm_diagram]
@@ -161,6 +163,9 @@ def _fallback_agent_id(last_user_message: str) -> str:
 def resolve_runtime_model_id(config: RunnableConfig | dict | None, last_user_message: str = "") -> str:
     configurable = _get_configurable(config)
     requested_model = configurable.get("agent_model")
+    # 若附带自定义模型凭据，直接放行自定义模型 ID
+    if configurable.get("custom_model_api_key") and requested_model:
+        return requested_model
     if has_model(requested_model, category="text"):
         return requested_model
 
@@ -171,7 +176,39 @@ def resolve_runtime_model_id(config: RunnableConfig | dict | None, last_user_mes
     return DEFAULT_AGENT_MODELS["agent_tutor"]
 
 
-def build_system_prompt(custom_prompt: str | None = None) -> SystemMessage:
+from app.services.default_agents import DEFAULT_AGENTS
+
+
+def get_agent_default_prompt(agent_id: str) -> str:
+    for agent in DEFAULT_AGENTS:
+        if agent["id"] == agent_id:
+            return agent.get("prompt", "")
+    return ""
+
+
+def build_system_prompt(
+    custom_prompt: str | None = None,
+    *,
+    agent_id: str = "agent_tutor",
+    agent_mode: str = "tutor"
+) -> SystemMessage:
+    # 显式传入自定义 prompt 时直接采用
+    if custom_prompt and custom_prompt.strip():
+        return SystemMessage(content=custom_prompt.strip())
+
+    # 学术论文查询专属学术系统提示词
+    if agent_id == "agent_paper" or agent_mode == "paper":
+        paper_prompt = get_agent_default_prompt("agent_paper")
+        if paper_prompt:
+            return SystemMessage(content=paper_prompt)
+
+    # 知识库检索专属系统提示词
+    if agent_id == "agent_researcher" or agent_mode == "rag":
+        rag_prompt = get_agent_default_prompt("agent_researcher")
+        if rag_prompt:
+            return SystemMessage(content=rag_prompt)
+
+    # 引导式教学 / 数据结构启发式私教提示词
     prompt = (
         "你是一个专业的《数据结构与算法》智能私教，采用严苛的“苏格拉底启发式教学法（Socratic Method）”与“支架式教学（Scaffolding）”模式引导学生。你同时协同多个智能体角色（Alina 规划师、Prof.X 启发式导师、CodeNinja 代码精灵）来与学生互动。\n\n"
         "你必须死守以下核心教学铁律，如有违反将被严厉惩罚：\n"
@@ -189,15 +226,18 @@ def build_system_prompt(custom_prompt: str | None = None) -> SystemMessage:
         "   - 讲解中如需对比，请用 Markdown Table 进行美化输出。\n\n"
         "请严格根据学生目前的实际反馈，分步执行上述脚手架流程，每次回复必须以引导提问或挖空收尾，控制在 200 字内。"
     )
-    if custom_prompt:
-        prompt += f"\n\n当前激活 Agent 的自定义系统指令如下，请在不违反教学铁律的前提下优先体现该角色设定：\n{custom_prompt}"
     return SystemMessage(content=prompt)
 
 
 def call_model(state: State, config: RunnableConfig | None = None):
     configurable = _get_configurable(config)
-    system_prompt = SystemMessage(
-        content=build_system_prompt(configurable.get("agent_prompt")).content
+    agent_id = configurable.get("agent_id") or "agent_tutor"
+    agent_mode = configurable.get("agent_mode") or "tutor"
+    custom_prompt = configurable.get("agent_prompt") or configurable.get("system_prompt")
+    system_prompt = build_system_prompt(
+        custom_prompt,
+        agent_id=agent_id,
+        agent_mode=agent_mode,
     )
     messages = [system_prompt] + list(state["messages"])
     
@@ -212,9 +252,28 @@ def call_model(state: State, config: RunnableConfig | None = None):
     temperature = 0 if model_id in {"qwen3.7-max", "kimi-k2.7-code"} else 0.1
     print(f"[Router] Routing to selected model: {model_id}", flush=True)
     
+    # 支持用户专属自定义模型调用
+    custom_base_url = configurable.get("custom_model_base_url")
+    custom_api_key = configurable.get("custom_model_api_key")
+    if custom_base_url and custom_api_key:
+        clean_base_url = custom_base_url.strip().rstrip("/")
+        if clean_base_url.endswith("/chat/completions"):
+            clean_base_url = clean_base_url[:-len("/chat/completions")].rstrip("/")
+        llm_instance = ChatOpenAI(
+            model=model_id,
+            openai_api_key=custom_api_key,
+            openai_api_base=clean_base_url,
+            base_url=clean_base_url,
+            temperature=temperature,
+            request_timeout=30.0,
+            max_retries=1,
+        )
+    else:
+        llm_instance = build_chat_model(model_id, temperature=temperature)
+
     # Use .stream() instead of .invoke() to enable token-level streaming
     # This allows astream_events to produce on_chat_model_stream events
-    model = build_chat_model(model_id, temperature=temperature).bind_tools(tools)
+    model = llm_instance.bind_tools(tools)
     full_response = None
     for chunk in model.stream(messages):
         if full_response is None:
@@ -222,6 +281,9 @@ def call_model(state: State, config: RunnableConfig | None = None):
         else:
             full_response = full_response + chunk
         
+    if full_response is None:
+        full_response = AIMessage(content="大模型未返回任何有效文本内容，请检查端点配置。")
+
     return {"messages": [full_response]}
 
 workflow = StateGraph(State)

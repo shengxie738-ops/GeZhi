@@ -12,7 +12,8 @@
 
 `FastAPI` `LangGraph` `LangChain` `Vue 3` `React + Vite` `RAGFlow` `Gitea` `MySQL` `微信小程序`
 
-**版本** ｜ **后端端口** 8516 ｜ **公网域名** https://gezhisystem.com ｜ 
+**版本** ｜ **后端端口** 生产 / Windows 本地开发 8516 ｜ **公网域名** https://gezhisystem.com ｜
+
 
 ---
 
@@ -79,6 +80,7 @@ copy .env.example .env
 #   QWEN_IMAGE_ENABLED=false     
 
 # 3. 启动后端（数据库表自动创建）
+# 当前 Windows 环境的 9516 端口处于系统保留段，本地与生产统一使用 8516
 uvicorn app.main:app --host 0.0.0.0 --port 8516 --reload
 
 # 4. 启动前端（另开终端）
@@ -86,7 +88,9 @@ cd frontend
 python -m http.server 5174
 ```
 
-访问 http://localhost:5174 ，或者访问https://gezhisystem.com，使用演示账号 `23001020119` / `123456` 登录。
+访问 http://localhost:5174 ，或者访问 https://gezhisystem.com，使用演示账号 `23001020119` / `123456` 登录。
+前端已在 `frontend/js/config/env.js` 中自动识别运行环境：生产直连公网网关，本地自动连接 `http://127.0.0.1:8516/api`。
+
 
 > RAGFlow 与 Gitea 为可选依赖，评委跳过不影响主流程体验；完整部署见 [第 5 节](#5-部署与运行可复现部署指南)。
 
@@ -211,7 +215,7 @@ flowchart TB
 
 | 服务 | 端口 | 协议 | 用途 | 启动方式 |
 |------|------|------|------|----------|
-| 后端 API | 8516 | HTTP | FastAPI 主服务，18 个端点 | `uvicorn app.main:app --port 8516` |
+| 后端 API | 8516 | HTTP | FastAPI 主服务，学术代理与业务端点 | `uvicorn app.main:app --port 8516` |
 | PC 前端 | 5174 | HTTP | Vue3 主界面（静态） | `python -m http.server 5174` |
 | 登录页 | 5173 | HTTP | React 登录页（开发） | `pnpm dev` |
 | Gitea HTTP | 3000 | HTTP | 仓库 Web 管理界面 | `docker run -p 3000:3000` |
@@ -224,7 +228,8 @@ flowchart TB
 
 ### 3.4 多端交互与数据流
 
-**PC 端**：Vue3 CDN 直连后端 `/api`，静态资源（头像、生成的算法图解）走后端 `/static`。前端通过 `frontend/js/config/env.js` 自动识别运行环境：`localhost` → `http://127.0.0.1:8516`，生产 → `https://gezhisystem.com`。
+**PC 端**：Vue3 CDN 直连后端 `/api`，静态资源（头像、生成的算法图解）走后端 `/static`。前端通过 `frontend/js/config/env.js` 自动识别运行环境：`localhost` → `http://127.0.0.1:8516`（Windows 本地），生产 → `https://gezhisystem.com`（后端 8516）。
+
 
 **微信小程序端**：受小程序域名白名单限制，所有 API 请求经云函数 `cloud/apiProxy`（基于 `tcb-admin-node` + `axios`）转发至后端，规避白名单约束并统一鉴权。小程序 18 页面通过自定义 tabBar 组织为"首页 / 学术空间 / AI 导师 / 我的"四大入口。
 
@@ -699,9 +704,10 @@ pnpm dev
 
 [`frontend/js/config/env.js`](frontend/js/config/env.js) 自动识别运行环境：
 
-- `localhost` / `127.0.0.1` → `http://127.0.0.1:8516`（本地开发）
-- 其他 → `https://gezhisystem.com`（生产）
+- `localhost` / `127.0.0.1` → `http://127.0.0.1:8516`（Windows 本地开发；当前机器的 9516 位于系统保留段）
+- 其他 → `https://gezhisystem.com`（生产环境，Nginx 反代后端 8516 端口）
 - 支持运行时覆盖：`window.__API_ORIGIN__` 或 `localStorage.apiOrigin`
+
 
 ### 5.5 微信小程序部署
 
@@ -912,34 +918,78 @@ server {
 | `test_git_coach_service.py` | AI Git 教练反馈生成、规则校验 |
 | `test_cors_config.py` | CORS 解析（JSON/CSV）、尾斜杠处理 |
 | `test_sms_auth.py` | SMS 验证码发送、冷却、过期、最大尝试 |
+| `test_academic_api.py` | 学术搜索薄代理：OpenAlex/Crossref/arXiv 鉴权拦截、参数校验、3秒门控、上游错误映射、缓存策略 |
+| `paper_search_playwright.py` | 论文查询浏览器端到端测试：无 `/api/chat/stream` 串扰、来源增量状态、详情弹窗、BibTeX 导出、防抖与取消 |
+| `academic_search_live.mjs` | 四大学术源分来源真实联网验收：OpenAlex、Crossref、arXiv、Europe PMC，429 退避重试与失败退出保障 |
 
 ### 7.2 运行测试
 
+#### 7.2.1 依赖安装与前置准备
 ```bash
-# 后端测试
-cd backend
-python -m pytest tests/ -v
-# 或
-python -m unittest discover tests
+# 安装 Playwright 浏览器自动化测试依赖
+python -m pip install -r frontend/requirements-test.txt
+python -m playwright install chromium
+```
 
-# 前端测试
+**学术检索环境变量配置（`.env`）**：
+- `OPENALEX_API_KEY`：本地可留空；生产建议配置，以提升 OpenAlex 访问配额
+- `CROSSREF_MAILTO`：本地可留空；生产应配置真实联系邮箱，以加入 Crossref 礼貌请求池（Polite Pool）
+- `ACADEMIC_HTTP_TIMEOUT_SECONDS`：OpenAlex / Crossref 后端上游超时，默认 12 秒
+- `ARXIV_HTTP_TIMEOUT_SECONDS`：arXiv 后端上游超时，默认 20 秒（前端独立等待 25 秒）
+- `ACADEMIC_TEST_TOKEN`：可选，测试时直接传入特定学生 JWT
+- `ACADEMIC_API_BASE_URL`：真实来源验收脚本可选覆盖，默认 `http://127.0.0.1:8516/api`
+
+#### 7.2.2 运行后端测试
+```bash
+cd backend
+# 运行学术代理定向测试
+python -m pytest tests/test_academic_api.py -v
+# 运行后端全量测试
+python -m pytest tests/ -v
+```
+
+#### 7.2.3 运行前端学术与功能测试
+```bash
 cd frontend
-node tests/academicSpace.test.mjs
-# Playwright 测试
-python tests/academic_space_playwright.py
+# 运行论文系统核心单元测试与契约测试
+node tests/academicPaperModel.test.mjs
+node tests/academicProviders.test.mjs
+node tests/academicAggregate.test.mjs
+node tests/academicCitations.test.mjs
+node tests/academicPlugins.test.mjs
+node tests/pluginMarket.test.mjs
+node tests/paperSearchFlow.test.mjs
+node tests/paperWorkflow.test.mjs
+node tests/chatModes.test.mjs
+node tests/onestopWork.test.mjs
+```
+
+#### 7.2.4 浏览器自动化与真实联网验收
+```bash
+# 终端 A：启动后端（端口 8516）
+cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8516
+
+# 终端 B：运行 Playwright 浏览器自动化流程测试（自动拉起静态服务器）
+cd frontend && python tests/paper_search_playwright.py
+
+# 终端 C：运行分来源真实联网验收（断言外部权威论文返回，429 自动退避，失败非零退出）
+cd frontend && node tests/academic_search_live.mjs
 ```
 
 ### 7.3 安全设计体系
 
 | 安全机制 | 实现位置 | 说明 |
 |----------|----------|------|
-| JWT 认证 | `core/security.py` | 签发与校验 access token |
+| JWT 认证 | `core/security.py` | 签发与校验 access token；学术薄代理端点强制要求合法登录态 |
 | CORS 白名单 | `core/config.py` `parse_cors_origins` | 支持 JSON 数组与 CSV，自动去尾斜杠 |
 | Gitea Webhook 验签 | `team_git.py` | HMAC-SHA256 校验 `X-Gitea-Signature` |
 | 代码沙箱隔离 | `agent_workflow.py` `execute_python_code` | 黑名单拦截 `os.system`/`subprocess`/`rmtree`/`shutil`/`socket`/`sys.exit`，5 秒超时 |
-| campus 私有组织 | `gitea_service.py` | 所有仓库归 `campus` 组织，collaborator 权限分级（admin/write） |
-| 系统账号过滤 | `team_git_service.py` | `_GITEA_SYSTEM_LOGINS` 黑名单，系统账号提交不计入学生进度 |
-| 敏感信息隔离 | `.env` + `.gitignore` | 真实密钥仅存 `.env`（已 gitignore），仓库仅留 `.env.example` 占位符 |
+| 学术外部源防 XSS | `frontend/index.html` | 对所有来自外部 API 的标题、摘要、作者严格采用纯文本插值，严禁用 `v-html` |
+| 外部链接防护 | `frontend/index.html` | 所有官方论文外链与开放全文链接强制包含 `target="_blank" rel="noopener noreferrer"`，且协议限定 `http(s)` |
+| 失败不回退伪数据契约 | 全链路 | 数据源发生故障或无匹配时如实返回错误与空状态，绝不呈现伪造学术文献 |
+| 敏感信息隔离 | `.env` + `.gitignore` | 真实密钥仅存 `.env`（已 gitignore），前端代码不暴露任何后端私密 API Key |
+| 外网请求白名单 | 生产防火墙/网关 | 后端代理出站：`api.openalex.org`, `api.crossref.org`, `export.arxiv.org`；前端直连出站：`www.ebi.ac.uk` |
+
 
 --
 

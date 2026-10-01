@@ -78,16 +78,17 @@ class MistakeAiAnalysisTest(unittest.TestCase):
                             userId="student-1",
                             agentId="agent_mistake_analyst",
                             agentName="错题分析师",
-                            agentModel="deepseek-v4-pro",
+                            agentModel="deepseek-v4-pro-0813",
                             agentPrompt="Focus on the misconception and produce a retest path.",
                         ),
+                        {"sub": "student-1", "role": "student"},
                         db,
                     )
                 )
 
             analysis = response["data"]
             build_model.assert_called_once()
-            self.assertEqual(build_model.call_args.args[0], "deepseek-v4-pro")
+            self.assertEqual(build_model.call_args.args[0], "deepseek-v4-pro-0813")
             self.assertIn("B+ tree", model.prompts[0])
             self.assertIn("It always walks the primary key index.", model.prompts[0])
             self.assertIn("Focus on the misconception", model.prompts[0])

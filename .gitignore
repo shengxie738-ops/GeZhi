@@ -90,9 +90,18 @@ softwareGitea/
 
 # Course materials (large PDFs/PPTs, not system code)
 frontend/courses/
+frontend/data_structure/
+frontend/AI_technology/
+frontend/Computer_ Organization/
+frontend/Database _Technology/
+frontend/computer_programming/
 
 # RagFlow server runtime logs
 ragflow/docker/ragflow-logs/
+
+# Local QA screenshots, generated mockups and temporary verification outputs
+artifacts/
+frontend/tests/render_*
 
 # Python wheels (build artifacts, downloadable via pip)
 *.whl
@@ -107,3 +116,22 @@ ragflow/docker/ragflow-logs/
 
 # 团队内部配置文档（含真实密钥，仅私发，绝不提交）
 系统配置详细信息.md
+
+# 服务器运维文档（含服务器 IP 与 root 密码，绝不提交）
+服务器连接指南.md
+
+# 调试产物（含生产服务器信息，本地保留不上传）
+debug-*.md
+*.audit.md
+
+# 本地数据库备份/导出（含真实用户数据、Gitea 私钥，体积大且涉密，绝不提交）
+数据库资料/
+
+# 全模态模型配置（含明文 API Key，仅入 backend/.env，绝不提交）
+全模态语言模型配置.txt
+
+# 外语模块本地调试产物（devboot 含本地测试账号引导）
+frontend/devboot.html
+frontend/devdebug.html
+.tmp-shots/
+.dbg/

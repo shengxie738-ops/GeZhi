@@ -9,14 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload
 from app.core.database import get_db
 from app.models.domain_record import DomainRecord
 from app.models.ranked_question import RankedQuestion
 from app.repositories.json_store import JsonStore, load_payload
 from app.services.model_registry import build_chat_model, has_model
+from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 
 router = APIRouter()
-DEFAULT_RANKED_COACH_MODEL = "qwen3.7-plus"
+DEFAULT_RANKED_COACH_MODEL = "qwen3.7-flash"
 _RANKED_SETTLEMENT_LOCK_STRIPES = 64
 _RANKED_SETTLEMENT_LOCKS = tuple(threading.Lock() for _ in range(_RANKED_SETTLEMENT_LOCK_STRIPES))
 
@@ -403,26 +405,30 @@ def _ensure_ranked_seed(db: Session, user_id: str):
 
 
 @router.get("/ranked/student/{user_id}/dashboard")
-async def get_ranked_dashboard(user_id: str, db: Session = Depends(get_db)):
+async def get_ranked_dashboard(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     return {"status": "success", "data": _build_ranked_dashboard_data(user_id, db)}
 
 
 @router.get("/ranked/student/{user_id}/history")
-async def get_match_history(user_id: str, db: Session = Depends(get_db)):
+async def get_match_history(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     _ensure_ranked_seed(db, user_id)
     matches = JsonStore(db).list_payloads("ranked", record_type="match", owner_id=user_id)
     return {"status": "success", "data": matches}
 
 
 @router.get("/ranked/student/{user_id}/mistakes")
-async def get_ranked_mistakes(user_id: str, db: Session = Depends(get_db)):
+async def get_ranked_mistakes(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     _ensure_ranked_seed(db, user_id)
     mistakes = JsonStore(db).list_payloads("ranked", record_type="mistake", owner_id=user_id, status="active")
     return {"status": "success", "data": mistakes}
 
 
 @router.get("/ranked/student/{user_id}/seasons")
-async def get_ranked_seasons(user_id: str, db: Session = Depends(get_db)):
+async def get_ranked_seasons(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     _ensure_ranked_seed(db, user_id)
     seasons = JsonStore(db).list_payloads("ranked", record_type="season", owner_id=user_id, status="active")
     return {"status": "success", "data": seasons}
@@ -508,7 +514,8 @@ async def get_ranked_question(question_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/ranked/matches/start")
-async def start_ranked_match(payload: MatchStartPayload, db: Session = Depends(get_db)):
+async def start_ranked_match(payload: MatchStartPayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(payload.userId, auth)
     _ensure_ranked_seed(db, payload.userId)
     store = JsonStore(db)
     
@@ -689,8 +696,10 @@ def _upsert_ranked_mistake(
 async def submit_ranked_match(
     match_id: str,
     payload: RankedMatchSubmitPayload,
+    auth: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(payload.userId, auth)
     with _settlement_lock_for(match_id):
         match_record = _get_ranked_match_record_for_update(db, match_id, payload.userId)
         match = load_payload(match_record)
@@ -755,13 +764,24 @@ async def submit_ranked_match(
         except Exception:
             db.rollback()
             raise
+        try:
+            question_id = str(stored_match.get("questionId") or (stored_match.get("question") or {}).get("questionId") or "")
+            await publish_learning_activity_safely(db, {
+                "student_id": payload.userId, "source_module": "ranked", "content_type": "RANKED_QUESTION",
+                "content_id": question_id, "attempt_id": match_id,
+                "result_payload": {"result": stored_match.get("result"), "passed": stored_match.get("result") == "win", "passed_count": int(payload.passedCount or 0), "total_count": int(payload.totalCount or 0)},
+                "status": "COMPLETED", "occurred_at": stored_match.get("submittedAt") or _now_iso(),
+            })
+        except Exception:
+            pass
         return {"status": "success", "data": {"match": stored_match, "profile": profile, "mistake": mistake}}
 
 
 @router.patch("/ranked/mistakes/{mistake_id}")
-async def update_ranked_mistake(mistake_id: str, payload: RankedMistakePatchPayload, db: Session = Depends(get_db)):
+async def update_ranked_mistake(mistake_id: str, payload: RankedMistakePatchPayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
     current = store.get_payload("ranked", "mistake", mistake_id) or {"id": mistake_id}
+    ensure_self_or_teacher(str(current.get("studentId") or ""), auth)
     patch = {key: value for key, value in payload.model_dump().items() if value is not None}
     updated = {**current, **patch, "updatedAt": _now_text()}
     store.upsert("ranked", "mistake", mistake_id, updated, owner_id=updated.get("studentId", ""), status="active")
@@ -769,7 +789,8 @@ async def update_ranked_mistake(mistake_id: str, payload: RankedMistakePatchPayl
 
 
 @router.delete("/ranked/mistakes/{mistake_id}")
-async def delete_ranked_mistake(mistake_id: str, userId: str, db: Session = Depends(get_db)):
+async def delete_ranked_mistake(mistake_id: str, userId: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(userId, payload)
     store = JsonStore(db)
     current = store.get_payload("ranked", "mistake", mistake_id, owner_id=userId)
     if not current:
@@ -783,7 +804,8 @@ async def delete_ranked_mistake(mistake_id: str, userId: str, db: Session = Depe
 
 
 @router.post("/ranked/coach/ask")
-async def ask_ranked_coach(payload: RankedCoachPayload, db: Session = Depends(get_db)):
+async def ask_ranked_coach(payload: RankedCoachPayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(payload.userId, auth)
     model_id = _resolve_ranked_model(payload.agentModel)
     dashboard = _build_ranked_dashboard_data(payload.userId, db)
     prompt = _build_coach_prompt(
@@ -812,11 +834,15 @@ async def ask_ranked_coach(payload: RankedCoachPayload, db: Session = Depends(ge
 async def analyze_ranked_mistake(
     mistake_id: str,
     payload: RankedMistakeAiPayload,
+    auth: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(payload.userId, auth)
     _ensure_ranked_seed(db, payload.userId)
     store = JsonStore(db)
     mistake = store.get_payload("ranked", "mistake", mistake_id)
+    if mistake:
+        ensure_self_or_teacher(str(mistake.get("studentId") or payload.userId), auth)
     if not mistake:
         mistake = {"id": mistake_id, "studentId": payload.userId, "title": "未知排位错题"}
     model_id = _resolve_ranked_model(payload.agentModel)

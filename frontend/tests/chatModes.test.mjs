@@ -26,6 +26,8 @@ assert.deepEqual(
     forceRAG: true,
     sessionId: 'alice',
     agentMode: 'rag',
+    conversationId: 'task-rag-1',
+    projectId: 'proj-rag',
     repositoryId: 'repo_a',
     agent: {
       id: 'agent_researcher',
@@ -38,6 +40,8 @@ assert.deepEqual(
     force_rag: true,
     sessionId: 'alice',
     agent_mode: 'rag',
+    conversation_id: 'task-rag-1',
+    project_id: 'proj-rag',
     repository_id: 'repo_a',
     agent_id: 'agent_researcher',
     agent_model: 'qwen3.6-plus',
@@ -50,6 +54,9 @@ assert.deepEqual(
     id: 12,
     role: 'assistant',
     sender_id: 'agent_researcher',
+    agent_mode: 'rag',
+    conversation_id: 'task-rag-history',
+    project_id: 'proj-rag',
     content: 'answer',
     created_at: '2026-06-30 23:35:25',
   }),
@@ -60,6 +67,9 @@ assert.deepEqual(
     content: 'answer',
     time: '2026-06-30 23:35:25',
     createdAt: '2026-06-30 23:35:25',
+    mode: 'rag',
+    projectId: 'proj-rag',
+    conversationId: 'task-rag-history',
   },
 );
 
@@ -109,5 +119,34 @@ assert.deepEqual(
     { id: 1, content: '检索回答\n\n【知识库引用来源】:\n- 2-线性表.pdf' },
   ],
 );
+
+const restoredPaperMessage = mapHistoryRecordToMessage({
+  id: 15,
+  role: 'assistant',
+  sender_id: 'agent_paper',
+  agent_mode: 'paper',
+  conversation_id: 'task-paper-restored',
+  project_id: 'proj-paper',
+  content: '论文检索工作记录',
+  created_at: '2026-09-04 19:00:00',
+  payload: {
+    kind: 'paper_search',
+    query: 'graph neural networks',
+    status: 'success',
+    results: [{ id: 'W123', title: 'A Graph Neural Network Paper' }],
+    summary: { totalAfterMerge: 1 },
+    statuses: [{ key: 'openalex', status: 'success', count: 1 }],
+  },
+});
+assert.deepEqual(restoredPaperMessage.attachedPapers, [
+  { id: 'W123', title: 'A Graph Neural Network Paper' },
+]);
+assert.deepEqual(restoredPaperMessage.paperSearchSnapshot, {
+  query: 'graph neural networks',
+  status: 'success',
+  results: [{ id: 'W123', title: 'A Graph Neural Network Paper' }],
+  summary: { totalAfterMerge: 1 },
+  statuses: [{ key: 'openalex', status: 'success', count: 1 }],
+});
 
 console.log('chatModes tests passed');

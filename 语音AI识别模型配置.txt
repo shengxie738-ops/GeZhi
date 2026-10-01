@@ -1,0 +1,12 @@
+model id=paraformer-v2，paraformer-v，paraformer-mtl-v1，paraformer-8k-v2
+https://dashscope.oss-cn-beijing.aliyuncs.com/samples/audio/paraformer/hello_world_female2.wav
+API Key：***REMOVED***
+
+
+
+model id=qwen-audio-3.0-asr-flash
+https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+API Key：***REMOVED***
+
+
+

@@ -10,11 +10,15 @@ import TeacherExamManager from './components/TeacherExamManager.js';
 import StudentHomework from './components/StudentHomework.js?v=20260717_0100';
 import TeacherHomework from './components/TeacherHomework.js';
 import StudentAcademicSpace from './components/StudentAcademicSpace.js';
+import StudentLearningDiagnosis from './components/StudentLearningDiagnosis.js';
 import TeacherSpaceManager from './components/TeacherSpaceManager.js';
 import TeacherAnalyticsCenter from './components/TeacherAnalyticsCenter.js';
+import TeacherLearningDiagnosisReview from './components/TeacherLearningDiagnosisReview.js';
 import TeacherCourseManager from './components/TeacherCourseManager.js';
 import TeacherDashboard from './components/TeacherDashboard.js';
-import TeacherProjectManager from './components/TeacherProjectManager.js';
+import TeacherProjectManager from './components/TeacherProjectManager.js?v=20260816_002';
+import TeacherAiLessonPrep from './components/TeacherAiLessonPrep.js';
+import ForeignLangPage from './components/foreign-lang/ForeignLangPage.js?v=20260824_5';
 import { homeworkApi } from './api/homework.js';
 import { examCenterApi } from './api/examCenter.js';
 import { profileApi } from './api/profileApi.js';
@@ -31,6 +35,10 @@ import { useAgents } from './hooks/useAgents.js';
 import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
+import { usePlugins } from './hooks/usePlugins.js';
+import { useCustomModels } from './hooks/useCustomModels.js';
+import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
+import { resolvePaperHistoryState } from './utils/conversations.js';
 
 import { courseMindmaps } from './data/mockData.js?v=20260620';
 import { radarOptionTemplate, getLineOptionTemplate } from './config/chartOptions.js';
@@ -48,11 +56,15 @@ const app = createApp({
         StudentHomework,
         TeacherHomework,
         StudentAcademicSpace,
+        StudentLearningDiagnosis,
         TeacherSpaceManager,
         TeacherAnalyticsCenter,
+        TeacherLearningDiagnosisReview,
         TeacherCourseManager,
         TeacherDashboard,
-        TeacherProjectManager
+        TeacherProjectManager,
+        TeacherAiLessonPrep,
+        ForeignLangPage,
     },
     setup() {
         // 1. 全局提示 Hook
@@ -61,6 +73,7 @@ const app = createApp({
 
         // 2. 预声明 chat 变量以供闭包动态引用
         let chat = null;
+        const workspaceMode = ref(null);
 
         // 3. 登录/登出回调逻辑
         const onLoginSuccess = (username, role) => {
@@ -114,19 +127,67 @@ const app = createApp({
         // 8. 对话与知识库 Hook (赋值给预先声明的 chat 变量)
         chat = useChat(auth.currentUser, showToast, agentsState.getAgentInfo);
 
+        // 8.1 用户自定义大模型配置 Hook (与一站式 Work 对话框热切换联动)
+        const customModelsState = useCustomModels(showToast, async () => {
+            if (chat && typeof chat.refreshUserCustomModels === 'function') {
+                await chat.refreshUserCustomModels();
+            }
+        });
+
         // 9. 用户中心 Hook
         const userCenter = useUserCenter(auth.currentUser, showToast);
 
         // 10. 课程库与预览 Hook
         const coursesState = useCourses(chat.files, auth.currentView, showToast);
 
+        // 11. 插件市场与 Codex 输入框联动 Hook
+        const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
+
+        // 12. 工作台消息分流控制器 (论文检索与普通对话解耦)
+        const workspaceSendMessage = createWorkspaceMessageSender({
+            getMode: () => chat.agentMode.value,
+            getInput: () => chat.inputText.value,
+            getPaperTab: () => chat.paperActiveTab.value,
+            isPaperSearching: () => pluginsState.isSearchingPapers.value,
+            sendChat: chat.sendMessage,
+            searchPapers: pluginsState.searchFromPaperMode,
+            clearInput: () => { chat.inputText.value = ''; },
+            showPaperResults: chat.showPaperSearchResults,
+            recordPaperWork: async (query) => {
+                await chat.recordPaperSearchWork(query, {
+                    results: pluginsState.paperSearchResults.value,
+                    status: pluginsState.paperSearchStatus.value,
+                    summary: pluginsState.paperSearchSummary.value,
+                    statuses: pluginsState.paperSourceStatuses.value
+                });
+            }
+        });
+
         // ================== 新增：工作台学习模式分流控制 ==================
-        const workspaceMode = ref(null);
         const selectWorkspaceMode = (mode) => {
             workspaceMode.value = mode;
             chat.setAgentMode(mode);
             showToast(mode === 'rag' ? '已开启专属知识库检索模式' : '已进入多智能体协同引导式学习', 'success');
         };
+
+        const isCreatingProject = ref(false);
+        const newProjectTitle = ref('');
+        const submitCreateProject = () => {
+            if (!newProjectTitle.value.trim()) {
+                isCreatingProject.value = false;
+                return;
+            }
+            chat.createProject(newProjectTitle.value.trim());
+            newProjectTitle.value = '';
+            isCreatingProject.value = false;
+        };
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('click', () => {
+                if (chat.showModelDropdown.value) chat.showModelDropdown.value = false;
+                if (pluginsState.showAddMenu.value) pluginsState.showAddMenu.value = false;
+            });
+        }
 
         // ================== 仪表盘真实数据 Hook（替换原有静态 Mock 数据）==================
         const currentGoal = ref('理解并手写 Vue 3 的 reactive 响应式系统原理');
@@ -411,17 +472,27 @@ const app = createApp({
         const quizStates = ref({});
 
         const parseQuiz = (content) => {
-            const lines = content.split('\n');
+            const raw = String(content || '');
+            const lines = raw.split('\n');
             let question = '';
             const options = [];
             let answer = '';
-            lines.forEach(line => {
-                if (line.startsWith('[QUIZ]')) {
-                    question = line.replace('[QUIZ]', '').trim();
-                } else if (line.match(/^[A-D]\./)) {
-                    options.push(line.trim());
-                } else if (line.startsWith('[ANSWER]')) {
-                    answer = line.replace('[ANSWER]', '').trim();
+            lines.forEach(rawLine => {
+                const line = rawLine.trim();
+                if (!line) return;
+                if (line.includes('[QUIZ]')) {
+                    question = line.substring(line.indexOf('[QUIZ]') + 6).trim();
+                } else if (/^[A-D][.、:：\s]/.test(line)) {
+                    // 标准化选项为 A. 内容
+                    const letter = line.charAt(0).toUpperCase();
+                    const text = line.substring(1).replace(/^[.、:：\s]+/, '').trim();
+                    options.push(`${letter}. ${text}`);
+                } else if (line.includes('[ANSWER]')) {
+                    const ansText = line.substring(line.indexOf('[ANSWER]') + 8).trim();
+                    const match = ansText.match(/[A-D]/i);
+                    if (match) {
+                        answer = match[0].toUpperCase();
+                    }
                 }
             });
             return { question, options, answer };
@@ -429,10 +500,12 @@ const app = createApp({
 
         const checkQuizAnswer = (msgId, opt, correctOpt) => {
             if (quizStates.value[msgId]?.answered) return;
-            const isCorrect = opt === correctOpt;
+            const optLetter = String(opt || '').match(/[A-D]/i)?.[0]?.toUpperCase() || '';
+            const ansLetter = String(correctOpt || '').match(/[A-D]/i)?.[0]?.toUpperCase() || '';
+            const isCorrect = optLetter && ansLetter && optLetter === ansLetter;
             quizStates.value[msgId] = {
                 answered: true,
-                selected: opt,
+                selected: optLetter || opt,
                 correct: isCorrect
             };
 
@@ -443,11 +516,13 @@ const app = createApp({
                 category: '概念自测',
                 status: isCorrect ? 'passed' : 'failed',
                 difficulty: 'Easy',
-                error_msg: isCorrect ? null : `自测选择错误: 选了 ${opt}, 正确是 ${correctOpt}`
+                error_msg: isCorrect ? null : `自测选择错误: 选了 ${optLetter || opt}, 正确是 ${ansLetter || correctOpt}`
             }).then(() => {
-                profileState.fetchProfile();
+                if (typeof profileState?.fetchProfile === 'function') {
+                    profileState.fetchProfile();
+                }
                 showToast(isCorrect ? '自测正确，知识分值提升！' : '自测错误，已为您记入错题集', isCorrect ? 'success' : 'error');
-            }).catch(e => console.error(e));
+            }).catch(e => console.error('[Quiz] Profile record error:', e));
         };
 
         const getQuizOptClass = (msgId, opt, correctOpt) => {
@@ -475,6 +550,49 @@ const app = createApp({
             }
         }
 
+        const handleSelectConversation = async (conversationId) => {
+            await chat.selectConversation(conversationId);
+            if (chat.agentMode.value === 'paper') {
+                const conv = chat.activeConversation.value;
+                const historyState = resolvePaperHistoryState(conv);
+                if (historyState.snapshot) {
+                    const snapshot = historyState.snapshot;
+                    pluginsState.paperSearchQuery.value = snapshot.query;
+                    pluginsState.paperSearchResults.value = snapshot.results;
+                    pluginsState.paperSearchStatus.value = snapshot.status;
+                    pluginsState.paperSearchSummary.value = snapshot.summary;
+                    pluginsState.paperSourceStatuses.value = snapshot.statuses;
+                    pluginsState.paperSearchError.value = '';
+                } else {
+                    pluginsState.paperSearchQuery.value = '';
+                    pluginsState.paperSearchResults.value = [];
+                    pluginsState.paperSearchStatus.value = 'idle';
+                    pluginsState.paperSourceStatuses.value = [];
+                    pluginsState.paperSearchError.value = '';
+                }
+                // 若用户当前已经处于研读对话视图，保持在研读对话视图；否则按照该任务历史状态建议的视图展示
+                if (chat.paperActiveTab.value !== 'dialog') {
+                    chat.paperActiveTab.value = historyState.tab;
+                }
+            }
+        };
+
+        const handleOpenPaperTaskDialog = async (conversationId) => {
+            await chat.openPaperTaskDialog(conversationId);
+            const conv = chat.activeConversation.value;
+            const historyState = resolvePaperHistoryState(conv);
+            if (historyState.snapshot) {
+                const snapshot = historyState.snapshot;
+                pluginsState.paperSearchQuery.value = snapshot.query;
+                pluginsState.paperSearchResults.value = snapshot.results;
+                pluginsState.paperSearchStatus.value = snapshot.status;
+                pluginsState.paperSearchSummary.value = snapshot.summary;
+                pluginsState.paperSourceStatuses.value = snapshot.statuses;
+                pluginsState.paperSearchError.value = '';
+            }
+            chat.paperActiveTab.value = 'dialog';
+        };
+
         // 整合返回供模板挂载
         return {
             // Toast
@@ -499,6 +617,7 @@ const app = createApp({
             // 工作台模式控制
             workspaceMode,
             selectWorkspaceMode,
+            paperActiveTab: chat.paperActiveTab,
 
             // Chat & Files
             inputText: chat.inputText,
@@ -508,9 +627,12 @@ const app = createApp({
             agentMode: chat.agentMode,
             historyLoading: chat.historyLoading,
             historyError: chat.historyError,
-            showHistoryPanel: chat.showHistoryPanel,
-            highlightedMessageId: chat.highlightedMessageId,
-            historyPanelTitle: chat.historyPanelTitle,
+            activeConversationId: chat.activeConversationId,
+            conversationList: chat.conversationList,
+            activeConversation: chat.activeConversation,
+            activeConversationMessages: chat.activeConversationMessages,
+            isViewingHistory: chat.isViewingHistory,
+            sidebarActiveConversationId: chat.sidebarActiveConversationId,
             messages: chat.messages,
             files: chat.files,
             knowledgeRepositories: chat.knowledgeRepositories,
@@ -536,17 +658,98 @@ const app = createApp({
             visualGuideTypes: chat.visualGuideTypes,
             visualGuideStatus: chat.visualGuideStatus,
             visualGuide: chat.visualGuide,
+            // Workspace & Chat
+            currentModel: chat.currentModel,
+            modelOptions: chat.modelOptions,
+            currentModelInfo: chat.currentModelInfo,
+            showModelDropdown: chat.showModelDropdown,
+            switchModel: chat.switchModel,
+            toggleModelDropdown: chat.toggleModelDropdown,
+            userCustomConfigs: chat.userCustomConfigs,
+            refreshUserCustomModels: chat.refreshUserCustomModels,
+            showCustomModelModal: customModelsState.showCustomModelModal,
+            customModelModalTab: customModelsState.customModelModalTab,
+            editingConfigId: customModelsState.editingConfigId,
+            isSavingCustomModel: customModelsState.isSaving,
+            isTestingCustomModel: customModelsState.isTesting,
+            customModelTestResult: customModelsState.testResult,
+            showCustomModelApiKey: customModelsState.showApiKey,
+            customModelProviderOptions: customModelsState.providerOptions,
+            customModelApiTypeOptions: customModelsState.apiTypeOptions,
+            customModelForm: customModelsState.customModelForm,
+            addCustomModelIdInput: customModelsState.addModelIdInput,
+            removeCustomModelIdInput: customModelsState.removeModelIdInput,
+            openCustomModelModal: customModelsState.openCustomModelModal,
+            closeCustomModelModal: customModelsState.closeCustomModelModal,
+            toggleShowCustomModelApiKey: customModelsState.toggleShowApiKey,
+            handleTestCustomModelConnection: customModelsState.handleTestConnection,
+            handleSaveCustomModelConfig: customModelsState.handleSaveModelConfig,
+            handleDeleteCustomModelConfig: customModelsState.handleDeleteModelConfig,
+            switchWorkMode: chat.switchWorkMode,
+            returnToChatDialog: chat.returnToChatDialog,
+            openPaperTaskDialog: handleOpenPaperTaskDialog,
+            recordPaperSearchWork: chat.recordPaperSearchWork,
+            inputText: chat.inputText,
+            chatContainer: chat.chatContainer,
+            thinkingAgent: chat.thinkingAgent,
+            forceRAG: chat.forceRAG,
+            agentMode: chat.agentMode,
+            historyLoading: chat.historyLoading,
+            historyError: chat.historyError,
+            activeConversationId: chat.activeConversationId,
+            conversationList: chat.conversationList,
+            activeConversation: chat.activeConversation,
+            activeConversationMessages: chat.activeConversationMessages,
+            isViewingHistory: chat.isViewingHistory,
+            sidebarActiveConversationId: chat.sidebarActiveConversationId,
+            messages: chat.messages,
+            files: chat.files,
+            knowledgeRepositories: chat.knowledgeRepositories,
+            selectedRepositoryId: chat.selectedRepositoryId,
+            selectedRepository: chat.selectedRepository,
+            newRepositoryName: chat.newRepositoryName,
+            knowledgeLoading: chat.knowledgeLoading,
+            knowledgeUploading: chat.knowledgeUploading,
+            knowledgeDeletingId: chat.knowledgeDeletingId,
+            knowledgeRepositoryDeletingId: chat.knowledgeRepositoryDeletingId,
+            knowledgeDatasetId: chat.knowledgeDatasetId,
+            courseKnowledgeBases: chat.courseKnowledgeBases,
+            selectedCourseDatasetIds: chat.selectedCourseDatasetIds,
+            loadCourseKnowledgeBases: chat.loadCourseKnowledgeBases,
+            toggleCourseDataset: chat.toggleCourseDataset,
+            loadKnowledgeRepositories: chat.loadKnowledgeRepositories,
+            selectKnowledgeRepository: chat.selectKnowledgeRepository,
+            createKnowledgeRepository: chat.createKnowledgeRepository,
+            deleteKnowledgeRepository: chat.deleteKnowledgeRepository,
+            deleteKnowledgeDocument: chat.deleteKnowledgeDocument,
+            getKnowledgeFileStatusLabel: chat.getKnowledgeFileStatusLabel,
+            visualGuidePrompt: chat.visualGuidePrompt,
+            visualGuideType: chat.visualGuideType,
+            visualGuideTypes: chat.visualGuideTypes,
+            visualGuideStatus: chat.visualGuideStatus,
+            visualGuide: chat.visualGuide,
             visualGuideImage: chat.visualGuideImage,
             visualGuideHistory: chat.visualGuideHistory,
+            projectList: chat.projectList,
+            activeProjectId: chat.activeProjectId,
+            projectTaskTree: chat.projectTaskTree,
+            createProject: chat.createProject,
+            deleteProject: chat.deleteProject,
+            renameProject: chat.renameProject,
+            toggleProjectExpand: chat.toggleProjectExpand,
+            startNewSubTask: chat.startNewSubTask,
+            isCreatingProject,
+            newProjectTitle,
+            submitCreateProject,
             showVisualGuideViewer: chat.showVisualGuideViewer,
             canOpenVisualGuideViewer: chat.canOpenVisualGuideViewer,
             toggleRAG: chat.toggleRAG,
             setAgentMode: chat.setAgentMode,
             loadChatHistory: chat.loadChatHistory,
-            openHistoryPanel: chat.openHistoryPanel,
-            closeHistoryPanel: chat.closeHistoryPanel,
-            jumpToHistoryMessage: chat.jumpToHistoryMessage,
-            deleteHistoryMessage: chat.deleteHistoryMessage,
+            startNewConversation: chat.startNewConversation,
+            selectConversation: handleSelectConversation,
+            backToCurrentConversation: chat.backToCurrentConversation,
+            deleteConversation: chat.deleteConversation,
             clearChatHistory: chat.clearChatHistory,
             fillInput: chat.fillInput,
             getVisualGuideTypeMeta: chat.getVisualGuideTypeMeta,
@@ -559,7 +762,7 @@ const app = createApp({
             downloadVisualGuide: chat.downloadVisualGuide,
             triggerFileInput: () => chat.triggerFileInput(auth.isLoggedIn.value),
             handleFileUpload: chat.handleFileUpload,
-            sendMessage: chat.sendMessage,
+            sendMessage: workspaceSendMessage,
             parsedHtmlCache: chat.parsedHtmlCache,
 
 
@@ -659,7 +862,56 @@ const app = createApp({
             saveUserInfo: userCenter.saveUserInfo,
             changePassword: userCenter.changePassword,
             handleAvatarUpload: userCenter.handleAvatarUpload,
-            triggerAvatarInput: userCenter.triggerAvatarInput
+            triggerAvatarInput: userCenter.triggerAvatarInput,
+
+            // 插件市场与 Codex 输入框插件联动
+            ACADEMIC_PLUGINS: pluginsState.ACADEMIC_PLUGINS,
+            PLUGIN_CATEGORIES: pluginsState.PLUGIN_CATEGORIES,
+            installedPluginIds: pluginsState.installedPluginIds,
+            installedPlugins: pluginsState.installedPlugins,
+            showPluginMarketModal: pluginsState.showPluginMarketModal,
+            selectedPluginCategory: pluginsState.selectedCategory,
+            marketSearchKeyword: pluginsState.marketSearchKeyword,
+            selectedPluginDetail: pluginsState.selectedPluginDetail,
+            activeSearchPlugin: pluginsState.activeSearchPlugin,
+            paperSearchQuery: pluginsState.paperSearchQuery,
+            paperSearchResults: pluginsState.paperSearchResults,
+            isSearchingPapers: pluginsState.isSearchingPapers,
+            showAddMenu: pluginsState.showAddMenu,
+            activeInputPlugins: pluginsState.activeInputPlugins,
+            filteredPlugins: pluginsState.filteredPlugins,
+            getCategoryCount: pluginsState.getCategoryCount,
+            clearMarketSearch: pluginsState.clearMarketSearch,
+            isPluginInstalled: pluginsState.isPluginInstalled,
+            installPlugin: pluginsState.installPlugin,
+            uninstallPlugin: pluginsState.uninstallPlugin,
+            togglePlugin: pluginsState.togglePlugin,
+            openPluginMarket: pluginsState.openPluginMarket,
+            closePluginMarket: pluginsState.closePluginMarket,
+            openPluginDetail: pluginsState.openPluginDetail,
+            closePluginDetail: pluginsState.closePluginDetail,
+            openPaperSearchDrawer: pluginsState.openPaperSearchDrawer,
+            closePaperSearchDrawer: pluginsState.closePaperSearchDrawer,
+            executePaperSearch: pluginsState.executePaperSearch,
+            searchFromPaperMode: pluginsState.searchFromPaperMode,
+            paperSearchStatus: pluginsState.paperSearchStatus,
+            paperSourceStatuses: pluginsState.paperSourceStatuses,
+            paperSearchSummary: pluginsState.paperSearchSummary,
+            paperSearchError: pluginsState.paperSearchError,
+            selectedPaper: pluginsState.selectedPaper,
+            selectedPaperSourceKeys: pluginsState.selectedPaperSourceKeys,
+            openPaperDetail: pluginsState.openPaperDetail,
+            closePaperDetail: pluginsState.closePaperDetail,
+            copyPaperCitation: pluginsState.copyPaperCitation,
+            copyBibtexCitation: pluginsState.copyBibtexCitation,
+            downloadPaperCitation: pluginsState.downloadPaperCitation,
+            insertPaperToChat: (paper) => {
+                pluginsState.insertPaperToChat(paper);
+                chat.returnToChatDialog();
+            },
+            toggleAddMenu: pluginsState.toggleAddMenu,
+            insertPluginToInput: pluginsState.insertPluginToInput,
+            removeActiveInputPlugin: pluginsState.removeActiveInputPlugin
         };
     }
 });
@@ -668,4 +920,8 @@ app.config.errorHandler = (err, instance, info) => {
     alert(`Vue 渲染或运行时错误：\n${err.stack || err}\n附加信息: ${info}`);
 };
 
-app.mount('#app');
+const rootVm = app.mount('#app');
+if (typeof window !== 'undefined') {
+    window.__app__ = rootVm;
+}
+

@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload
 from app.core.database import get_db
 from app.core.security import get_password_hash, verify_password
+from app.core.username_policy import NUMERIC_ID_RE, has_chinese
 from app.models.user_account import UserAccount
 
 router = APIRouter()
@@ -27,13 +29,15 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
-def get_or_create_account(db: Session, username: str) -> UserAccount:
+def get_account_or_404(db: Session, username: str) -> UserAccount:
+    """用户中心只操作已存在的账号；账号创建必须走注册接口。
+
+    历史上这里会按任意用户名静默建号（教师 token 即可触发），
+    是学情画像中 codex_*、BrowserDeepCheck 等幽灵账号的来源。
+    """
     account = db.query(UserAccount).filter(UserAccount.username == username).first()
     if not account:
-        account = UserAccount(username=username, role="student", password_hash="")
-        db.add(account)
-        db.commit()
-        db.refresh(account)
+        raise HTTPException(status_code=404, detail="user not found")
     return account
 
 
@@ -67,14 +71,24 @@ def serialize_account(db: Session, account: UserAccount) -> dict:
 
 
 @router.get("/user/info/{username}")
-async def get_user_info(username: str, db: Session = Depends(get_db)):
-    account = get_or_create_account(db, username)
+async def get_user_info(username: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(username, payload)
+    account = get_account_or_404(db, username)
     return serialize_account(db, account)
 
 
 @router.post("/user/update_info")
-async def update_user_info(data: UserInfoUpdate, db: Session = Depends(get_db)):
-    account = get_or_create_account(db, data.username)
+async def update_user_info(data: UserInfoUpdate, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(data.username, payload)
+    account = get_account_or_404(db, data.username)
+
+    # 与注册接口同一约束：画像展示 real_name，放任任意格式会再现"Codex????"类垃圾展示名
+    real_name = (data.real_name or "").strip()
+    student_id = (data.student_id or "").strip()
+    if real_name and not has_chinese(real_name):
+        raise HTTPException(status_code=400, detail="姓名必须为中文")
+    if student_id and not NUMERIC_ID_RE.match(student_id):
+        raise HTTPException(status_code=400, detail="学号必须为 4-20 位数字")
 
     for field in ("real_name", "student_id", "teacher_id", "class_name", "phone"):
         value = getattr(data, field)
@@ -91,8 +105,9 @@ async def update_user_info(data: UserInfoUpdate, db: Session = Depends(get_db)):
 
 
 @router.post("/user/change_password")
-async def change_password(data: PasswordChange, db: Session = Depends(get_db)):
-    account = get_or_create_account(db, data.username)
+async def change_password(data: PasswordChange, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(data.username, payload)
+    account = get_account_or_404(db, data.username)
 
     if account.password_hash and not verify_password(data.old_password, account.password_hash):
         raise HTTPException(status_code=400, detail="old password is incorrect")
@@ -109,8 +124,10 @@ async def change_password(data: PasswordChange, db: Session = Depends(get_db)):
 async def upload_avatar(
     username: str = Form(...),
     file: UploadFile = File(...),
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(username, payload)
     allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="only JPG / PNG / GIF / WebP images are supported")
@@ -136,7 +153,7 @@ async def upload_avatar(
     with open(filepath, "wb") as f:
         f.write(content)
 
-    account = get_or_create_account(db, username)
+    account = get_account_or_404(db, username)
     account.avatar_path = filename
     db.commit()
     db.refresh(account)

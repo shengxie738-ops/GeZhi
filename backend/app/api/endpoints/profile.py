@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client, isoformat_z
 from app.models.student_profile import StudentProfile
@@ -64,7 +65,8 @@ def _status_for_mastery(value: int) -> str:
 
 
 @router.get("/profile/summary")
-async def get_profile_summary(user_id: str = "guest_user", db: Session = Depends(get_db)):
+async def get_profile_summary(user_id: str = "guest_user", payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
     if not profile:
         profile = StudentProfile(user_id=user_id)
@@ -87,8 +89,10 @@ async def get_profile_summary(user_id: str = "guest_user", db: Session = Depends
 async def get_profile_trends(
     user_id: str = "guest_user",
     range_value: str = Query("7d", alias="range"),
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
     knowledge = int(getattr(profile, "knowledge", 50) or 50)
     pace = int(getattr(profile, "pace", 50) or 50)
@@ -111,8 +115,10 @@ async def get_profile_knowledge_map(
     user_id: str = "guest_user",
     rootId: str = "root",
     depth: int = 3,
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
     mastery = int(getattr(profile, "knowledge", 72) or 72)
     tree_mastery = max(30, mastery - 27)
@@ -162,8 +168,10 @@ async def get_profile_knowledge_map(
 async def get_profile(
     user_id: str,
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
 ):
+    ensure_self_or_teacher(user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
     if not profile:
         # 创建默认值
@@ -199,7 +207,8 @@ async def get_profile(
     }
 
 @router.post("/profile/update")
-async def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)):
+async def update_profile(data: ProfileUpdate, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(data.user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == data.user_id).first()
     if not profile:
         profile = StudentProfile(user_id=data.user_id)
@@ -223,7 +232,8 @@ async def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)):
     return {"status": "success", "profile": profile}
 
 @router.post("/profile/record_test")
-async def record_test(data: TestResultRecord, db: Session = Depends(get_db)):
+async def record_test(data: TestResultRecord, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(data.user_id, payload)
     profile = db.query(StudentProfile).filter(StudentProfile.user_id == data.user_id).first()
     if not profile:
         profile = StudentProfile(

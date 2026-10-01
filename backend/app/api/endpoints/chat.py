@@ -2,19 +2,25 @@ from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile,
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_openai import ChatOpenAI
 import json
 import asyncio
 import time
 import uuid
 import re
-from pydantic import BaseModel
-from typing import List, Optional
+import logging
+import openai
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client, page_items
 from app.core.security import decode_access_token
 from app.models.user_rag import UserRagMapping
 from app.models.code_diagnosis import CodeDiagnosis
+from app.models.user_custom_ai_model import UserCustomAIModel
 from app.schemas.chat import ChatRequest
 from app.services.rag_service import (
     build_repository_metadata_condition,
@@ -30,9 +36,11 @@ from app.services.chat_history import (
     normalize_agent_mode,
     normalize_user_id,
     save_chat_message,
+    save_chat_messages_batch,
 )
 from app.services.agent_workflow import agent_graph, resolve_runtime_model_id
-from app.services.model_registry import build_chat_model, list_public_models
+from app.services.default_agents import get_default_agent_prompt
+from app.services.model_registry import build_chat_model, has_model, list_public_models
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
 router = APIRouter()
@@ -41,6 +49,11 @@ router = APIRouter()
 def resolve_agent_mode(request: ChatRequest) -> str:
     if request.agent_mode:
         return normalize_agent_mode(request.agent_mode)
+    if request.agent_id:
+        if request.agent_id in ("agent_paper", "paper"):
+            return "paper"
+        if request.agent_id in ("agent_researcher", "rag"):
+            return "rag"
     return "rag" if request.force_rag else "tutor"
 
 
@@ -49,9 +62,7 @@ def resolve_user_id(request: ChatRequest) -> str:
 
 
 def resolve_thread_id(request: ChatRequest, user_id: str, agent_mode: str) -> str:
-    if request.thread_id:
-        return build_agent_thread_id(request.thread_id, agent_mode)
-    return build_agent_thread_id(user_id, agent_mode)
+    return build_agent_thread_id(user_id, agent_mode, request.conversation_id)
 
 
 def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
@@ -59,29 +70,101 @@ def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
         return request.agent_id
     if request.is_diagnosis or "【用户当前代码】" in (request.message or ""):
         return "agent_coder"
-    return "agent_researcher" if agent_mode == "rag" else "agent_tutor"
+    if agent_mode == "paper":
+        return "agent_paper"
+    if agent_mode == "rag":
+        return "agent_researcher"
+    return "agent_tutor"
 
 
-def build_agent_runtime_config(request: ChatRequest, *, thread_id: str, agent_mode: str, message: str) -> dict:
+def find_user_custom_model_credentials(db: Session, user_id: str, model_id: str) -> tuple[str, str] | None:
+    """若当前用户配置了该模型 ID，返回 (base_url, decrypted_api_key)，否则返回 None。"""
+    if not user_id or not model_id or not db:
+        return None
+    try:
+        records = (
+            db.query(UserCustomAIModel)
+            .filter(UserCustomAIModel.user_id == user_id, UserCustomAIModel.is_active == True)
+            .all()
+        )
+        for rec in records:
+            if isinstance(rec.model_ids, list) and model_id in rec.model_ids:
+                return rec.base_url, rec.get_decrypted_api_key()
+    except Exception as e:
+        logger.warning(f"[CustomModel] Failed to query user custom models for {user_id}: {e}")
+    return None
+
+
+def build_agent_runtime_config(
+    request: ChatRequest,
+    *,
+    thread_id: str,
+    agent_mode: str,
+    message: str,
+    user_id: str | None = None,
+    db: Session | None = None,
+) -> dict:
+    agent_id = resolve_request_agent_id(request, agent_mode)
+    agent_prompt = request.agent_prompt or get_default_agent_prompt(agent_id)
     configurable = {
         "thread_id": thread_id,
-        "agent_id": resolve_request_agent_id(request, agent_mode),
+        "agent_id": agent_id,
+        "agent_mode": agent_mode,
         "agent_model": request.agent_model,
-        "agent_prompt": request.agent_prompt,
+        "agent_prompt": agent_prompt,
     }
+    if user_id and db and request.agent_model:
+        creds = find_user_custom_model_credentials(db, user_id, request.agent_model)
+        if creds:
+            configurable["custom_model_base_url"] = creds[0]
+            configurable["custom_model_api_key"] = creds[1]
+
     selected_model = resolve_runtime_model_id({"configurable": configurable}, message)
     configurable["agent_model"] = selected_model
     return {"configurable": configurable}
 
 
 def get_request_chat_model(config: dict, *, temperature: float = 0.1):
-    model_id = config.get("configurable", {}).get("agent_model")
+    configurable = config.get("configurable", {})
+    model_id = configurable.get("agent_model")
+    custom_base_url = configurable.get("custom_model_base_url")
+    custom_api_key = configurable.get("custom_model_api_key")
+    if custom_base_url and custom_api_key:
+        return ChatOpenAI(
+            model=model_id,
+            openai_api_key=custom_api_key,
+            openai_api_base=custom_base_url,
+            base_url=custom_base_url,
+            temperature=temperature,
+        )
     return build_chat_model(model_id, temperature=temperature)
 
 
 def get_runtime_agent_id(config: dict, fallback: str = "agent_tutor") -> str:
     agent_id = config.get("configurable", {}).get("agent_id")
     return agent_id or fallback
+
+
+MODEL_UNAVAILABLE_MESSAGE = "当前模型不可用，请更换模型"
+
+
+def is_model_invocation_error(exc: BaseException) -> bool:
+    return isinstance(exc, (openai.OpenAIError, httpx.HTTPError, json.JSONDecodeError, TimeoutError))
+
+
+def is_configured_model_unavailable(request, config: dict | None = None) -> bool:
+    if config and config.get("configurable", {}).get("custom_model_api_key"):
+        return False
+    requested_model = getattr(request, "agent_model", None)
+    return bool(requested_model) and not has_model(requested_model, category="text")
+
+
+def build_model_unavailable_notice(model_id: str) -> str:
+    return f"⚠️ 模型 {model_id} {MODEL_UNAVAILABLE_MESSAGE}"
+
+
+def build_model_unavailable_event(model_id: str) -> str:
+    return f"data: {json.dumps({'type': 'model_unavailable', 'model': model_id, 'message': MODEL_UNAVAILABLE_MESSAGE})}\n\n"
 
 
 @router.get("/ai/models")
@@ -229,7 +312,16 @@ async def upload_user_doc(
         return {"status": "error", "message": str(e)}
 
 @router.post("/chat")
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat(request: ChatRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    # 鉴权防盗用：若携带 Token，强制以 Token 签发者身份执行
+    if authorization and authorization.lower().startswith("bearer "):
+        token_payload = decode_access_token(authorization.split(" ", 1)[1])
+        if token_payload and token_payload.get("sub"):
+            request.sessionId = token_payload.get("sub")
+    elif request.agent_model and not has_model(request.agent_model, category="text"):
+        # 若试图调用非内置模型（自定义模型），强制要求有效鉴权
+        raise HTTPException(status_code=401, detail="使用自定义模型需要有效的认证令牌")
+
     agent_mode = resolve_agent_mode(request)
     user_id = resolve_user_id(request)
     thread_id = resolve_thread_id(request, user_id, agent_mode)
@@ -238,10 +330,22 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
-    save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="user", content=cleaned_msg)
+    save_chat_message(
+        db,
+        user_id=user_id,
+        agent_mode=agent_mode,
+        role="user",
+        content=cleaned_msg,
+        conversation_id=request.conversation_id,
+        project_id=request.project_id,
+    )
     
-    # 寒暄检测：如果是寒暄，则不检索知识库
-    if not is_greeting(cleaned_msg):
+    # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
+    should_search_knowledge = (
+        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        and not is_greeting(cleaned_msg)
+    )
+    if should_search_knowledge:
         try:
             all_chunks = retrieve_chunks_for_user(
                 db,
@@ -270,7 +374,17 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"请结合以上资料，直接且专业地回答用户的问题：{cleaned_msg}"
         )
 
-    config = build_agent_runtime_config(request, thread_id=thread_id, agent_mode=agent_mode, message=user_content)
+    config = build_agent_runtime_config(
+        request,
+        thread_id=thread_id,
+        agent_mode=agent_mode,
+        message=user_content,
+        user_id=user_id,
+        db=db,
+    )
+    model_unavailable_notice = ""
+    if is_configured_model_unavailable(request, config=config):
+        model_unavailable_notice = build_model_unavailable_notice(request.agent_model) + "\n\n"
 
     if agent_mode == "rag":
         try:
@@ -282,9 +396,20 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             final_reply = f"【✨ 强制开启专属知识库检索 (RAG模式)】\n\n{rag_result}"
         except Exception as e:
             final_reply = f"【✨ 强制 RAG 检索失败】\n\n发生错误: {str(e)}"
+            if is_model_invocation_error(e):
+                final_reply = build_model_unavailable_notice(config["configurable"]["agent_model"]) + "\n\n" + final_reply
         
         from app.services.profile_extractor import extract_and_update_profile
-        save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=final_reply, sender_id="agent_researcher")
+        save_chat_message(
+            db,
+            user_id=user_id,
+            agent_mode=agent_mode,
+            role="assistant",
+            content=final_reply,
+            sender_id="agent_researcher",
+            conversation_id=request.conversation_id,
+            project_id=request.project_id,
+        )
         asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, final_reply))
         return {"reply": final_reply, "history": []}
 
@@ -302,8 +427,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             elif isinstance(msg, AIMessage) and msg.content:
                 history_list.append(f"AI: {msg.content}")
     except Exception as e:
-        rag_result = query_data_structure_knowledge.invoke({"query": request.message})
-        final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，已直接为您调用本地 RAGFlow 检索】\n\n{rag_result}"
+        try:
+            rag_result = query_data_structure_knowledge.invoke({"query": request.message})
+            final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，已直接为您调用本地 RAGFlow 检索】\n\n{rag_result}"
+        except Exception as rag_err:
+            final_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，本地检索不可用，请稍后重试】"
+        if is_model_invocation_error(e):
+            final_reply = build_model_unavailable_notice(config["configurable"]["agent_model"]) + "\n\n" + final_reply
         final_reply = strip_reference_source_block(final_reply)
         history_list = []
     
@@ -322,10 +452,19 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             print(f"[DB Error] Failed to save code diagnosis: {db_err}")
 
     from app.services.profile_extractor import extract_and_update_profile
-    save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=final_reply, sender_id=get_runtime_agent_id(config))
+    save_chat_message(
+        db,
+        user_id=user_id,
+        agent_mode=agent_mode,
+        role="assistant",
+        content=final_reply,
+        sender_id=get_runtime_agent_id(config),
+        conversation_id=request.conversation_id,
+        project_id=request.project_id,
+    )
     asyncio.create_task(extract_and_update_profile(user_id, request.message, final_reply))
     return {
-        "reply": final_reply,
+        "reply": model_unavailable_notice + final_reply,
         "history": history_list
     }
 
@@ -354,6 +493,112 @@ async def get_diagnosis_history(user_id: str, db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+class SaveChatHistoryRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=255)
+    agent_mode: Literal["tutor", "rag", "chat", "paper"] = "paper"
+    role: Literal["user", "assistant", "system"] = "user"
+    content: str = Field(..., min_length=1, max_length=100000)
+    sender_id: Optional[str] = Field(default=None, max_length=64)
+    conversation_id: Optional[str] = Field(default=None, max_length=64)
+    project_id: Optional[str] = Field(default=None, max_length=64)
+    payload: Optional[dict] = None
+
+
+class ChatHistoryItem(BaseModel):
+    role: Literal["user", "assistant", "system"] = "user"
+    content: str = Field(..., min_length=1, max_length=100000)
+    agent_mode: Optional[Literal["tutor", "rag", "chat", "paper"]] = None
+    sender_id: Optional[str] = Field(default=None, max_length=64)
+    conversation_id: Optional[str] = Field(default=None, max_length=64)
+    project_id: Optional[str] = Field(default=None, max_length=64)
+    payload: Optional[dict] = None
+
+
+class SaveChatHistoryBatchRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=255)
+    agent_mode: Literal["tutor", "rag", "chat", "paper"] = "paper"
+    conversation_id: Optional[str] = Field(default=None, max_length=64)
+    project_id: Optional[str] = Field(default=None, max_length=64)
+    messages: List[ChatHistoryItem] = Field(..., min_length=1, max_length=50)
+
+
+@router.post("/chat/history")
+async def create_chat_history_message(
+    payload: SaveChatHistoryRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        record = save_chat_message(
+            db,
+            user_id=payload.user_id,
+            agent_mode=payload.agent_mode,
+            role=payload.role,
+            content=payload.content,
+            sender_id=payload.sender_id,
+            conversation_id=payload.conversation_id,
+            project_id=payload.project_id,
+            payload=payload.payload,
+        )
+        return {
+            "status": "success",
+            "message": "历史工作记录已保存",
+            "data": {
+                "id": record.id,
+                "user_id": record.user_id,
+                "agent_mode": record.agent_mode,
+                "role": record.role,
+                "content": record.content,
+                "sender_id": record.sender_id,
+                "conversation_id": record.conversation_id,
+                "project_id": record.project_id,
+                "payload": record.payload,
+                "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S") if record.created_at else None,
+            },
+        }
+    except Exception as e:
+        logger.error(f"[Chat History] Single save error: {e}", exc_info=True)
+        return {"status": "error", "message": "保存历史工作记录失败，请稍后重试"}
+
+
+@router.post("/chat/history/batch")
+async def create_chat_history_batch(
+    payload: SaveChatHistoryBatchRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        records = save_chat_messages_batch(
+            db,
+            user_id=payload.user_id,
+            agent_mode=payload.agent_mode,
+            items=payload.messages,
+            conversation_id=payload.conversation_id,
+            project_id=payload.project_id,
+        )
+        saved_records = [
+            {
+                "id": record.id,
+                "user_id": record.user_id,
+                "agent_mode": record.agent_mode,
+                "role": record.role,
+                "content": record.content,
+                "sender_id": record.sender_id,
+                "conversation_id": record.conversation_id,
+                "project_id": record.project_id,
+                "payload": record.payload,
+                "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S") if record.created_at else None,
+            }
+            for record in records
+        ]
+        return {
+            "status": "success",
+            "message": f"成功保存 {len(saved_records)} 条历史工作记录",
+            "data": saved_records,
+        }
+    except Exception as e:
+        logger.error(f"[Chat History] Batch save error: {e}", exc_info=True)
+        return {"status": "error", "message": "保存历史工作记录失败，请稍后重试"}
 
 
 @router.get("/chat/history")
@@ -422,10 +667,22 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
-    save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="user", content=cleaned_msg)
+    save_chat_message(
+        db,
+        user_id=user_id,
+        agent_mode=agent_mode,
+        role="user",
+        content=cleaned_msg,
+        conversation_id=request.conversation_id,
+        project_id=request.project_id,
+    )
     
-    # 寒暄检测：如果是寒暄，则不检索知识库
-    if not is_greeting(cleaned_msg):
+    # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
+    should_search_knowledge = (
+        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        and not is_greeting(cleaned_msg)
+    )
+    if should_search_knowledge:
         try:
             yield f"data: {json.dumps({'type': 'progress', 'agent': 'DataBot', 'status': '正在检索本地课件知识库...'})}\n\n"
             await asyncio.sleep(0.05)
@@ -455,11 +712,21 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             f"{combined_context}\n\n"
             f"请结合以上资料，直接且专业地回答用户的问题：{cleaned_msg}"
         )
+    
 
     ref_list = build_reference_source_block(ref_docs, agent_mode)
 
     full_reply = ""
-    config = build_agent_runtime_config(request, thread_id=thread_id, agent_mode=agent_mode, message=user_content)
+    config = build_agent_runtime_config(
+        request,
+        thread_id=thread_id,
+        agent_mode=agent_mode,
+        message=user_content,
+        user_id=user_id,
+        db=db,
+    )
+    if is_configured_model_unavailable(request, config=config):
+        yield build_model_unavailable_event(request.agent_model)
 
     if agent_mode == "rag":
         try:
@@ -480,18 +747,34 @@ async def stream_chat_events(request: ChatRequest, db: Session):
                 if verified_answer:
                     yield f"data: {json.dumps({'type': 'token', 'content': verified_answer})}\n\n"
         except Exception as e:
+            if is_model_invocation_error(e):
+                yield build_model_unavailable_event(config["configurable"]["agent_model"])
             err_msg = f"【✨ 强制 RAG 检索失败】\n\n发生错误: {str(e)}"
             full_reply = err_msg
             yield f"data: {json.dumps({'type': 'error', 'message': err_msg})}\n\n"
         
         from app.services.profile_extractor import extract_and_update_profile
-        save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=full_reply, sender_id="agent_researcher")
+        save_chat_message(
+            db,
+            user_id=user_id,
+            agent_mode=agent_mode,
+            role="assistant",
+            content=full_reply,
+            sender_id="agent_researcher",
+            conversation_id=request.conversation_id,
+            project_id=request.project_id,
+        )
         asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, full_reply))
         yield f"data: {json.dumps({'type': 'complete'})}\n\n"
         return
 
     # Normal Agent flow: LangGraph
-    yield f"data: {json.dumps({'type': 'progress', 'agent': 'Alina', 'status': 'Alina 正在规划您的学习路径并协同导师...'})}\n\n"
+    if agent_mode == "paper":
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'PaperBot', 'status': 'PaperBot 正在检索学术文献与研读分析...'})}\n\n"
+    elif agent_mode == "chat":
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'AI助手', 'status': 'AI 助手正在组织回答...'})}\n\n"
+    else:
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'Alina', 'status': 'Alina 正在规划您的学习路径并协同导师...'})}\n\n"
     await asyncio.sleep(0.05)
     initial_state = {"messages": [HumanMessage(content=user_content)]}
     
@@ -535,11 +818,22 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             
         from app.services.profile_extractor import extract_and_update_profile
         full_reply = strip_reference_source_block(full_reply)
-        save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=full_reply, sender_id=get_runtime_agent_id(config))
+        save_chat_message(
+            db,
+            user_id=user_id,
+            agent_mode=agent_mode,
+            role="assistant",
+            content=full_reply,
+            sender_id=get_runtime_agent_id(config),
+            conversation_id=request.conversation_id,
+            project_id=request.project_id,
+        )
         asyncio.create_task(extract_and_update_profile(user_id, request.message, full_reply))
             
     except Exception as e:
         print(f"[Agent Stream] Error: {e}")
+        if is_model_invocation_error(e):
+            yield build_model_unavailable_event(config["configurable"]["agent_model"])
         # Fallback to direct local RAG
         yield f"data: {json.dumps({'type': 'progress', 'agent': 'DataBot', 'status': '系统响应略有延迟，正在直连本地 RAGFlow 检索...' })}\n\n"
         try:
@@ -548,7 +842,16 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             fallback_reply = strip_reference_source_block(fallback_reply)
             yield f"data: {json.dumps({'type': 'token', 'content': fallback_reply})}\n\n"
             from app.services.profile_extractor import extract_and_update_profile
-            save_chat_message(db, user_id=user_id, agent_mode=agent_mode, role="assistant", content=fallback_reply, sender_id="agent_researcher")
+            save_chat_message(
+                db,
+                user_id=user_id,
+                agent_mode=agent_mode,
+                role="assistant",
+                content=fallback_reply,
+                sender_id=get_runtime_agent_id(config),
+                conversation_id=request.conversation_id,
+                project_id=request.project_id,
+            )
             asyncio.create_task(extract_and_update_profile(user_id, request.message, fallback_reply))
         except Exception as ex:
             yield f"data: {json.dumps({'type': 'error', 'message': f'系统出错: {str(ex)}'})}\n\n"
@@ -569,7 +872,6 @@ async def chat_stream(request: ChatRequest, authorization: str | None = Header(d
         raise HTTPException(status_code=401, detail="invalid token payload")
     # Use authenticated user's ID instead of client-provided one
     request.sessionId = auth_username
-    request.thread_id = auth_username
     return StreamingResponse(stream_chat_events(request, db), media_type="text/event-stream")
 
 

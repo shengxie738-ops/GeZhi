@@ -7,12 +7,14 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
+from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher
 from app.core.config import Settings
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client
 from app.core.responses import ok
 from app.repositories.json_store import JsonStore, make_record_key
 from app.services.code_sandbox import CodeSandbox
+from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 from app.services.model_registry import build_chat_model, has_model
 from app.utils.datetime import utc_now_iso
 
@@ -158,7 +160,8 @@ def _fallback_mistake_ai_analysis(
 
 
 @router.get("/exams/student/{user_id}/overview")
-async def get_student_exam_overview(user_id: str, db: Session = Depends(get_db)):
+async def get_student_exam_overview(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     store = JsonStore(db)
     exams = store.list_payloads("exams", "exam")
     attempts = store.list_payloads("exams", "attempt", owner_id=user_id)
@@ -184,7 +187,7 @@ async def get_student_exam_overview(user_id: str, db: Session = Depends(get_db))
 
 
 @router.get("/exams/teacher/dashboard")
-async def get_teacher_exam_dashboard(db: Session = Depends(get_db)):
+async def get_teacher_exam_dashboard(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
     exams = store.list_payloads("exams", "exam")
     attempts = store.list_payloads("exams", "attempt")
@@ -230,7 +233,7 @@ async def get_teacher_exam_dashboard(db: Session = Depends(get_db)):
 
 
 @router.get("/exams/teacher/error-analysis")
-async def get_teacher_error_analysis(db: Session = Depends(get_db)):
+async def get_teacher_error_analysis(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     mistakes = JsonStore(db).list_payloads("exams", "mistake")
     tags: dict[str, int] = {}
     for mistake in mistakes:
@@ -255,7 +258,7 @@ async def get_teacher_error_analysis(db: Session = Depends(get_db)):
 
 
 @router.get("/exams/questions/{question_id}/wrong-students")
-async def get_wrong_students(question_id: str, db: Session = Depends(get_db)):
+async def get_wrong_students(question_id: str, payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     mistakes = [
         item for item in JsonStore(db).list_payloads("exams", "mistake")
         if item.get("questionId") == question_id or item.get("id") == question_id
@@ -276,7 +279,7 @@ async def get_wrong_students(question_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/exams/questions/{question_id}/review-task")
-async def create_review_task(question_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def create_review_task(question_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     task_id = make_record_key("review")
     task = {"id": task_id, "taskId": task_id, "questionId": question_id, "status": "created", "createdAt": utc_now_iso(), **data}
@@ -285,7 +288,7 @@ async def create_review_task(question_id: str, payload: FreePayload, db: Session
 
 
 @router.post("/exams")
-async def create_exam(payload: FreePayload, db: Session = Depends(get_db)):
+async def create_exam(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     exam_id = str(data.get("id") or make_record_key("exam"))
     exam = {
@@ -306,7 +309,8 @@ async def create_exam(payload: FreePayload, db: Session = Depends(get_db)):
 
 
 @router.get("/exams/{exam_id}")
-async def get_exam_detail(exam_id: str, user_id: str = "guest_user", db: Session = Depends(get_db)):
+async def get_exam_detail(exam_id: str, user_id: str = "guest_user", payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     exam = JsonStore(db).get_payload("exams", "exam", exam_id) or {
         "id": exam_id,
         "title": "Exam not found",
@@ -322,9 +326,10 @@ async def get_exam_detail(exam_id: str, user_id: str = "guest_user", db: Session
 
 
 @router.post("/exams/{exam_id}/attempts")
-async def start_exam_attempt(exam_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def start_exam_attempt(exam_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     data = payload.model_dump()
     user_id = str(data.get("userId") or data.get("studentId") or data.get("username") or "guest_user")
+    ensure_self_or_teacher(user_id, auth)
     exam = JsonStore(db).get_payload("exams", "exam", exam_id) or {}
     attempt_id = str(data.get("attemptId") or f"{exam_id}:{user_id}")
     attempt = {
@@ -344,11 +349,12 @@ async def start_exam_attempt(exam_id: str, payload: FreePayload, db: Session = D
 
 
 @router.put("/exams/attempts/{attempt_id}/answers")
-async def save_answer(attempt_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def save_answer(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
     attempt = store.get_payload("exams", "attempt", attempt_id)
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    ensure_self_or_teacher(str(attempt.get("studentId") or ""), auth)
         
     exam = store.get_payload("exams", "exam", attempt.get("examId"))
     if exam and exam.get("startsAt"):
@@ -374,11 +380,12 @@ async def save_answer(attempt_id: str, payload: FreePayload, db: Session = Depen
 
 
 @router.post("/exams/attempts/{attempt_id}/submit")
-async def submit_attempt(attempt_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def submit_attempt(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
     attempt = store.get_payload("exams", "attempt", attempt_id)
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    ensure_self_or_teacher(str(attempt.get("studentId") or ""), auth)
         
     exam = store.get_payload("exams", "exam", attempt.get("examId"))
     if exam and exam.get("startsAt"):
@@ -484,6 +491,31 @@ async def submit_attempt(attempt_id: str, payload: FreePayload, db: Session = De
             }
             store.upsert("exams", "mistake", mistake_id, mistake, owner_id=student_id)
 
+    # 学习诊断是旁路消费者；其失败不能改变考试已提交的业务结果。
+    try:
+        await publish_learning_activity_safely(db, {
+            "student_id": student_id,
+            "source_module": "exams",
+            "content_type": "EXAM",
+            "content_id": str((exam or {}).get("id") or attempt.get("examId") or ""),
+            "attempt_id": attempt_id,
+            "result_payload": {"score": objective_score, "correct_count": correct_count, "wrong_count": len(wrong_questions), "status": "submitted"},
+            "status": "COMPLETED",
+            "occurred_at": attempt["submittedAt"],
+        })
+        for question in objective_questions:
+            question_id = str(question.get("id") or "")
+            if not question_id or question_id not in answers:
+                continue
+            await publish_learning_activity_safely(db, {
+                "student_id": student_id, "source_module": "exams", "content_type": "EXAM_QUESTION",
+                "content_id": question_id, "attempt_id": f"{attempt_id}:{question_id}",
+                "result_payload": {"answer": answers.get(question_id), "score": question.get("score", 0) if question_id not in {item['questionId'] for item in wrong_questions} else 0},
+                "status": "COMPLETED", "occurred_at": attempt["submittedAt"],
+            })
+    except Exception:
+        pass
+
     return ok({
         "status": "submitted",
         "submittedAt": attempt["submittedAt"],
@@ -495,7 +527,7 @@ async def submit_attempt(attempt_id: str, payload: FreePayload, db: Session = De
 
 
 @router.post("/exams/{exam_id}/programming-problems")
-async def create_programming_problem(exam_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def create_programming_problem(exam_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     problem_id = str(data.get("id") or make_record_key("prog"))
     problem = {"id": problem_id, "examId": exam_id, **data}
@@ -510,13 +542,13 @@ async def create_programming_problem(exam_id: str, payload: FreePayload, db: Ses
 
 
 @router.get("/exams/{exam_id}/submissions")
-async def get_exam_submissions(exam_id: str, db: Session = Depends(get_db)):
+async def get_exam_submissions(exam_id: str, payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     attempts = [item for item in JsonStore(db).list_payloads("exams", "attempt") if item.get("examId") == exam_id]
     return ok(attempts)
 
 
 @router.post("/exams/attempts/{attempt_id}/judge-programming")
-async def judge_programming(attempt_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def judge_programming(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     """对提交中的编程题进行自动评测"""
     store = JsonStore(db)
     attempt = store.get_payload("exams", "attempt", attempt_id)
@@ -578,9 +610,11 @@ async def judge_programming(attempt_id: str, payload: FreePayload, db: Session =
 @router.get("/exams/student/{user_id}/mistakes")
 async def get_student_mistakes(
     user_id: str,
+    payload: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
 ):
+    ensure_self_or_teacher(user_id, payload)
     mistakes = JsonStore(db).list_payloads("exams", "mistake", owner_id=user_id)
     data = {
         "summary": {
@@ -598,7 +632,8 @@ async def get_student_mistakes(
 
 
 @router.get("/exams/student/{user_id}/review-tasks")
-async def get_student_review_tasks(user_id: str, db: Session = Depends(get_db)):
+async def get_student_review_tasks(user_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    ensure_self_or_teacher(user_id, payload)
     """获取学生可见的讲评任务（全班任务 + 针对该学生的任务）"""
     store = JsonStore(db)
     all_tasks = store.list_payloads("exams", "review_task")
@@ -621,7 +656,7 @@ VALID_STATUS_TRANSITIONS = {
 
 
 @router.patch("/exams/{exam_id}/status")
-async def update_exam_status(exam_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def update_exam_status(exam_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """考试状态管理：draft → scheduled → running → completed"""
     store = JsonStore(db)
     exam = store.get_payload("exams", "exam", exam_id)
@@ -650,11 +685,13 @@ async def update_exam_status(exam_id: str, payload: FreePayload, db: Session = D
 @router.post("/exams/mistakes")
 async def create_mistake(
     payload: FreePayload,
+    auth: dict = Depends(get_auth_payload),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
     db: Session = Depends(get_db),
 ):
     data = payload.model_dump()
     user_id = str(data.get("userId") or data.get("studentId") or "guest_user")
+    ensure_self_or_teacher(user_id, auth)
     question = str(data.get("question") or data.get("questionTitle") or "")
     answer = str(data.get("answer") or data.get("studentAnswer") or "")
     mistake_id = make_record_key("mistake")
@@ -684,11 +721,14 @@ async def create_mistake(
 async def request_mistake_ai_analysis(
     mistake_id: str,
     payload: FreePayload,
+    auth: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
 ):
     store = JsonStore(db)
     mistake = store.get_payload("exams", "mistake", mistake_id)
+    if mistake:
+        ensure_self_or_teacher(str(mistake.get("studentId") or ""), auth)
     data = payload.model_dump()
     context = {**data, **(mistake or {})}
     agent_id = str(data.get("agentId") or "agent_mistake_analyst")
@@ -735,12 +775,27 @@ async def request_mistake_ai_analysis(
 async def update_mistake(
     mistake_id: str,
     payload: FreePayload,
+    auth: dict = Depends(get_auth_payload),
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
 ):
+    existing = JsonStore(db).get_payload("exams", "mistake", mistake_id)
+    if existing:
+        ensure_self_or_teacher(str(existing.get("studentId") or ""), auth)
     updated = JsonStore(db).patch("exams", "mistake", mistake_id, {**payload.model_dump(), "updatedAt": utc_now_iso()})
     if updated is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
+    if bool(updated.get("mastered")):
+        try:
+            await publish_learning_activity_safely(db, {
+                "student_id": str(updated.get("studentId") or "guest_user"), "source_module": "exams",
+                "content_type": "WRONG_QUESTION", "content_id": str(updated.get("questionId") or mistake_id),
+                "attempt_id": f"correction:{mistake_id}:{updated.get('updatedAt')}",
+                "result_payload": {"passed": True, "score": 100, "mastered": True, "mistake_id": mistake_id},
+                "status": "COMPLETED", "occurred_at": updated.get("updatedAt") or utc_now_iso(),
+            })
+        except Exception:
+            pass
     if is_miniprogram_client(x_gezhi_client):
         return api_response(updated)
     return ok(updated)

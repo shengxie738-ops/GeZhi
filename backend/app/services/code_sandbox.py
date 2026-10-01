@@ -229,6 +229,7 @@ class CodeSandbox:
             f.write(input_data)
             input_file = f.name
 
+        proc = None
         try:
             with open(input_file, "r") as stdin_file:
                 proc = subprocess.Popen(
@@ -291,6 +292,11 @@ class CodeSandbox:
         except subprocess.TimeoutExpired:
             raise TimeoutError("代码执行超时")
         finally:
+            if proc is not None:
+                if proc.stdout is not None:
+                    proc.stdout.close()
+                if proc.stderr is not None:
+                    proc.stderr.close()
             try:
                 os.unlink(input_file)
             except OSError:

@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8516
     BACKEND_CORS_ORIGINS: str = ""
 
+    # Academic search
+    OPENALEX_API_KEY: str = ""
+    CROSSREF_MAILTO: str = ""
+    ACADEMIC_CACHE_TTL_SECONDS: int = 600
+    ACADEMIC_HTTP_TIMEOUT_SECONDS: float = 12.0
+    ARXIV_CACHE_TTL_SECONDS: int = 86400
+    ARXIV_MIN_INTERVAL_SECONDS: float = 3.0
+    ARXIV_HTTP_TIMEOUT_SECONDS: float = 20.0
+
     # RAGFlow
     RAGFLOW_API_KEY: str
     RAGFLOW_BASE_URL: str
@@ -60,10 +69,33 @@ class Settings(BaseSettings):
     # LLM
     OPENAI_API_KEY: str
     OPENAI_API_BASE: str
-    LLM_MODEL: str = "Spark-X2-Flash"
-    LLM_MODEL_MAX: str = "qwen3.7-max"
-    LLM_MODEL_FLASH: str = "qwen3.6-flash"
-    LLM_MODEL_DEFAULT: str = "qwen3.7-plus"  # 作业/考试/学情分析默认使用的模型
+    # 全模态（omni）语音模型 Key；为空时回落到 OPENAI_API_KEY（同一 MaaS 实例）
+    QWEN_OMNI_API_KEY: str = ""
+    LLM_MODEL: str = "qwen3.8-max"
+    LLM_MODEL_MAX: str = "qwen3.8-max"
+    LLM_MODEL_FLASH: str = "qwen3.7-flash"
+
+    # Teacher AI lesson preparation
+    AI_LESSON_PREP_API_KEY: str = ""
+    # 模型广场（model_registry）使用的智谱 Key；为空时回落到 AI_LESSON_PREP_API_KEY
+    ZHIPU_MODEL_API_KEY: str = ""
+    AI_LESSON_PREP_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    AI_LESSON_PREP_MODEL: str = "glm-4.5-air"
+    AI_LESSON_PREP_MAX_INPUT_TOKENS: int = 81920
+    AI_LESSON_PREP_MAX_OUTPUT_TOKENS: int = 49152
+    AI_LESSON_PREP_TIMEOUT_SECONDS: int = 90
+    COURSEWARE_FRONTEND_ROOT: str = ""
+    LLM_MODEL_DEFAULT: str = "qwen3.7-flash"  # 作业/考试/学情分析默认使用的模型
+
+    # iFlytek Spark (科大讯飞星火)
+    SPARK_API_KEY_ULTRA: str = "***REMOVED***"
+    SPARK_API_KEY_LITE: str = "***REMOVED***"
+    SPARK_API_KEY_X: str = "***REMOVED***"
+    SPARK_BASE_URL: str = "https://spark-api-open.xf-yun.com/v1"
+
+    # Xiaomi Mimo (小米大模型)
+    MIMO_API_KEY: str = "***REMOVED***"
+    MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
 
     # Qwen image generation
     QWEN_IMAGE_ENABLED: bool = False

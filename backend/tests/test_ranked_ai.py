@@ -65,18 +65,19 @@ class RankedAiTest(unittest.TestCase):
                             userId="student-1",
                             agentId="agent_ranked_coach",
                             agentName="排位赛AI教练",
-                            agentModel="deepseek-v4-pro",
+                            agentModel="qwen3.8-max",
                             agentPrompt="Only give ranked improvement advice.",
                             question="我的失误在哪里？",
                             context={"score": 1980, "streak": 5},
                         ),
+                        {"sub": "student-1", "role": "student"},
                         db,
                     )
                 )["data"]
 
             build_model.assert_called_once()
-            self.assertEqual(build_model.call_args.args[0], "deepseek-v4-pro")
-            self.assertEqual(response["model"], "deepseek-v4-pro")
+            self.assertEqual(build_model.call_args.args[0], "qwen3.8-max")
+            self.assertEqual(response["model"], "qwen3.8-max")
             self.assertEqual(response["agentId"], "agent_ranked_coach")
             self.assertIn("Only give ranked improvement advice.", model.prompts[0])
             self.assertIn("我的失误在哪里？", model.prompts[0])
@@ -88,7 +89,7 @@ class RankedAiTest(unittest.TestCase):
         db = self.SessionLocal()
         model = FakeChatModel()
         try:
-            mistake = asyncio.run(get_ranked_mistakes("student-1", db))["data"][0]
+            mistake = asyncio.run(get_ranked_mistakes("student-1", {"sub": "student-1", "role": "student"}, db))["data"][0]
             with patch("app.api.endpoints.ranked.build_chat_model", return_value=model) as build_model:
                 response = asyncio.run(
                     analyze_ranked_mistake(
@@ -97,23 +98,24 @@ class RankedAiTest(unittest.TestCase):
                             userId="student-1",
                             agentId="agent_ranked_coach",
                             agentName="排位赛AI教练",
-                            agentModel="spark-x",
+                            agentModel="glm-4.6v",
                             agentPrompt="Focus on ranked mistakes.",
                         ),
+                        {"sub": "student-1", "role": "student"},
                         db,
                     )
                 )["data"]
 
             build_model.assert_called_once()
-            self.assertEqual(build_model.call_args.args[0], "spark-x")
+            self.assertEqual(build_model.call_args.args[0], "glm-4.6v")
             self.assertEqual(response["agentId"], "agent_ranked_coach")
-            self.assertEqual(response["model"], "spark-x")
+            self.assertEqual(response["model"], "glm-4.6v")
             self.assertEqual(response["diagnosis"], "DFS 缺少边界判断，导致访问越界。")
 
             stored = JsonStore(db).get_payload("ranked", "mistake", mistake["id"])
-            self.assertEqual(stored["aiAnalysis"]["model"], "spark-x")
+            self.assertEqual(stored["aiAnalysis"]["model"], "glm-4.6v")
             self.assertEqual(stored["aiAnalysis"]["agentId"], "agent_ranked_coach")
-            self.assertIn("DFS", model.prompts[0])
+            self.assertIn("Dijkstra", model.prompts[0])
         finally:
             db.close()
 

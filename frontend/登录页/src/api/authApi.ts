@@ -1,11 +1,39 @@
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://127.0.0.1:8516";
-const API_BASE = `${API_ORIGIN}/api`;
+const DEFAULT_API_ORIGIN = "https://gezhisystem.com";
+const LOCAL_DEV_API_ORIGIN = "http://127.0.0.1:9516";
+
+function normalizeApiOrigin(value?: string | null): string {
+  const origin = String(value || "").trim().replace(/\/+$/, "");
+  return origin.endsWith("/api") ? origin.slice(0, -4) : origin;
+}
+
+export function getApiOrigin(): string {
+  if (typeof window !== "undefined") {
+    const fromWindow =
+      (window as any).__API_ORIGIN__ ||
+      (window as any).__API_BASE_URL__ ||
+      window.localStorage?.getItem("apiOrigin") ||
+      window.localStorage?.getItem("API_ORIGIN");
+    if (fromWindow) return normalizeApiOrigin(fromWindow);
+
+    const hostname = window.location?.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return LOCAL_DEV_API_ORIGIN;
+    }
+  }
+  return DEFAULT_API_ORIGIN;
+}
+
+export function getApiBase(): string {
+  return `${getApiOrigin()}/api`;
+}
+
 const ENABLE_MOCK_AUTH = import.meta.env.VITE_ENABLE_MOCK_AUTH === "true";
 
 export function toBackendAssetUrl(path?: string): string {
   if (!path) return "";
   if (/^https?:\/\//i.test(path)) return path;
-  return path.startsWith("/") ? `${API_ORIGIN}${path}` : path;
+  const origin = getApiOrigin();
+  return path.startsWith("/") ? `${origin}${path}` : path;
 }
 
 export type Role = "student" | "teacher";
@@ -65,33 +93,46 @@ export interface AuthResponse {
 }
 
 async function POST(path: string, body: Record<string, unknown>): Promise<AuthResponse> {
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return {
-        success: false,
-        message: errorData.message || `服务器错误 (${response.status})`,
-      };
-    }
-
-    return await response.json();
-  } catch (error) {
-    if (ENABLE_MOCK_AUTH) {
-      console.warn("[authApi] backend unavailable, using local mock auth", error);
-      return mockHandler(path, body);
-    }
-    console.error("[authApi] backend unavailable", error);
-    return {
-      success: false,
-      message: "后端服务不可用，请确认 FastAPI 已启动",
-    };
+  const primaryBase = getApiBase();
+  const basesToTry = [primaryBase];
+  if (primaryBase.includes(":9516")) {
+    basesToTry.push(primaryBase.replace(":9516", ":8516"));
+  } else if (primaryBase.includes(":8516")) {
+    basesToTry.push(primaryBase.replace(":8516", ":9516"));
   }
+
+  let lastError: unknown = null;
+  for (const base of basesToTry) {
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          success: false,
+          message: errorData.message || `服务器错误 (${response.status})`,
+        };
+      }
+
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (ENABLE_MOCK_AUTH) {
+    console.warn("[authApi] backend unavailable, using local mock auth", lastError);
+    return mockHandler(path, body);
+  }
+  console.error("[authApi] backend unavailable", lastError);
+  return {
+    success: false,
+    message: `后端服务不可用 (${primaryBase})，请确认 FastAPI 已启动`,
+  };
 }
 
 function readMockUsers(): Array<Record<string, unknown>> {

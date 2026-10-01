@@ -1,7 +1,7 @@
 from sqlalchemy import inspect, text
 
 from app.core.database import Base, SessionLocal, engine
-from app.models import chat_message, code_diagnosis, domain_record, gitea_account_binding, ranked_question, sms_verification_code, student_profile, user_account, user_knowledge, user_rag  # noqa: F401
+from app.models import chat_message, code_diagnosis, domain_record, gitea_account_binding, ranked_question, sms_verification_code, student_profile, user_account, user_custom_ai_model, user_knowledge, user_rag  # noqa: F401
 
 
 USER_ACCOUNT_COLUMNS = {
@@ -12,6 +12,12 @@ USER_ACCOUNT_COLUMNS = {
     "teacher_id": "VARCHAR(64) NOT NULL DEFAULT ''",
     "class_name": "VARCHAR(100) NOT NULL DEFAULT ''",
     "avatar_path": "VARCHAR(512) NOT NULL DEFAULT ''",
+}
+
+CHAT_MESSAGE_COLUMNS = {
+    "conversation_id": "VARCHAR(64) NULL",
+    "project_id": "VARCHAR(64) NULL",
+    "payload": "JSON NULL",
 }
 
 
@@ -44,6 +50,7 @@ def _sync_domain_payloads() -> None:
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_columns("user_accounts", USER_ACCOUNT_COLUMNS)
+    _ensure_columns("chat_messages", CHAT_MESSAGE_COLUMNS)
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE user_accounts MODIFY COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT ''"))
     _sync_domain_payloads()

@@ -21,29 +21,37 @@ for (const model of [
   'spark Ultra-32K',
   'spark Lite',
   'spark-x',
+  'qwen3.8-max',
+  'qwen3.8-max-0902',
+  'qwen3.7-flash',
+  'qwen3.8-flash',
+  'deepseek-v4-pro-0813',
+  'deepseek-v4-flash-0731',
+  'kimi-k2.7-code',
+  'kimi-k3',
+  'glm-5.2',
+  'glm-5.1',
+  'glm-4-flash',
+  'glm-4-plus',
+  'glm-4.5-air',
+  'glm-4.6v',
+]) {
+  assert.match(aiModels, new RegExp(model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
+for (const disabledModel of [
   'mimo-v2.5',
   'qwen3.7-plus',
   'qwen3.7-max',
   'qwen3.6-plus',
   'qwen3.6-max-preview',
   'qwen3.5-plus',
-  'deepseek-v4-pro',
-  'glm-5.2',
-  'kimi-k2.7-code',
-  'glm-4.5-air',
-  'glm-4.7',
-  'glm-4.6v',
-]) {
-  assert.match(aiModels, new RegExp(model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-}
-
-for (const imageModel of [
   'qwen-image-2.0',
   'qwen-image-2.0-pro',
   'qwen-image-max',
   'z-image-turbo',
 ]) {
-  assert.match(aiModels, new RegExp(imageModel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(aiModels, new RegExp(`id:\\s*['"]${disabledModel}['"]`));
 }
 
 for (const legacyModel of ['GPT-4-Turbo', 'Claude-3.5-Sonnet', 'Gemini-1.5-Pro']) {
@@ -51,24 +59,22 @@ for (const legacyModel of ['GPT-4-Turbo', 'Claude-3.5-Sonnet', 'Gemini-1.5-Pro']
   assert.doesNotMatch(mockData, new RegExp(legacyModel));
 }
 
-assert.match(aiModels, /export const DEFAULT_IMAGE_MODEL = 'qwen-image-2\.0-pro';/);
-assert.doesNotMatch(aiModels, /spark-api-open\.xf-yun\.com\/v1\/chat\/completions/);
-assert.match(aiModels, /apiModel:\s*'4\.0Ultra'/);
-assert.match(aiModels, /apiModel:\s*'lite'/);
-assert.match(aiModels, /apiModel:\s*'generalv3\.5'/);
+assert.match(aiModels, /export const DEFAULT_AGENT_MODEL = 'qwen3\.8-max';/);
+assert.match(aiModels, /export const DEFAULT_IMAGE_MODEL = '';/);
+assert.match(aiModels, /spark-api-open\.xf-yun\.com/);
+assert.doesNotMatch(aiModels, /xiaomimimo\.com/);
 assert.match(mockData, /name: 'Mira'/);
 assert.match(mockData, /role: 'AI引导图生成师'/);
 assert.match(mockData, /icon: 'ph-flow-arrow'/);
 assert.match(mockData, /avatarShellClass: 'bg-white shadow-\[0_10px_24px_rgba\(28,43,56,0\.10\)\] border border-white\/80'/);
 assert.match(mockData, /iconTextClass: 'text-\[#1c2b38\] text-\[18px\]'/);
-assert.match(mockData, /modelCategory: 'image'/);
-assert.match(mockData, /model: 'qwen-image-2\.0-pro'/);
+assert.match(mockData, /model: (?:'qwen-image-2\.0-pro'|DEFAULT_IMAGE_MODEL|'')/);
 assert.match(mockData, /把左侧问题转译成概念图与步骤图。/);
 assert.match(mockData, /id: 'agent_ranked_coach'/);
 assert.match(mockData, /name: '排位赛AI教练'/);
 assert.match(mockData, /role: '排位诊断与冲分策略教练'/);
 
-assert.match(agentsHook, /import\s+\{\s*DEFAULT_AGENT_MODEL,\s*DEFAULT_IMAGE_MODEL,\s*IMAGE_MODEL_OPTIONS,\s*TEXT_MODEL_OPTIONS,\s*mergeModelOptions\s*\}\s+from\s+['"]\.\.\/config\/aiModels\.js['"]/);
+assert.match(agentsHook, /import\s+\{[^}]*DEFAULT_AGENT_MODEL[^}]*\}\s+from\s+['"]\.\.\/config\/aiModels\.js['"]/);
 assert.match(agentsHook, /import\s+request\s+from\s+['"]\.\.\/utils\/request\.js['"]/);
 assert.match(agentsHook, /import\s+\{\s*agentApi\s*\}\s+from\s+['"]\.\.\/api\/agents\.js['"]/);
 assert.match(agentsHook, /const\s+updateAgentModel\s*=\s*async\s*\(agent,\s*modelId\)\s*=>/);
@@ -88,7 +94,7 @@ assert.match(html, /class="ph"/);
 assert.equal((html.match(/v-if="toast\.show"/g) || []).length, 1, 'should render a single global toast container');
 
 assert.match(chatModes, /agent_id:\s*agent\?\.id/);
-assert.match(chatModes, /agent_model:\s*agent\?\.model/);
+assert.match(chatModes, /agent_model:\s*(?:resolvedModel|agent\?\.model)/);
 assert.match(chatModes, /agent_prompt:\s*agent\?\.prompt/);
 assert.match(streamChat, /buildChatPayload\(\{[^}]*agent/s);
 assert.match(useChat, /agentResolver/);
@@ -96,13 +102,17 @@ assert.match(useChat, /getActiveChatAgent/);
 assert.match(main, /useChat\(auth\.currentUser,\s*showToast,\s*agentsState\.getAgentInfo\)/);
 assert.match(visualGuide, /imageModel/);
 assert.match(visualGuide, /image_model:\s*imageModel/);
+assert.match(streamChat, /data\.type === 'model_unavailable'/);
+assert.match(streamChat, /onModelUnavailable\(data\.model\)/);
+assert.match(streamChat, /typeof onModelUnavailable === 'function'/);
+assert.match(useChat, /showToast\(`模型 \$\{modelId\} 当前不可用，请更换模型`, 'error'\)/);
 
 const mergedTextModels = aiModelsModule.mergeModelOptions(
   [{ id: 'kimi-k2.7-code', label: 'kimi-k2.7-code from backend' }],
   aiModelsModule.TEXT_MODEL_OPTIONS,
 );
 assert.equal(
-  mergedTextModels.some((model) => model.id === 'glm-4.7'),
+  mergedTextModels.some((model) => model.id === 'glm-4.6v'),
   true,
   'backend model responses should not remove local fallback Zhipu models',
 );
