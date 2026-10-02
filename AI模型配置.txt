@@ -1,3 +1,0 @@
-model id=qwen3.7-plus，qwen3.8-flash，deepseek-v4-pro-0813，deepseek-v4-flash-0731，kimi-k3，qwen3.8-max-0902，
-base_url="https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-API Key：***REMOVED***

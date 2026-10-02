@@ -53,21 +53,21 @@ ZHIPU_TEXT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 IMAGE_GENERATION_ENDPOINT = "/services/aigc/multimodal-generation/generation"
 
 # 阿里 DashScope / 达摩院语音识别及 Qwen-Audio 端点
-DASHSCOPE_API_KEY = getattr(settings, "DASHSCOPE_API_KEY", "") or "***REMOVED***"
+DASHSCOPE_API_KEY = settings.DASHSCOPE_API_KEY
 DASHSCOPE_ASR_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
 DASHSCOPE_ASR_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription"
 QWEN_AUDIO_BASE_URL = "https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/api/v1"
 QWEN_AUDIO_ENDPOINT = "https://ws-ormgvfkztc6f2p76.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
-# 讯飞星火 Spark
-SPARK_API_KEY_ULTRA = getattr(settings, "SPARK_API_KEY_ULTRA", "***REMOVED***")
-SPARK_API_KEY_LITE = getattr(settings, "SPARK_API_KEY_LITE", "***REMOVED***")
-SPARK_API_KEY_X = getattr(settings, "SPARK_API_KEY_X", "***REMOVED***")
-SPARK_BASE_URL = getattr(settings, "SPARK_BASE_URL", "https://spark-api-open.xf-yun.com/v1")
+# 讯飞星火 Spark（Key 仅从 .env 注入）
+SPARK_API_KEY_ULTRA = settings.SPARK_API_KEY_ULTRA
+SPARK_API_KEY_LITE = settings.SPARK_API_KEY_LITE
+SPARK_API_KEY_X = settings.SPARK_API_KEY_X
+SPARK_BASE_URL = settings.SPARK_BASE_URL
 
-# 小米 Mimo
-MIMO_API_KEY = getattr(settings, "MIMO_API_KEY", "***REMOVED***")
-MIMO_BASE_URL = getattr(settings, "MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
+# 小米 Mimo（Key 仅从 .env 注入）
+MIMO_API_KEY = settings.MIMO_API_KEY
+MIMO_BASE_URL = settings.MIMO_BASE_URL
 DASHSCOPE_IMAGE_BASE_URL = "https://dashscope.aliyuncs.com"
 
 

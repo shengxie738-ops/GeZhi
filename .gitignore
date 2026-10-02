@@ -130,6 +130,10 @@ debug-*.md
 # 全模态模型配置（含明文 API Key，仅入 backend/.env，绝不提交）
 全模态语言模型配置.txt
 
+# 模型接入备忘（含明文 API Key，仅本地参考，绝不提交）
+AI模型配置.txt
+语音AI识别模型配置.txt
+
 # 外语模块本地调试产物（devboot 含本地测试账号引导）
 frontend/devboot.html
 frontend/devdebug.html
