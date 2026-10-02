@@ -6,11 +6,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.repositories.json_store import JsonStore
 
 GITEA_BASE_URL = "http://127.0.0.1:3000"
-GITEA_TOKEN = "***REMOVED***"
+# Token 仅从 .env（GITEA_API_TOKEN）注入，禁止硬编码
+GITEA_TOKEN = settings.GITEA_API_TOKEN
 GITEA_ORG = "campus"
 
 TARGETS = [

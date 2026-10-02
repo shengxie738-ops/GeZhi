@@ -25,6 +25,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 import requests
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.user_account import UserAccount
 from app.repositories.json_store import JsonStore
@@ -38,7 +39,8 @@ from app.utils.datetime import format_chinese_datetime
 
 # ── 配置 ──────────────────────────────────────────────
 GITEA_BASE_URL = "http://127.0.0.1:3000"
-GITEA_TOKEN = "***REMOVED***"
+# Token 仅从 .env（GITEA_API_TOKEN）注入，禁止硬编码
+GITEA_TOKEN = settings.GITEA_API_TOKEN
 GITEA_ORG = "campus"
 REPO_DATA_ROOT = Path(r"D:\软件杯代码仓库数据\团队仓库")
 CHINA_TZ = timezone(timedelta(hours=8))
@@ -313,7 +315,8 @@ def create_webhook(repo_name: str) -> bool:
                 "config": {
                     "url": webhook_url,
                     "content_type": "json",
-                    "secret": "***REMOVED***",
+                    # Webhook 密钥仅从 .env（GITEA_WEBHOOK_SECRET）注入
+                    "secret": settings.GITEA_WEBHOOK_SECRET,
                 },
                 "events": ["push", "pull_request"],
                 "active": True,
