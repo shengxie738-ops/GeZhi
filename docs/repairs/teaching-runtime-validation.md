@@ -239,3 +239,88 @@ policy changes; real institution/source roster/delegation ownership; manager
 recovery/retention/archive policy; browser permission and user journey acceptance;
 query cost and production latency; authorized migration/backup/rollback and release.
 No B2/B3 feature, real course, real learner grant or feature activation is delivered.
+
+## B2 Task6 bounded signed HTTP source integration
+
+This later checkpoint mounts a separate finite B2 router structurally under the
+same `/api/teaching` prefix. Isolated tests mount B1 and B2 routers directly; they
+never execute the aggregate router, main application or startup. The exact B1
+async current-account dependency, dedicated DB dependency, error envelope and
+commit-before-success helper are reused. No bearer role, body owner/student ID,
+module import or fixture substitution grants production authority.
+
+The source workflow is public draft create/replace, separately authorized private
+save, immutable freeze, public-only release preview and complete recipient pages,
+bound confirmation, learner release read, inert text/code submissions, immutable
+own history and scoped teacher views. The original B1 receipt endpoints recover
+all seven finite B2 write actions under current object-specific rights; there is
+no second recovery token or current-state replacement of an original acceptance.
+Unknown or lost responses retain the original action/scope/key. A 404 recovery
+means outcome remains unknown, not permission to generate a replacement key.
+
+All B2 detail and mutation routes reject query parameters; lists reject unknown,
+duplicate and invalid fields, use limits 1–100/default 50, and retain the existing
+nine-kind bounded cursor codec and actor/object/query/projection bindings.
+The shared original receipt-detail route now rejects queries and malformed IDs.
+Private answers, private hashes and recipient snapshots do not appear in learner
+DTOs or acceptance receipts. Shared private-error logging records only a
+correlation ID and exception class; no exception text, traceback, authored text,
+SQL statement or parameters are logged by that handler.
+
+B2 `configured`, `installed` and `available` describe read readiness only.
+Installation requires the actual matching B2 physical shape and component ledger;
+production availability additionally requires B1 readiness and the assignment
+flag plus the unchanged vendor/schema gate. SQLite remains synthetic and vendor
+unverified. Every stage and the overall capability explicitly report
+`writes_available=false`, `write_reason=write_safety_unproven`; public write
+actions stay empty. B3 feedback and B4 revisions stay unavailable. Accepted
+submission DTOs say execution `not_available` and assessment `not_implemented`;
+there is no grading, evaluation, mastery or code-execution claim.
+
+The positive signed ASGI journey uses the existing five function-scoped b2case
+readiness/transaction/hard-gate/fixed-UTC substitutions, with only the existing
+fixed-UTC target advanced for historical replay. Only the DB request dependency
+is overridden; signatures and current persisted accounts are real in this
+synthetic process. Genuine feature-off, schema/vendor, dedicated-transaction and
+hard-gate refusals are separate. Commit tests inject a scoped synthetic exception
+before or after the actual Session commit; these are simulated outcomes, not
+actual network transport or MySQL commit-ambiguity evidence. The ordinary loss
+case sets aside a completed HTTP response before a later business write/GET and
+recovers the original receipt. It does not establish frontend stale-response
+fencing or an actual socket-delivery failure.
+
+### Additional B2 actual-runtime requirements: all NOT RUN
+
+The preceding fourteen B1 actual-MySQL gates and separate B1 migration gate remain
+NOT RUN. None is satisfied by B2 source, isolated ASGI or SQLite results.
+
+1. **NOT RUN — separate additive B2 migration.** Verify authorized DB identity,
+   actual composite FKs, unique indexes, checks, byte/collation behavior, partial
+   compatible reentry and the unchanged B1 physical contract/data
+2. **NOT RUN — two release confirmations.** Same intent yields one release and
+   receipt; different intents for one version yield one release and conflict,
+   including atomic complete recipient and empty-head rows
+3. **NOT RUN — simultaneous submissions.** Two initial null parents or identical
+   later parents yield exactly one head advancement, with no root duplicate,
+   fork or partial submission/event/receipt state
+4. **NOT RUN — authority/lifecycle/deadline races.** Establish both actual lock
+   orderings for release versus roster/role/source revocation and submission
+   versus withdrawal/archive/deadline, final DB time and independent observers.
+   Relevant lock traces, not sleeps alone, are required
+5. **NOT RUN — post-clock waits and commit recovery.** Prove actual B2 FK/unique
+   waits, real commit ambiguity and recovery rights after authority change.
+   Keep the hard gate closed until a separately reviewed solution and vendor
+   evidence establish safety; SQLite success does not establish it
+6. **NOT RUN — rollout integrity and cost.** Account incarnation/username reuse,
+   coherent multi-worker policy generations, real institution/source-roster/
+   delegation ownership, retention/archive/recovery policy, query bounds,
+   cross-worker visibility, acceptable production latency and performance remain
+   prerequisites
+7. **NOT RUN — teacher/learner browser and operational release.** Actual browser
+   journey, durable data persistence, frontend context/recovery/stale-response
+   wiring, approved business migration/backup/rollback and release authorization
+   are missing. Flags-off does not imply a historical read-only fallback
+
+No native MySQL, migration execution, server/socket, browser, provider, external
+secret, package installation, paused Git semantics, commit, push, deployment,
+activation, B3/B4 feature or production acceptance is part of this checkpoint.

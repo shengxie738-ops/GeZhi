@@ -277,7 +277,8 @@ async def test_capabilities_preserve_stage_dependency_and_uninstalled_distinctio
     assert cap["feedback"]["reason"] == cap["revisions"]["reason"] == "dependency_disabled"
     db.info["teaching_policy_provider"] = lambda: dataclasses.replace(snapshot(), assignments_enabled=True, feedback_enabled=True, revisions_enabled=True)
     cap = data(await request(app, "GET", "/api/teaching/capabilities"))
-    assert all(not cap[stage]["installed"] and not cap[stage]["available"] and cap[stage]["reason"] == "stage_unavailable" for stage in ("assignments", "feedback", "revisions"))
+    assert not cap["assignments"]["installed"] and not cap["assignments"]["available"] and cap["assignments"]["reason"] == "assessment_schema_missing"
+    assert all(not cap[stage]["installed"] and not cap[stage]["available"] and cap[stage]["reason"] == "stage_unavailable" for stage in ("feedback", "revisions"))
     assert not cap["can_create_course"] and not cap["writes_available"]
 
 

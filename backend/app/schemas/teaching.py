@@ -171,8 +171,10 @@ class RoleListDTO(StrictDTO):
 class StageDTO(StrictDTO):
     configured: bool
     installed: bool
-    available: bool
+    available: bool = Field(description="Stage read readiness only; never write availability")
     reason: str
+    writes_available: Literal[False] = False
+    write_reason: Literal["write_safety_unproven"] = "write_safety_unproven"
 
 
 class CapabilityDTO(StrictDTO):

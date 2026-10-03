@@ -608,13 +608,27 @@ def get_capabilities(session: Session, actor_id: str) -> CapabilityDTO:
     assignments = stage(inputs.assignments_enabled, available)
     if available and inputs.assignments_enabled:
         from app.services.teaching.assessment_access import require_assessment_available
-        try:
-            require_assessment_available(session, inputs)
-        except HTTPException as exc:
-            if exc.status_code != 503:
-                raise
+        from app.services.teaching.assessment_schema import (
+            B2_CONTRACT_HASH, B2_SCHEMA_VERSION, inspect_assessment_schema,
+        )
+        # Importing B2 or substituting a test readiness function never establishes
+        # installation: inspect the actual supplied connection's shape and ledger.
+        report = inspect_assessment_schema(session.connection())
+        installed = (report.shape_valid and report.ledger_present
+                     and report.version == B2_SCHEMA_VERSION
+                     and report.contract_hash == B2_CONTRACT_HASH)
+        if not installed:
+            assignments = StageDTO(configured=True, installed=False, available=False,
+                                   reason="assessment_schema_incompatible" if report.issues else "assessment_schema_missing")
         else:
-            assignments = StageDTO(configured=True, installed=True, available=True, reason="read_ready")
+            try:
+                require_assessment_available(session, inputs)
+            except HTTPException as exc:
+                if exc.status_code != 503:
+                    raise
+                assignments = StageDTO(configured=True, installed=True, available=False, reason=exc.detail)
+            else:
+                assignments = StageDTO(configured=True, installed=True, available=True, reason="read_ready")
     return CapabilityDTO(account_role=actor.role, configured=inputs.enabled, available=available,
                          can_create_course=available and actor.role == "teacher" and policy.source_roster.valid,
                          reason=reason or "available",

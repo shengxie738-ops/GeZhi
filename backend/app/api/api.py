@@ -34,3 +34,6 @@ api_router.include_router(git_coach.router, prefix="", tags=["git_coach"])
 
 from app.api.endpoints import teaching
 api_router.include_router(teaching.router, prefix="", tags=["teaching"])
+
+from app.api.endpoints import teaching_assessment
+api_router.include_router(teaching_assessment.router, prefix="", tags=["teaching-assessment"])
