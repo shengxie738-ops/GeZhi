@@ -16,7 +16,7 @@ from types import MappingProxyType
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import event, text
+from sqlalchemy import event, text, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -176,6 +176,49 @@ def _roots(session, actor, scope, object_ref):
     return LockedContext(actor, scope, course=course, offering=offering, object_ref=object_ref, session=session)
 
 
+def _course_visibility_candidates(session, roots, action):
+    if roots.scope.kind != "course" or action not in {TeachingAction.UPDATE_COURSE, TeachingAction.CREATE_OFFERING}:
+        return ()
+    actor = roots.actor_account.username
+    enrolled = session.query(Enrollment.id).filter(Enrollment.institution_id == roots.scope.institution_id,
+        Enrollment.offering_id == Offering.id, Enrollment.student_id == actor).exists()
+    granted = session.query(TeachingRole.id).filter(TeachingRole.institution_id == roots.scope.institution_id,
+        TeachingRole.offering_id == Offering.id, TeachingRole.subject_id == actor).exists()
+    # No status, period or lifecycle filter: only final authority can decide
+    # visibility. The held Course mutex protects all of these Offering shells.
+    rows = session.query(Offering.id).filter(Offering.institution_id == roots.scope.institution_id,
+        Offering.course_id == roots.course.id, or_(enrolled, granted)).order_by(Offering.id).all()
+    return tuple(row[0] for row in rows)
+
+
+def _course_visibility_rows(session, roots, plan):
+    ids, actor, institution = plan.course_visibility_offering_ids, roots.actor_account.username, roots.scope.institution_id
+    shells = {}
+    for identifier in ids:
+        shell = _fresh(session, Offering, Offering.id == identifier,
+            Offering.institution_id == institution, Offering.course_id == roots.course.id)
+        if shell is None or (shell.id, shell.institution_id, shell.course_id) != (identifier, institution, roots.course.id):
+            _error(503, "lock_footprint_changed")
+        shells[identifier] = shell
+    roles = {identifier: _fresh(session, TeachingRole, TeachingRole.institution_id == institution,
+        TeachingRole.offering_id == identifier, TeachingRole.subject_id == actor, lock=True) for identifier in ids}
+    enrollments = {identifier: _fresh(session, Enrollment, Enrollment.institution_id == institution,
+        Enrollment.offering_id == identifier, Enrollment.student_id == actor, lock=True) for identifier in ids}
+    snapshots = []
+    for identifier in ids:
+        role, enrollment = roles[identifier], enrollments[identifier]
+        if role is None and enrollment is None:
+            _error(503, "lock_footprint_changed")
+        for row, subject_field in ((role, "subject_id"), (enrollment, "student_id")):
+            if row is not None and (row.institution_id, row.offering_id, getattr(row, subject_field)) != (institution, identifier, actor):
+                _error(503, "lock_footprint_changed")
+        # Detached frozen value objects remain outside context.roles/enrollments
+        # and _post_clock's mutable-row allowance. These locks authorize only
+        # denial classification, never mutation of another Offering or relation.
+        snapshots.append(access.readonly_course_visibility(shells[identifier], role, enrollment))
+    return tuple(snapshots)
+
+
 def _preview_fingerprint(row):
     values = {column.name: getattr(row, column.name) for column in row.__table__.columns}
     for key, value in values.items():
@@ -217,6 +260,9 @@ def _complete_plan(plan, roots, lookup, footprint):
     if not isinstance(plan, LockPlan) or (plan.root_course_id, plan.root_offering_id) != expected_roots or plan.receipt_lookup != lookup:
         _error(503, "invalid_lock_footprint")
     if plan.preview_id != (footprint.preview_id if footprint else None):
+        _error(503, "invalid_lock_footprint")
+    if (plan.course_visibility_offering_ids != roots.course_visibility_offering_ids
+            or any(not exact_identifier(identifier, 36) for identifier in plan.course_visibility_offering_ids)):
         _error(503, "invalid_lock_footprint")
     actor = roots.actor_account.username
     source = roots.course.source_teacher_id if roots.course else actor
@@ -295,13 +341,24 @@ def _no_mutation(session):
 
 def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
     _require_transaction(session)
+    # Trusted identity/policy/schema preflight precedes operation collection.
+    # Dialect reflection has its own read-only statements (e.g. SQLite PRAGMA);
+    # it must conclude the real readiness refusal, not run under the narrower
+    # server-operation SQL whitelist. No callback or mutation runs here.
+    require_clean_transaction(session)
+    connection = session.connection()
+    transaction = connection.get_transaction()
+    _require_same_transaction(connection, transaction)
+    with session.no_autoflush:
+        actor, initial = access._begin_read(session, actor_id)
+    require_clean_transaction(session)
+    _require_same_transaction(connection, transaction)
     with _no_mutation(session):
-        return _collect_locked_context(session, actor_id, action, scope, intent=intent,
-            mutation=mutation, lookup=lookup, object_ref=object_ref, write=write)
+        return _collect_locked_context(session, action, scope, actor=actor, initial=initial,
+            intent=intent, mutation=mutation, lookup=lookup, object_ref=object_ref, write=write)
 
 
-def _collect_locked_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
-    actor, initial = access._begin_read(session, actor_id)
+def _collect_locked_context(session, action, scope, *, actor, initial, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
     if write:
         _require_write_safety(session)
     if not isinstance(scope, ScopeRef) or scope.institution_id != initial.institution_id:
@@ -309,6 +366,7 @@ def _collect_locked_context(session, actor_id, action, scope, *, intent=None, mu
     action = access._action(action)
     access._validate_action_scope(action, scope)
     roots = _roots(session, actor, scope, object_ref)
+    roots = replace(roots, course_visibility_offering_ids=_course_visibility_candidates(session, roots, action))
     if intent is not None:
         intent = replace(intent, actor_id=actor.username)
         lookup = ReceiptLookup.from_intent(intent)
@@ -318,7 +376,8 @@ def _collect_locked_context(session, actor_id, action, scope, *, intent=None, mu
     footprint = _preview_footprint(session, roots, preview_id)
     if mutation is None:
         plan = LockPlan(roots.course.id if roots.course else None,
-                        roots.offering.id if roots.offering else None, receipt_lookup=lookup)
+                        roots.offering.id if roots.offering else None, receipt_lookup=lookup,
+                        course_visibility_offering_ids=roots.course_visibility_offering_ids)
     else:
         plan = mutation.collect_locks(session, intent, roots, footprint)
         require_clean_transaction(session)
@@ -331,6 +390,7 @@ def _collect_locked_context(session, actor_id, action, scope, *, intent=None, mu
     for subject in plan.enrollment_subject_ids:
         enrollments[subject] = _fresh(session, Enrollment, Enrollment.institution_id == scope.institution_id,
             Enrollment.offering_id == roots.offering.id, Enrollment.student_id == subject, lock=True)
+    visibility = _course_visibility_rows(session, roots, plan)
     preview = _preview_row(session, roots, footprint.preview_id, lock=True) if footprint else None
     if preview is not None and _preview_fingerprint(preview) != footprint.content_fingerprint:
         _error(503, "lock_footprint_changed")
@@ -339,7 +399,7 @@ def _collect_locked_context(session, actor_id, action, scope, *, intent=None, mu
     context = replace(roots, actor_account=accounts[actor.username], source_account=accounts[source_id],
         role=roles.get(actor.username), enrollment=enrollments.get(actor.username), receipt=receipt,
         accounts=MappingProxyType(accounts), roles=MappingProxyType(roles), enrollments=MappingProxyType(enrollments),
-        preview=preview, preview_footprint=footprint, lock_plan=plan,
+        preview=preview, preview_footprint=footprint, lock_plan=plan, course_visibility=visibility,
         pre_mutation=MappingProxyType({"course_revision": roots.course.revision if roots.course else None,
             "offering_revision": roots.offering.revision if roots.offering else None,
             "roster_revision": roots.offering.roster_revision if roots.offering else None,

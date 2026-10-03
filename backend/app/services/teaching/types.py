@@ -125,6 +125,53 @@ class ObjectRef:
 
 
 @dataclass(frozen=True)
+class ReadonlyOffering:
+    """Offering shell protected by its held Course mutex, never a mutation row."""
+    id: str
+    institution_id: str
+    course_id: str
+    state: str
+
+
+@dataclass(frozen=True)
+class ReadonlyTeachingRole:
+    id: str
+    institution_id: str
+    offering_id: str
+    subject_id: str
+    granted_account_role: str
+    label: str
+    permissions: tuple[str, ...] | None
+    scope: str
+    status: str
+    effective_from: datetime
+    effective_until: datetime | None
+    revision: int
+
+
+@dataclass(frozen=True)
+class ReadonlyEnrollment:
+    id: str
+    institution_id: str
+    offering_id: str
+    student_id: str
+    status: str
+    effective_from: datetime
+    effective_until: datetime | None
+    revision: int
+    source_kind: str
+    source_teacher_id: str
+
+
+@dataclass(frozen=True)
+class CourseVisibilitySnapshot:
+    """Actor-only readonly footprint for one offering under one Course root."""
+    offering: ReadonlyOffering
+    role: ReadonlyTeachingRole | None
+    enrollment: ReadonlyEnrollment | None
+
+
+@dataclass(frozen=True)
 class AuthorizationContext:
     """Internal refreshed row footprint; never serialize this object to a client."""
     actor_account: "UserAccount"
@@ -136,6 +183,7 @@ class AuthorizationContext:
     enrollment: "Enrollment | None" = None
     object_ref: ObjectRef | None = None
     receipt: "WriteReceipt | None" = None
+    course_visibility: tuple[CourseVisibilitySnapshot, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,6 +195,7 @@ class LockedContext(AuthorizationContext):
     preview: Any = None
     preview_footprint: "PreviewFootprint | None" = None
     lock_plan: "LockPlan | None" = None
+    course_visibility_offering_ids: tuple[str, ...] = ()
     pre_mutation: Mapping[str, Any] = field(default_factory=dict)
     session: Any = field(default=None, repr=False, compare=False)
     authorization: "AuthorizationSnapshot | None" = None
@@ -207,6 +256,7 @@ class LockPlan:
     preview_id: str | None = None
     receipt_lookup: ReceiptLookup | None = None
     target_subject_id: str | None = None
+    course_visibility_offering_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

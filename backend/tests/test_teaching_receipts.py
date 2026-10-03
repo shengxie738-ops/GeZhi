@@ -403,5 +403,5 @@ def test_final_policy_is_resampled_after_receipt_query(writes_case):
             execute(writes_case)
     finally:
         event.remove(db.bind, "after_cursor_execute", swap)
-    assert error.value.status_code == 403
+    assert error.value.status_code == 404
     assert counts(db, m) == (1, 1)
