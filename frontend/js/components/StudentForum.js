@@ -1,7 +1,8 @@
 import { renderMarkdown } from '../utils/safeRendering.js';
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { forumApi } from '../api/forum.js';
-import { toBackendAssetUrl } from '../config/env.js';
+import { resolveForumAvatar, onForumAvatarError, forumProvenanceLabel, hasForumPermission } from '../utils/forumIdentity.js';
+import { useForumOperations } from '../hooks/useForumOperations.js';
 import { formatTime } from '../utils/helpers.js';
 
 export default {
@@ -12,7 +13,6 @@ export default {
     },
     emits: ['show-toast'],
     setup(props, { emit }) {
-        // 帖子分类配置
         const categories = [
             { id: 'all', name: '全部话题', icon: 'ph-chat-circle-dots' },
             { id: 'qna', name: '课程答疑', icon: 'ph-graduation-cap' },
@@ -20,201 +20,233 @@ export default {
             { id: 'experience', name: '经验分享', icon: 'ph-lightbulb-filament' },
             { id: 'chat', name: '日常闲聊', icon: 'ph-smiley' }
         ];
-
-        const activeCategory = ref('all');
-        const sortBy = ref('latest'); // 'latest' (最新) | 'hot' (最热)
-        const currentPost = ref(null); // 当前查看的帖子详情，若为 null 则展示列表
-
-        // 发帖表单状态
+        const activeCategory = ref('all'), sortBy = ref('latest'), currentPost = ref(null);
         const isWritingPost = ref(false);
-        const newPost = ref({
-            title: '',
-            content: '',
-            category: 'qna',
-            tags: ''
-        });
-
-        // 回帖状态
-        const newReplyContent = ref('');
-        const isAiTyping = ref(false);
-
-        // 数据存储
-        const announcements = ref([]);
-        const hotTopics = ref([]);
-        const posts = ref([]);
-
-        // 加载全部论坛数据
-        const loadForumData = async () => {
-            try {
-                const [postsData, annsData, topicsData] = await Promise.all([
-                    forumApi.getPosts(),
-                    forumApi.getAnnouncements(),
-                    forumApi.getHotTopics()
-                ]);
-                posts.value = postsData;
-                announcements.value = annsData;
-                hotTopics.value = topicsData;
-
-                // 如果当前在看某篇帖子，更新它的详情数据
-                if (currentPost.value) {
-                    const latestPost = postsData.find(p => p.id === currentPost.value.id);
-                    if (latestPost) {
-                        currentPost.value = latestPost;
-                    } else {
-                        currentPost.value = null; // 帖子已被教师删除
-                    }
-                }
-            } catch (err) {
-                emit('show-toast', '论坛数据加载失败', 'error');
-            }
+        const emptyPost = () => ({title:'',content:'',category:'qna',tags:''});
+        const newPost = ref(emptyPost()), newReplyContent = ref(''), quickAskText = ref('');
+        const announcements = ref([]), hotTopics = ref([]), posts = ref([]);
+        const forumContext = ref(null), contextError = ref('');
+        const readState = ref({posts:'idle',announcements:'idle',topics:'idle'});
+        const readError = ref({posts:'',announcements:'',topics:''});
+        const drafts = new Map();
+        const pendingReplies = ref({});
+        let restoringReply = false;
+        let actor = '', disposed = false, propRevision = 0;
+        let postRevision = 0, quickRevision = 0, selectionVersion = 0, formVersion = 0;
+        const actorDraft = () => {
+            if (!drafts.has(actor)) drafts.set(actor,{post:emptyPost(),quick:'',replies:new Map(),replyVersions:new Map()});
+            return drafts.get(actor);
         };
-
-        // 过滤和排序后的帖子列表
+        const saveDrafts = () => {
+            if (!actor) return;
+            const saved = actorDraft();
+            saved.post = {...newPost.value}; saved.quick = quickAskText.value;
+            if (currentPost.value) saved.replies.set(currentPost.value.id,newReplyContent.value);
+        };
+        const operations = useForumOperations({
+            getSessionKey: () => JSON.stringify([localStorage.getItem('token') || '',propRevision]),
+            onSessionChange: reason => {
+                saveDrafts(); actor = ''; forumContext.value = null; contextError.value = ''; pendingReplies.value = {};
+                posts.value = []; announcements.value = []; hotTopics.value = [];
+                currentPost.value = null; newReplyContent.value = ''; newPost.value = emptyPost(); quickAskText.value = ''; isWritingPost.value = false;
+                readState.value = {posts:'idle',announcements:'idle',topics:'idle'};
+                readError.value = {posts:'',announcements:'',topics:''};
+                if (reason !== 'session') {
+                    contextError.value = '登录已失效，请重新登录';
+                    readState.value = {posts:'error',announcements:'error',topics:'error'};
+                    readError.value = {posts:contextError.value,announcements:contextError.value,topics:contextError.value};
+                }
+                if (reason === 'session') Promise.resolve().then(() => { if (!disposed) loadForumData(); });
+            }
+        });
+        const {pending} = operations;
+        const sync = () => operations.isCurrent(null);
+        watch(() => props.currentUser,() => { propRevision++; sync(); },{deep:true,flush:'sync'});
+        watch(newPost,() => postRevision++,{deep:true,flush:'sync'});
+        watch(newReplyContent,value => {
+            const id = currentPost.value?.id;
+            if (!actor || !id) return;
+            const saved = actorDraft(); saved.replies.set(id,value);
+            if (!restoringReply) saved.replyVersions.set(id,(saved.replyVersions.get(id) || 0) + 1);
+        },{flush:'sync'});
+        watch(quickAskText,() => quickRevision++,{flush:'sync'});
+        watch(isWritingPost,() => formVersion++,{flush:'sync'});
+        watch(() => currentPost.value?.id || '',(id,oldId) => {
+            selectionVersion++;
+            if (actor && oldId) actorDraft().replies.set(oldId,newReplyContent.value);
+            restoringReply = true;
+            newReplyContent.value = actor && id ? actorDraft().replies.get(id) || '' : '';
+            restoringReply = false;
+        },{flush:'sync'});
+        const canPost = computed(() => forumContext.value?.canPost === true && Boolean(actor));
+        const writeNotice = computed(() => contextError.value ? `${contextError.value}；当前仅可阅读` : !forumContext.value ? '请登录后发帖或回复' : !canPost.value ? '当前账号没有发帖权限' : '');
+        const requireWriter = () => { sync(); if (canPost.value) return true; emit('show-toast',writeNotice.value || '当前不可操作','warning'); return false; };
+        const invalidatePostReads = () => { operations.invalidate('posts'); operations.invalidate('view'); if (readState.value.posts === 'loading') readState.value.posts = posts.value.length ? 'ready' : 'idle'; };
+        const replacePost = updated => {
+            const index = posts.value.findIndex(p => p.id === updated.id);
+            if (index >= 0) posts.value[index] = updated;
+            if (currentPost.value?.id === updated.id && index >= 0) currentPost.value = updated;
+        };
+        const loadSection = async (key,method,target) => {
+            const ticket = operations.begin(key,{replace:true}); if (!ticket) return;
+            readState.value[key] = 'loading'; readError.value[key] = '';
+            try {
+                const data = await method({signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                target.value = data; readState.value[key] = data.length ? 'ready' : 'empty';
+                if (key === 'posts' && currentPost.value) currentPost.value = data.find(p => p.id === currentPost.value.id) || null;
+            } catch {
+                if (!operations.isCurrent(ticket)) return;
+                readState.value[key] = 'error'; readError.value[key] = '暂时不可用，请重试';
+            } finally { operations.finish(ticket); }
+        };
+        const loadContext = async () => {
+            const ticket = operations.begin('context',{replace:true}); if (!ticket) return;
+            if (!localStorage.getItem('token')) { forumContext.value = null; contextError.value = ''; operations.finish(ticket); return; }
+            try {
+                const data = await forumApi.getContext({signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                if (props.currentUser?.username && props.currentUser.username !== data.username) {
+                    forumContext.value = null; contextError.value = '账号信息与服务器不一致，请重新登录';
+                    return;
+                }
+                if (actor !== data.username) {
+                    saveDrafts(); actor = data.username;
+                    const saved = drafts.get(actor);
+                    newPost.value = saved ? {...saved.post} : emptyPost(); quickAskText.value = saved?.quick || '';
+                    newReplyContent.value = currentPost.value && saved ? saved.replies.get(currentPost.value.id) || '' : '';
+                }
+                forumContext.value = data; contextError.value = '';
+            } catch {
+                if (!operations.isCurrent(ticket)) return;
+                forumContext.value = null; contextError.value = '权限确认失败';
+            } finally { operations.finish(ticket); }
+        };
+        const loadForumData = async () => {
+            sync();
+            await Promise.allSettled([
+                loadSection('posts',options => forumApi.getPosts(options),posts),
+                loadSection('announcements',options => forumApi.getAnnouncements(options),announcements),
+                loadSection('topics',options => forumApi.getHotTopics(options),hotTopics),
+                loadContext()
+            ]);
+        };
         const filteredPosts = computed(() => {
             let result = [...posts.value];
-            
-            // 按分类过滤
-            if (activeCategory.value !== 'all') {
-                result = result.filter(p => p.category === activeCategory.value);
-            }
-            
-            // 排序
-            if (sortBy.value === 'latest') {
-                result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-            } else if (sortBy.value === 'hot') {
-                result.sort((a, b) => b.likes - a.likes);
-            }
-            
-            return result;
+            if (activeCategory.value !== 'all') result = result.filter(p => p.category === activeCategory.value);
+            return result.sort(sortBy.value === 'hot' ? (a,b) => (b.likes || 0) - (a.likes || 0) : (a,b) => new Date(b.createdAt) - new Date(a.createdAt));
         });
-
-        // 选中热议话题时，直接在列表过滤
-        const selectHotTopic = (tag) => {
-            activeCategory.value = 'all';
-            emit('show-toast', `已为您聚焦话题: #${tag}`, 'success');
-        };
-
-        // 帖子点赞交互
-        const toggleLike = async (post, event) => {
-            if (event) event.stopPropagation();
+        const selectHotTopic = tag => { activeCategory.value = 'all'; emit('show-toast',`话题：#${tag}`,'info'); };
+        const toggleLike = async (post,event) => {
+            event?.stopPropagation(); if (!requireWriter()) return;
+            const ticket = operations.begin(`post:${post.id}`); if (!ticket) return; invalidatePostReads();
             try {
-                const updatedPost = await forumApi.likePost(post.id);
-                if (updatedPost) {
-                    post.likes = updatedPost.likes;
-                    post.isLiked = true;
-                }
-            } catch (err) {
-                emit('show-toast', '点赞失败', 'error');
-            }
+                const updated = await forumApi.likePost(post.id,{signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads(); replacePost(updated);
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认点赞结果，请刷新帖子后查看','error'); }
+            finally { operations.finish(ticket); }
         };
-
-        // 评论点赞交互
-        const likeReply = async (post, reply) => {
+        const likeReply = async (post,reply) => {
+            if (!requireWriter()) return;
+            const ticket = operations.begin(`post:${post.id}`); if (!ticket) return; invalidatePostReads();
             try {
-                const updatedReply = await forumApi.likeReply(post.id, reply.id);
-                if (updatedReply) {
-                    reply.likes = updatedReply.likes;
-                    emit('show-toast', '点赞成功', 'success');
+                const updated = await forumApi.likeReply(post.id,reply.id,{signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads();
+                const live = posts.value.find(p => p.id === post.id);
+                const index = live?.replies.findIndex(r => r.id === reply.id);
+                if (index >= 0) live.replies[index] = updated;
+                if (currentPost.value?.id === post.id && currentPost.value !== live) {
+                    const selected = currentPost.value.replies.findIndex(r => r.id === reply.id); if (selected >= 0) currentPost.value.replies[selected] = updated;
                 }
-            } catch (err) {
-                emit('show-toast', '点赞失败', 'error');
-            }
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认点赞结果，请刷新帖子后查看','error'); }
+            finally { operations.finish(ticket); }
         };
-
-        // 查看帖子详情
-        const viewPost = async (post) => {
-            currentPost.value = post;
+        const viewPost = async post => {
+            sync(); currentPost.value = posts.value.find(p => p.id === post?.id) || null;
+            if (!currentPost.value || pending[`post:${post.id}`]) return;
+            const selection = selectionVersion, ticket = operations.begin('view',{replace:true}); if (!ticket) return;
+            operations.invalidate('posts');
             try {
-                const updatedPost = await forumApi.viewPost(post.id);
-                if (updatedPost) {
-                    post.views = updatedPost.views;
-                }
-            } catch (err) {}
-            nextTick(() => {
-                processCodeBlocks();
-            });
+                const updated = await forumApi.viewPost(post.id,{signal:ticket.signal});
+                if (!operations.isCurrent(ticket) || selection !== selectionVersion || currentPost.value?.id !== post.id) return;
+                operations.invalidate('posts');
+                // This endpoint is anonymous; its false permissions never replace
+                // the authenticated list's server-owned permission snapshot.
+                const live = posts.value.find(p => p.id === post.id); if (live) live.views = updated.views;
+                currentPost.value.views = updated.views;
+            } catch { if (operations.isCurrent(ticket) && selection === selectionVersion) emit('show-toast','浏览记录未能确认，帖子内容仍可阅读','warning'); }
+            finally { operations.finish(ticket); }
+            nextTick(() => { sync(); if (!disposed && selection === selectionVersion) processCodeBlocks(); });
         };
-
-        // 返回帖子列表
-        const backToList = () => {
-            currentPost.value = null;
-        };
-
-        // 触发发帖表单折叠
-        const toggleWritingForm = () => {
-            isWritingPost.value = !isWritingPost.value;
-        };
-
-        // 发帖实现
+        const backToList = () => { sync(); operations.invalidate('view'); currentPost.value = null; };
+        const toggleWritingForm = () => { if (!requireWriter()) return; isWritingPost.value = !isWritingPost.value; };
         const createPost = async () => {
-            const title = newPost.value.title.trim();
-            const content = newPost.value.content.trim();
-            if (!title || !content) {
-                emit('show-toast', '请填写标题和内容', 'error');
-                return;
-            }
-
-            const tagArray = newPost.value.tags
-                ? newPost.value.tags.replace(/，/g, ',').split(',').map(t => t.trim()).filter(Boolean)
-                : ['交流'];
-
+            if (!requireWriter()) return;
+            const title = newPost.value.title.trim(), content = newPost.value.content.trim();
+            if (!title || !content) { emit('show-toast','请填写标题和内容','error'); return; }
+            const revision = postRevision, form = formVersion;
+            const tags = newPost.value.tags ? newPost.value.tags.replace(/，/g,',').split(',').map(t => t.trim()).filter(Boolean) : [];
+            const ticket = operations.begin('create'); if (!ticket) return; invalidatePostReads();
             try {
-                const postObj = await forumApi.createPost({
-                    title,
-                    content,
-                    author: props.currentUserDisplayName || props.currentUser?.username || '求知者',
-                    authorUsername: props.currentUser?.username,
-                    avatar: props.currentUser?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${props.currentUser?.username || 'default'}`,
-                    category: newPost.value.category,
-                    tags: tagArray
-                });
-
-                // 重置表单
-                newPost.value.title = '';
-                newPost.value.content = '';
-                newPost.value.tags = '';
-                isWritingPost.value = false;
-
-                emit('show-toast', '帖子发表成功！', 'success');
-                await loadForumData();
-
-                // 如果是在“课程答疑”下发帖，触发 AI 导师秒回机制
-                if (postObj.category === 'qna') {
-                    // AI 自动回帖功能已被移除 (依据方案 A)
-                }
-            } catch (err) {
-                emit('show-toast', '发帖失败', 'error');
-            }
+                const result = await forumApi.createPost({title,content,category:newPost.value.category,tags},{signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads(); if (!posts.value.some(post => post.id === result.id)) posts.value.unshift(result); readState.value.posts = 'ready';
+                if (revision === postRevision && form === formVersion) { newPost.value = emptyPost(); isWritingPost.value = false; }
+                emit('show-toast','帖子发表成功','success');
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认是否发布，请先刷新帖子再决定是否重试','error'); }
+            finally { operations.finish(ticket); }
         };
-
-
-        // 提交回复
         const createReply = async () => {
-            const content = newReplyContent.value.trim();
-            if (!content) {
-                emit('show-toast', '请输入回复内容', 'error');
-                return;
-            }
-
+            if (!requireWriter()) return;
+            const post = posts.value.find(p => p.id === currentPost.value?.id);
+            if (!hasForumPermission(post,'canReply')) { emit('show-toast','当前不能回复这篇帖子','warning'); return; }
+            const content = newReplyContent.value.trim(); if (!content) { emit('show-toast','请输入回复内容','error'); return; }
+            const saved = actorDraft(), revision = saved.replyVersions.get(post.id) || 0;
+            const ticket = operations.begin(`post:${post.id}`); if (!ticket) return; pendingReplies.value[post.id] = true; invalidatePostReads();
             try {
-                await forumApi.createReply(currentPost.value.id, {
-                    author: props.currentUserDisplayName || props.currentUser?.username || '探求者',
-                    avatar: props.currentUser?.avatar_url || '',
-                    content,
-                    isAi: false
-                });
-                newReplyContent.value = '';
-                emit('show-toast', '回帖成功！', 'success');
-                await loadForumData();
-
-                nextTick(() => {
-                    processCodeBlocks();
-                });
-            } catch (err) {
-                emit('show-toast', '回帖失败', 'error');
-            }
+                const result = await forumApi.createReply(post.id,{content},{signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads();
+                const live = posts.value.find(p => p.id === post.id);
+                if (live && !live.replies.some(reply => reply.id === result.id)) live.replies.push(result);
+                if (revision === (saved.replyVersions.get(post.id) || 0)) {
+                    saved.replies.set(post.id,'');
+                    if (currentPost.value?.id === post.id) newReplyContent.value = '';
+                }
+                emit('show-toast','回复已发布','success');
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认是否发布，请先刷新帖子再决定是否重试','error'); }
+            finally { if (operations.finish(ticket)) pendingReplies.value[post.id] = false; }
         };
-
+        const sendQuickAsk = async () => {
+            if (!requireWriter()) return;
+            const content = quickAskText.value.trim(); if (!content) return;
+            const revision = quickRevision, ticket = operations.begin('quick'); if (!ticket) return; invalidatePostReads();
+            try {
+                const result = await forumApi.createPost({title:`课程答疑：${content.slice(0,80)}`,content,category:'qna',tags:[]},{signal:ticket.signal});
+                if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads(); if (!posts.value.some(post => post.id === result.id)) posts.value.unshift(result); readState.value.posts = 'ready';
+                if (revision === quickRevision) quickAskText.value = '';
+                emit('show-toast','课程答疑帖已发布','success');
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认是否发布，请先刷新帖子再决定是否重试','error'); }
+            finally { operations.finish(ticket); }
+        };
+        const deleteMyPost = async postId => {
+            if (!requireWriter()) return;
+            const post = posts.value.find(p => p.id === postId);
+            if (!hasForumPermission(post,'canDelete')) { emit('show-toast','当前没有删除权限','warning'); return; }
+            const ticket = operations.begin(`post:${postId}`); if (!ticket) return;
+            if (!confirm('确定要删除这篇帖子吗？')) { operations.finish(ticket); return; }
+            invalidatePostReads();
+            try {
+                await forumApi.deletePost(postId,{signal:ticket.signal}); if (!operations.isCurrent(ticket)) return;
+                invalidatePostReads(); posts.value = posts.value.filter(p => p.id !== postId);
+                if (currentPost.value?.id === postId) backToList();
+                emit('show-toast','帖子已删除','success');
+            } catch { if (operations.isCurrent(ticket)) emit('show-toast','未能确认删除结果，请刷新帖子后查看','error'); }
+            finally { operations.finish(ticket); }
+        };
         // 解析并附带“导入代码沙箱”的按钮
         const processCodeBlocks = () => {
             const pres = document.querySelectorAll('.ai-reply-card pre, .post-detail-content pre');
@@ -265,117 +297,22 @@ export default {
             }, 250);
         };
 
-        // 智能导师快速答疑专线交互
-        const quickAskText = ref('');
-        const sendQuickAsk = () => {
-            const text = quickAskText.value.trim();
-            if (!text) return;
-            
-            emit('show-toast', '正在向 Prof. X 智能体专线提问...', 'info');
-            quickAskText.value = '';
-
-            setTimeout(async () => {
-                emit('show-toast', 'Prof. X 为您在学术答疑板块创建了一个新帖！', 'success');
-                
-                try {
-                    const postObj = await forumApi.createPost({
-                        title: `关于「${text}」的智能答疑帖`,
-                        content: `我对「${text}」这一概念的算法实现有些不解，请问在真实项目中应当如何处理这一模型？`,
-                        author: props.currentUserDisplayName || props.currentUser?.username || '求知者',
-                        authorUsername: props.currentUser?.username,
-                        avatar: props.currentUser?.avatar_url || '',
-                        category: 'qna',
-                        tags: ['AI提问', '算法求助']
-                    });
-
-                    await loadForumData();
-                    // AI 自动回帖功能已被移除 (依据方案 A)
-                } catch (err) {
-                    console.error("快速发帖失败:", err);
-                }
-            }, 1000);
-        };
-
-        // 个人删帖交互
-        const deleteMyPost = async (postId) => {
-            if (!confirm('确定要删除这篇帖子吗？该操作不可恢复。')) return;
-            try {
-                await forumApi.deletePost(postId);
-                emit('show-toast', '帖子已删除', 'success');
-                if (currentPost.value && currentPost.value.id === postId) {
-                    backToList();
-                }
-                await loadForumData();
-            } catch (err) {
-                emit('show-toast', '删除失败', 'error');
-            }
-        };
-
-        // 监听 currentPost 详情状态的渲染
-        watch(currentPost, (newVal) => {
-            if (newVal) {
-                nextTick(() => {
-                    processCodeBlocks();
-                });
-            }
-        });
-
-        onMounted(() => {
-            loadForumData();
-            // 定期拉取，实现教师端发布新公告或修改 AI 内容的即时同步
-            const timer = setInterval(loadForumData, 15000);
-            onBeforeUnmount(() => clearInterval(timer));
-        });
-
-        // All forum content uses the same local fail-closed rendering boundary.
+        let timer;
+        onMounted(() => { loadForumData(); timer = setInterval(loadForumData,15000); });
+        onBeforeUnmount(() => { disposed = true; clearInterval(timer); operations.dispose(); drafts.clear(); });
         const formatMarkdown = renderMarkdown;
-
-        // ==================== 头像 URL 处理 ====================
-        const getFullAvatarUrl = (path, author) => {
-            if (!path) return `https://api.dicebear.com/7.x/notionists/svg?seed=${author || 'guest'}`;
-            // 将 localhost / 127.0.0.1 的绝对 URL 转为相对路径
-            const localMatch = path.match(/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/.*)$/);
-            if (localMatch) path = localMatch[1];
-            if (path.startsWith('http') || path.startsWith('data:')) return path;
-            return toBackendAssetUrl(path);
-        };
-
-        // 图片加载失败时使用 dicebear 兜底
-        const onAvatarError = (e, author) => {
-            e.target.src = `https://api.dicebear.com/7.x/notionists/svg?seed=${author || 'guest'}`;
-        };
-
         return {
-            getFullAvatarUrl,
-            onAvatarError,
-            categories,
-            activeCategory,
-            sortBy,
-            currentPost,
-            isWritingPost,
-            newPost,
-            newReplyContent,
-            isAiTyping,
-            announcements,
-            hotTopics,
-            filteredPosts,
-            selectHotTopic,
-            toggleLike,
-            likeReply,
-            viewPost,
-            backToList,
-            toggleWritingForm,
-            createPost,
-            createReply,
-            quickAskText,
-            sendQuickAsk,
-            formatMarkdown,
-            formatTime,
-            deleteMyPost
+            categories, activeCategory, sortBy, currentPost, isWritingPost, newPost, newReplyContent,
+            announcements, hotTopics, filteredPosts, selectHotTopic, toggleLike, likeReply, viewPost,
+            backToList, toggleWritingForm, createPost, createReply, quickAskText, sendQuickAsk,
+            formatMarkdown, formatTime, deleteMyPost, loadForumData, canPost, writeNotice,
+            pending, pendingReplies, readState, readError, contextError, resolveForumAvatar, onForumAvatarError,
+            forumProvenanceLabel, hasForumPermission
         };
     },
     template: `
         <div class="w-full h-full p-4 lg:p-6 flex flex-col overflow-hidden select-none relative bg-slate-50">
+            <div v-if="writeNotice" class="text-xs text-slate-600" role="status">{{ writeNotice }} <button @click="loadForumData">重试权限</button></div>
             <!-- 头部导航区 (仅在详情页显示) -->
             <div v-if="currentPost" class="flex items-center mb-4 w-full border-b border-slate-200 pb-3 shrink-0 select-none">
                 <button @click="backToList" 
@@ -418,14 +355,14 @@ export default {
                             <!-- 发帖人信息 -->
                             <div class="flex items-center justify-between border-b border-slate-100 pb-4">
                                 <div class="flex items-center gap-3">
-                                    <img :src="getFullAvatarUrl(currentPost.avatar, currentPost.author)" @error="onAvatarError($event, currentPost.author)" class="w-10 h-10 rounded-full border border-slate-200 bg-white shrink-0">
+                                    <span class="relative inline-flex shrink-0 w-8 h-8"><span class="absolute inset-0 rounded-full bg-slate-200 text-slate-600 text-[8px] flex items-center justify-center" role="img" aria-label="默认头像">头像</span><img :key="currentPost.id + resolveForumAvatar(currentPost)" :src="resolveForumAvatar(currentPost)" :alt="(currentPost.author || '用户') + '头像'" @error="onForumAvatarError($event)" class="relative w-full h-full rounded-full border border-slate-200 bg-white"></span>
                                     <div>
-                                        <div class="text-xs font-bold text-slate-800">{{ currentPost.author }}</div>
+                                        <div class="text-xs font-bold text-slate-800">{{ currentPost.author }} <span v-if="forumProvenanceLabel(currentPost)" class="text-[9px] text-slate-500">{{ forumProvenanceLabel(currentPost) }}</span></div>
                                         <div class="text-[10px] text-slate-600 mt-0.5">发表于 {{ formatTime(currentPost.createdAt) }}</div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button v-if="currentUser?.username && ((currentPost.authorUsername && currentPost.authorUsername === currentUser.username) || (!currentPost.authorUsername && currentPost.author === currentUser.username))" @click="deleteMyPost(currentPost.id)" class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 hover:bg-rose-500 hover:text-white transition-all flex items-center gap-1">
+                                    <button v-if="canPost && hasForumPermission(currentPost, 'canDelete')" :disabled="pending['post:' + currentPost.id]" @click="deleteMyPost(currentPost.id)" class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 hover:bg-rose-500 hover:text-white transition-all flex items-center gap-1">
                                         <i class="ph ph-trash"></i> 删除
                                     </button>
                                     <span class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#1c2b38]/5 text-primary border border-slate-100">
@@ -459,58 +396,37 @@ export default {
                                 </div>
 
                                 <div v-for="reply in currentPost.replies" :key="reply.id"
-                                     class="p-4 rounded-2xl flex flex-col gap-2.5 transition-all"
-                                     :class="reply.isAi 
-                                          ? 'bg-indigo-50/70 border border-indigo-100/60 shadow-[0_4px_12px_rgba(99,102,241,0.04)] ai-reply-card' 
-                                          : 'bg-white/40 border border-slate-100/60'">
+                                     class="p-4 rounded-2xl flex flex-col gap-2.5 transition-all bg-white/40 border border-slate-100/60">
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-2">
-                                            <img :src="getFullAvatarUrl(reply.avatar, reply.author)" @error="onAvatarError($event, reply.author)" class="w-8 h-8 rounded-full border bg-white shrink-0"
-                                                 :class="reply.isAi ? 'border-indigo-300 ring-2 ring-indigo-500/10' : 'border-slate-200'">
+                                            <span class="relative inline-flex shrink-0 w-8 h-8"><span class="absolute inset-0 rounded-full bg-slate-200 text-slate-600 text-[8px] flex items-center justify-center" role="img" aria-label="默认头像">头像</span><img :key="reply.id + resolveForumAvatar(reply)" :src="resolveForumAvatar(reply)" :alt="(reply.author || '用户') + '头像'" @error="onForumAvatarError($event)" class="relative w-full h-full rounded-full border border-slate-200 bg-white"></span>
                                             <div>
                                                 <div class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                                                     {{ reply.author }}
-                                                    <span v-if="reply.isAi" 
-                                                          class="text-[8px] bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5 animate-pulse">
-                                                        <i class="ph ph-sparkle"></i> AI 导师
-                                                    </span>
+                                                    <span v-if="forumProvenanceLabel(reply)" class="text-[9px] text-slate-500">{{ forumProvenanceLabel(reply) }}</span>
                                                 </div>
                                                 <div class="text-[9px] text-slate-600">回复于 {{ formatTime(reply.createdAt) }}</div>
                                             </div>
                                         </div>
-                                        <button @click="likeReply(currentPost, reply)" 
+                                        <button aria-label="点赞回复" :disabled="!canPost || pending['post:' + currentPost.id]" @click="likeReply(currentPost, reply)"
                                                 class="text-[10px] text-slate-400 hover:text-rose-500 font-semibold flex items-center gap-1 transition-all">
-                                            <i class="ph ph-heart"></i> {{ reply.likes }}
+                                            <i class="ph ph-heart"></i> 点赞 {{ reply.likes }}
                                         </button>
                                     </div>
                                     <div class="text-xs text-slate-600 leading-relaxed markdown-body" v-html="formatMarkdown(reply.content)"></div>
                                 </div>
-
-                                <!-- AI正在输入动画 -->
-                                <div v-if="isAiTyping" class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100/60 flex items-start gap-3">
-                                    <div class="w-8 h-8 rounded-full border border-indigo-300 ring-2 ring-indigo-500/10 bg-white flex items-center justify-center shrink-0 text-indigo-500 text-base shadow-sm animate-pulse">
-                                        <i class="ph ph-robot"></i>
-                                    </div>
-                                    <div class="flex flex-col gap-2">
-                                        <span class="text-xs font-bold text-indigo-600 flex items-center gap-1.5">
-                                            Prof. X (AI导师) <span class="text-[9px] text-slate-400 font-normal">正在极速生成专业诊断...</span>
-                                        </span>
-                                        <div class="flex gap-1.5 mt-1">
-                                            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0s"></span>
-                                            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0.15s"></span>
-                                            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0.3s"></span>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
+                        <span v-if="pendingReplies[currentPost.id]" role="status" class="text-xs text-slate-500">正在发布回复...</span>
+                        <span v-else-if="pending['post:' + currentPost.id]" role="status" class="text-xs text-slate-500">正在提交操作...</span>
+                        <span v-else-if="canPost && !hasForumPermission(currentPost, 'canReply')" class="text-xs text-slate-500">当前没有这篇帖子的回复权限</span>
                         <!-- 底部快捷跟帖 -->
                         <div class="border-t border-slate-100 pt-4 mt-4 flex items-center gap-2 select-none">
                             <input v-model="newReplyContent" @keyup.enter="createReply"
                                    placeholder="输入您的跟帖见解或学术追问，支持 Markdown 代码..."
                                    class="liquid-glass-input flex-1 px-4 py-2 text-xs outline-none focus:ring-0">
-                            <button @click="createReply" 
+                            <button :disabled="!canPost || !hasForumPermission(currentPost, 'canReply') || pending['post:' + currentPost.id]" @click="createReply"
                                     class="liquid-glass-btn px-4 py-2 rounded-xl text-xs font-bold active:scale-95 flex items-center gap-1 shadow-md">
                                 <i class="ph ph-paper-plane-right"></i> 回复
                             </button>
@@ -537,7 +453,7 @@ export default {
                                 </div>
 
                                 <!-- 开启/收起发帖框 -->
-                                <button @click="toggleWritingForm" 
+                                <button :disabled="!canPost" @click="toggleWritingForm"
                                         class="liquid-glass-btn px-4.5 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md flex items-center gap-1.5">
                                     <i :class="isWritingPost ? 'ph-x-circle' : 'ph-plus-circle'" class="text-sm"></i>
                                     {{ isWritingPost ? '取消发布' : '分享新帖' }}
@@ -567,7 +483,7 @@ export default {
                                         <input v-model="newPost.tags" placeholder="标签标签（用英文逗号分隔，如: Vue3, Proxy）..." 
                                                class="liquid-glass-input w-[65%] px-4 py-2 text-[10px] outline-none">
                                         
-                                        <button @click="createPost" 
+                                        <button :disabled="!canPost || pending.create" @click="createPost"
                                                 class="liquid-glass-btn px-5 py-2.5 rounded-xl text-xs font-bold active:scale-95 flex items-center gap-1.5 shadow-md self-end">
                                             <i class="ph ph-paper-plane-tilt"></i> 确认发表帖子
                                         </button>
@@ -576,9 +492,13 @@ export default {
                             </transition>
                         </div>
 
+                        <div v-if="newPost.title || newPost.content" class="text-[10px] text-slate-500">有未发布草稿，收起后仍保留</div>
+                        <div v-if="pending.create" role="status" class="text-xs text-slate-500">正在发布帖子...</div>
+                        <div v-if="readState.posts === 'loading'" role="status" class="text-xs text-slate-500">帖子加载中...</div>
+                        <div v-if="readState.posts === 'error'" role="status" class="text-xs text-slate-600">帖子加载失败，{{ readError.posts }} <button @click="loadForumData">刷新帖子</button></div>
                         <!-- 帖子列表循环区 -->
                         <div class="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-4">
-                            <div v-if="filteredPosts.length === 0" class="glass-panel-liquid p-8 text-center text-slate-400 italic text-xs">
+                            <div v-if="readState.posts === 'empty' || (readState.posts === 'ready' && filteredPosts.length === 0)" class="glass-panel-liquid p-8 text-center text-slate-400 italic text-xs">
                                 暂时没有该板块的讨论帖子，来发第一条讨论帖吧！
                             </div>
 
@@ -588,16 +508,16 @@ export default {
                                 
                                 <div class="flex items-center justify-between">
                                     <div class="flex items-center gap-3">
-                                        <img :src="getFullAvatarUrl(post.avatar, post.author)" @error="onAvatarError($event, post.author)" class="w-8 h-8 rounded-full border border-slate-200 bg-white shrink-0">
+                                        <span class="relative inline-flex shrink-0 w-8 h-8"><span class="absolute inset-0 rounded-full bg-slate-200 text-slate-600 text-[8px] flex items-center justify-center" role="img" aria-label="默认头像">头像</span><img :key="post.id + resolveForumAvatar(post)" :src="resolveForumAvatar(post)" :alt="(post.author || '用户') + '头像'" @error="onForumAvatarError($event)" class="relative w-full h-full rounded-full border border-slate-200 bg-white"></span>
                                         <div class="flex flex-col">
                                             <div class="flex items-center gap-2">
-                                                <span class="text-xs font-bold text-slate-800">{{ post.author }}</span>
+                                                <span class="text-xs font-bold text-slate-800">{{ post.author }}</span><span v-if="forumProvenanceLabel(post)" class="text-[9px] text-slate-500">{{ forumProvenanceLabel(post) }}</span>
                                                 <span class="text-[10px] text-slate-500 font-mono">{{ formatTime(post.createdAt) }}</span>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        <button v-if="currentUser?.username && ((post.authorUsername && post.authorUsername === currentUser.username) || (!post.authorUsername && post.author === currentUser.username))" @click.stop="deleteMyPost(post.id)" class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-500 border-rose-200 shadow-sm flex items-center gap-1 hover:bg-rose-500 hover:text-white transition-all group-hover:border-rose-300">
+                                        <button v-if="canPost && hasForumPermission(post, 'canDelete')" :disabled="pending['post:' + post.id]" @click.stop="deleteMyPost(post.id)" class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-500 border-rose-200 shadow-sm flex items-center gap-1 hover:bg-rose-500 hover:text-white transition-all group-hover:border-rose-300">
                                             <i class="ph ph-trash"></i> 删除
                                         </button>
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-slate-50 text-slate-500 border-slate-200 shadow-sm flex items-center gap-1 group-hover:border-primary/30 group-hover:text-primary transition-colors">
@@ -619,9 +539,9 @@ export default {
                                         </span>
                                     </div>
                                     <div class="flex items-center gap-3 text-[11px] text-slate-500 font-semibold font-mono">
-                                        <span class="flex items-center gap-1 hover:text-rose-500 transition-colors" @click.stop="toggleLike(post, $event)">
-                                            <i class="ph" :class="post.isLiked ? 'ph-heart-fill text-rose-500' : 'ph-heart'"></i> {{ post.likes }}
-                                        </span>
+                                        <button aria-label="点赞帖子" :disabled="!canPost || pending['post:' + post.id]" class="flex items-center gap-1 hover:text-rose-500 transition-colors" @click.stop="toggleLike(post, $event)">
+                                            <i class="ph" :class="post.isLiked ? 'ph-heart-fill text-rose-500' : 'ph-heart'"></i> 点赞 {{ post.likes }}
+                                        </button>
                                         <span class="flex items-center gap-1">
                                             <i class="ph ph-chat-teardrop"></i> {{ post.replies ? post.replies.length : 0 }}
                                         </span>
@@ -638,6 +558,9 @@ export default {
                 <!-- ==================== 3. 右侧栏: 公告与热点 (Width: 25%) ==================== -->
                 <aside class="w-[25%] flex flex-col gap-4 shrink-0 h-full overflow-y-auto no-scrollbar">
                     
+                    <div v-if="readState.announcements === 'loading'" role="status" class="text-xs text-slate-500">公告加载中...</div>
+                    <div v-if="readState.announcements === 'error'" role="status" class="text-xs text-slate-500">公告加载失败，{{ readError.announcements }}</div>
+                    <div v-if="readState.announcements === 'empty'" class="text-xs text-slate-500">暂无公告</div>
                     <!-- 置顶公告 -->
                     <div class="glass-panel-liquid p-5 flex flex-col gap-4 shrink-0">
                         <div class="text-xs font-bold text-slate-400 flex items-center gap-1 border-b border-slate-100 pb-2">
@@ -646,10 +569,10 @@ export default {
                         <div class="flex flex-col gap-3">
                             <div v-for="ann in announcements" :key="ann.id" 
                                  class="flex flex-col gap-1 border border-rose-100 bg-rose-50/30 p-3 rounded-xl relative group">
-                                <span v-if="ann.isPinned" class="absolute right-3 top-3 text-[9px] text-rose-400 font-mono italic">pinned</span>
+                                <span v-if="ann.date === 'pinned'" class="absolute right-3 top-3 text-[9px] text-rose-400 font-mono italic">置顶</span>
                                 <div class="flex items-center gap-1.5 text-[9px] font-bold text-rose-500">
-                                    <span class="w-1 h-1 rounded-full bg-rose-500"></span> 官方
-                                    <span class="text-slate-400 font-normal font-mono ml-auto mr-8">{{ formatTime(ann.createdAt) }}</span>
+                                    <span class="w-1 h-1 rounded-full bg-rose-500"></span> 公告
+                                    <span class="text-slate-400 font-normal font-mono ml-auto mr-8">{{ ann.date === 'pinned' ? '置顶' : formatTime(ann.date) }}</span>
                                 </div>
                                 <div class="text-xs text-slate-700 font-semibold leading-relaxed mt-1">
                                     {{ ann.title }}
@@ -658,6 +581,9 @@ export default {
                         </div>
                     </div>
 
+                    <div v-if="readState.topics === 'loading'" role="status" class="text-xs text-slate-500">话题加载中...</div>
+                    <div v-if="readState.topics === 'error'" role="status" class="text-xs text-slate-500">话题加载失败，{{ readError.topics }}</div>
+                    <div v-if="readState.topics === 'empty'" class="text-xs text-slate-500">暂无热议话题</div>
                     <!-- 今日热议话题 -->
                     <div class="glass-panel-liquid p-5 flex flex-col gap-3 shrink-0">
                         <div class="text-xs font-bold text-slate-400 flex items-center gap-1 border-b border-slate-100 pb-2">
@@ -678,32 +604,14 @@ export default {
                         </div>
                     </div>
 
-                    <!-- AI 导师专线 -->
+                    <!-- 课程答疑快捷发帖 -->
                     <div class="glass-panel-liquid p-5 flex flex-col gap-3 shrink-0">
-                        <div class="text-xs font-bold text-slate-600 flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span class="flex items-center gap-1"><i class="ph ph-robot text-sm text-primary"></i> 智能导师专线</span>
-                            <span class="flex items-center gap-1 text-[9px] text-emerald-600 font-bold shrink-0">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Prof.X 在线
-                            </span>
-                        </div>
-                        
-                        <div class="flex items-start gap-2.5 p-2 bg-indigo-50/50 border border-indigo-100/50 rounded-xl mb-1">
-                            <img src="https://api.dicebear.com/7.x/notionists/svg?seed=ProfX" class="w-7 h-7 rounded-full border border-indigo-200 bg-white shrink-0">
-                            <div class="text-[10px] text-slate-500 leading-relaxed font-semibold">
-                                我是 Prof.X，随时为您解答任何数据结构、算法架构、Vue 3 或 AI 原理的编程疑问。
-                            </div>
-                        </div>
-
-                        <!-- 快速输入问答 -->
-                        <div class="flex flex-col gap-1.5 mt-2 select-none">
-                            <input v-model="quickAskText" @keyup.enter="sendQuickAsk"
-                                   placeholder="输入您的学术疑问进行极速提问..." 
-                                   class="liquid-glass-input px-3 py-2 text-[10px] outline-none">
-                            <button @click="sendQuickAsk"
-                                    class="liquid-glass-btn py-2 rounded-xl text-[10px] font-bold active:scale-95 flex items-center justify-center gap-1 shadow">
-                                <i class="ph ph-magic-wand"></i> 一键呼唤 AI 导师
-                            </button>
-                        </div>
+                        <div class="text-xs font-bold text-slate-600 border-b border-slate-100 pb-2">课程答疑快捷发帖</div>
+                        <p class="text-[10px] text-slate-500">将你的问题发布到课程答疑板块，等待社区回复</p>
+                        <input v-model="quickAskText" @keyup.enter="sendQuickAsk" placeholder="输入您的学术疑问..." class="liquid-glass-input px-3 py-2 text-[10px] outline-none">
+                        <button @click="sendQuickAsk" :disabled="!canPost || pending.quick" class="liquid-glass-btn py-2 rounded-xl text-[10px] font-bold">课程答疑快捷发帖</button>
+                        <span v-if="pending.quick" role="status" class="text-[10px] text-slate-500">正在发布...</span>
+                        <span v-else-if="quickAskText" class="text-[10px] text-slate-500">有未发布草稿</span>
                     </div>
                 </aside>
 
