@@ -1,95 +1,80 @@
 <view class="container">
   <view class="wave-bg"></view>
-
-  <!-- 顶部导航 -->
   <view class="top-nav flex-row align-center">
     <text class="back-btn" bindtap="goBack">← 返回学术空间</text>
   </view>
 
   <scroll-view scroll-y class="detail-scroll">
-    <!-- 帖子主体卡片 -->
-    <view class="card post-card flex-col">
-      <view class="post-header flex-row align-start justify-between">
-        <text class="post-title serif-text">{{post.title || '无标题帖'}}</text>
-        <view class="tag tag-seal">{{post.categoryLabel || '答疑'}}</view>
-      </view>
-      
-      <view class="post-meta flex-row align-center">
-        <text class="post-author">作者: {{post.author || '匿名'}}</text>
-        <text class="meta-dot">·</text>
-        <text class="post-time">{{post.simpleTime || '刚才'}}</text>
-        <text class="meta-dot">·</text>
-        <text class="post-views">阅 {{post.views || 0}}</text>
-      </view>
-
-      <view class="post-content">
-        <text selectable>{{post.content || ''}}</text>
-      </view>
-
-      <view class="post-footer flex-row align-center justify-end" bindtap="likePost">
-        <view class="like-btn flex-row align-center justify-center {{isLiked ? 'liked' : ''}}">
-          <text class="like-icon">♥</text>
-          <text class="like-num">{{post.likes || 0}} 赞</text>
-        </view>
-      </view>
+    <view class="card empty-state" wx:if="{{loadState === 'loading'}}">
+      <text class="empty-state-text">正在加载帖子与账号权限...</text>
+    </view>
+    <view class="card empty-state" wx:elif="{{loadState === 'error'}}">
+      <text class="empty-state-text">{{loadError || '加载失败，请重试'}}</text>
+      <button class="send-reply-btn serif-text" bindtap="retryLoad">重试加载</button>
+    </view>
+    <view class="card empty-state" wx:elif="{{loadState === 'not-found'}}">
+      <text class="empty-state-text">未找到帖子或帖子已被删除</text>
     </view>
 
-    <!-- 研学讨论区 -->
-    <view class="comments-section">
-      <view class="bamboo-divider"><view class="bamboo-divider-dot"></view></view>
-      <view class="section-title-box flex-row align-center">
-        <text class="section-title serif-text">研学讨论区</text>
-        <text class="comments-count">({{post.replies.length || 0}})</text>
+    <block wx:if="{{loadState === 'ready' && post}}">
+      <view class="card post-card flex-col">
+        <view class="post-header flex-row align-start justify-between">
+          <text class="post-title serif-text">{{post.title || '无标题帖'}}</text>
+          <view class="tag tag-seal">{{post.categoryLabel || '答疑'}}</view>
+        </view>
+        <view class="post-meta flex-row align-center">
+          <text class="post-author">作者: {{post.author || '身份未知'}}</text>
+          <text class="meta-dot">·</text>
+          <text class="post-time">{{post.simpleTime || '时间未知'}}</text>
+          <text class="meta-dot">·</text>
+          <text class="post-views">阅 {{post.views || 0}}</text>
+        </view>
+        <text class="comment-time">{{post.identityLabel}}</text>
+        <view class="post-content"><text selectable>{{post.content || ''}}</text></view>
+        <view class="post-footer flex-row align-center justify-end">
+          <button class="like-btn flex-row align-center justify-center" bindtap="likePost" disabled="{{!canLike || likePending}}" style="margin:0;line-height:normal;font-weight:normal;">
+            <text class="like-icon">♥</text>
+            <text class="like-num">{{likePending ? '确认中...' : '点赞'}} · {{post.likes || 0}} 赞</text>
+          </button>
+        </view>
+        <text class="comment-time">每次确认点赞会增加赞数</text>
+        <text class="empty-state-text" wx:if="{{likeError}}">{{likeError}}</text>
       </view>
 
-      <!-- 回复列表 -->
-      <view class="comments-list flex-col">
-        <view 
-          class="comment-item flex-col {{item.isAi ? 'ai-reply' : ''}}" 
-          wx:for="{{post.replies}}" 
-          wx:key="id"
-        >
-          <!-- AI 回复高亮标志 -->
-          <view class="ai-badge flex-row align-center" wx:if="{{item.isAi}}">
-            <text class="ai-badge-icon">◈</text>
-            <text class="ai-badge-text">智能助教官方回答（已通过教师审核）</text>
-          </view>
-
-          <view class="comment-header flex-row align-center justify-between">
-            <view class="flex-row align-center">
-              <view class="comment-avatar {{item.isAi ? 'ai-avatar' : ''}}">
-                {{item.isAi ? '✦' : '⊙'}}
+      <view class="comments-section">
+        <view class="bamboo-divider"><view class="bamboo-divider-dot"></view></view>
+        <view class="section-title-box flex-row align-center">
+          <text class="section-title serif-text">研学讨论区</text>
+          <text class="comments-count">({{post.replies.length || 0}})</text>
+        </view>
+        <view class="empty-state" wx:if="{{contextState === 'anonymous'}}"><text class="empty-state-text">请先登录后回复或点赞</text></view>
+        <view class="empty-state" wx:elif="{{!canReply}}"><text class="empty-state-text">当前账号无权回复此帖</text></view>
+        <view class="empty-state" wx:if="{{replyPending}}"><text class="empty-state-text">正在提交回复，等待服务器确认...</text></view>
+        <view class="empty-state" wx:if="{{replyError}}"><text class="empty-state-text">{{replyError}}</text></view>
+        <view class="empty-state" wx:if="{{unsaved}}"><text class="empty-state-text">有未发送的回复，离开页面或切换账号后将丢失</text></view>
+        <view class="comments-list flex-col">
+          <view class="comment-item flex-col" wx:for="{{post.replies}}" wx:key="id">
+            <view class="comment-header flex-row align-center justify-between">
+              <view class="flex-row align-center">
+                <view class="comment-avatar">⊙</view>
+                <text class="comment-author">{{item.author || '身份未知'}}</text>
               </view>
-              <text class="comment-author">{{item.author || '研友'}}</text>
+              <text class="comment-time">{{item.simpleTime || '时间未知'}}</text>
             </view>
-            <text class="comment-time">{{item.simpleTime || '刚才'}}</text>
+            <text class="comment-time">{{item.identityLabel}}</text>
+            <view class="comment-content"><text selectable>{{item.content || ''}}</text></view>
           </view>
-          
-          <view class="comment-content">
-            <text selectable>{{item.content || ''}}</text>
+          <view class="empty-state" wx:if="{{post.replies.length === 0}}">
+            <text class="empty-state-icon">◎</text>
+            <text class="empty-state-text">暂无研友讨论</text>
           </view>
-        </view>
-
-        <!-- 空评论提示 -->
-        <view class="empty-state" wx:if="{{!post.replies || post.replies.length === 0}}">
-          <text class="empty-state-icon">◎</text>
-          <text class="empty-state-text">暂无研友讨论，发表第一条见解吧</text>
         </view>
       </view>
-    </view>
+    </block>
   </scroll-view>
 
-  <!-- 底部评论框 -->
   <view class="comment-input-bar flex-row align-center">
-    <input 
-      class="comment-input" 
-      placeholder="发表你的见解，共同探究学问..." 
-      placeholder-class="ph-style"
-      value="{{replyValue}}"
-      bindinput="onReplyInput"
-      confirm-type="send"
-      bindconfirm="submitReply"
-    />
-    <button class="send-reply-btn serif-text" bindtap="submitReply" disabled="{{!replyValue.length}}">回复</button>
+    <input class="comment-input" placeholder="发表你的见解，共同探究学问..." placeholder-class="ph-style" value="{{replyValue}}" bindinput="onReplyInput" confirm-type="send" bindconfirm="submitReply" disabled="{{!canReply}}" />
+    <button class="send-reply-btn serif-text" bindtap="submitReply" disabled="{{!canReply || replyPending || !unsaved}}">{{replyPending ? '提交中' : '回复'}}</button>
   </view>
 </view>
