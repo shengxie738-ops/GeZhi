@@ -460,6 +460,12 @@ def _collect_locked_context(session, action, scope, *, actor, initial, intent=No
             context = replace(context, assessment_shape=assessment.allocate_assessment_shape(context, action, intent.canonical_payload if intent else {}))
     at = _server_clock(session)
     authorization = access.authorize_locked_action(context, policy, action, at)
+    if (action == TeachingAction.SUBMISSION_CREATE and receipt is None
+            and context.assessment.head is None):
+        # Current account/enrollment/recipient authority has already passed.
+        # No precreated head means no allocated shape, never a repair insert;
+        # the None allowance cannot enter _post_clock or a mutation callback.
+        _error(503, "invalid_assessment_state")
     if is_assessment and receipt is not None:
         # Pure loaded-row consistency checks follow current authority. No SQL,
         # mutable-head/draft preconditions or audience resolution occurs here.

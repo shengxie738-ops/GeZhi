@@ -28,7 +28,7 @@ from app.services.teaching.types import (
 from app.services.teaching.assessment_types import (
     AssessmentLockSpec, AssessmentReceiptDiscovery, AssessmentLockedRows, RecipientIdentity,
     AssignmentCreateShape, AssignmentUpdateShape, PrivateDraftUpdateShape, VersionCreateShape,
-    ReleasePreviewCreateShape, ReleaseCreateShape, SubmissionCreateShape, RecoveryOnlyShape,
+    ReleasePreviewCreateShape, ReleaseCreateShape, SubmissionCreateShape, RecoveryOnlyShape, AssessmentMutationShape,
 )
 
 
@@ -296,7 +296,10 @@ def lock_assessment_rows(session, roots, spec, receipt):
             ReleaseRecipient.version_id==release.version_id,ReleaseRecipient.student_id==student)
         recipients=tuple(query.populate_existing().order_by(ReleaseRecipient.student_id).with_for_update().all())
         if spec.student_id is not None:
-            head=_one(session,SubmissionHead,scope,SubmissionHead.release_id==release.id,SubmissionHead.version_id==release.version_id,SubmissionHead.student_id==student,lock=True,required=receipt is None)
+            # A new submission's absent head is incompatible only after current
+            # authority is evaluated. Carry absence without inserting a row.
+            required=receipt is None and spec.purpose!=TeachingAction.SUBMISSION_CREATE.value
+            head=_one(session,SubmissionHead,scope,SubmissionHead.release_id==release.id,SubmissionHead.version_id==release.version_id,SubmissionHead.student_id==student,lock=True,required=required)
             target_id=(roots.object_ref.id if roots.object_ref and roots.object_ref.kind=='submission' else
                        receipt.result_id if receipt is not None and receipt.result_type=='submission' else None)
             identifiers=sorted({item for item in (head.submission_id if head else None,target_id) if item})
@@ -368,8 +371,12 @@ def validate_assessment_receipt_target(context):
         _error(503,'invalid_assessment_state')
 
 
-def allocate_assessment_shape(context, action, command):
-    """Engine-only allocation after locks/policy, strictly before final clock."""
+def allocate_assessment_shape(context, action, command) -> AssessmentMutationShape | None:
+    """Engine-owned pre-clock allocation; absent new head returns no allowance.
+
+    The finite engine refuses this None sentinel after current authorization,
+    before its mutation boundary. Accepted recovery takes precedence.
+    """
     if context.actor_account is None:
         _error(401,'invalid_current_account')
     if context.assessment_receipt is not None and context.assessment_receipt.mode=='existing':
@@ -388,7 +395,8 @@ def allocate_assessment_shape(context, action, command):
             return ReleasePreviewCreateShape(*scope,rows.assignment.id,rows.version.id,str(uuid4()),audience)
         return ReleaseCreateShape(*scope,rows.assignment.id,rows.version.id,rows.release_preview.id,str(uuid4()),audience)
     if action==TeachingAction.SUBMISSION_CREATE:
-        if rows.release is None or rows.head is None: _error(404,'not_found')
+        if rows.release is None: _error(404,'not_found')
+        if rows.head is None: return None
         return SubmissionCreateShape(*scope,rows.release.id,rows.version.id,context.actor_account.username,str(uuid4()),rows.head.submission_id,rows.head.revision+1)
     _error(503,'invalid_lock_footprint')
 

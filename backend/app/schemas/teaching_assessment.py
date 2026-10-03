@@ -343,6 +343,23 @@ class SubmissionHistoryDTO(AssessmentDTO):
     as_of: datetime
 
 
+class SubmissionHeadDTO(AssessmentDTO):
+    submission_id: Id | None
+    revision: int = Field(ge=0,le=9223372036854775807)
+    as_of: datetime
+
+
+class TeacherSubmissionHistoryItemDTO(SubmissionHistoryItemDTO):
+    student_id: Subject
+
+
+class TeacherSubmissionPageDTO(AssessmentDTO):
+    items: list[TeacherSubmissionHistoryItemDTO]
+    current_head_id: Id | None
+    next_cursor: _CURSOR | None
+    as_of: datetime
+
+
 class AssignmentAcceptanceDTO(AssessmentDTO):
     assignment_id: Id
     draft_revision: _POSITIVE
