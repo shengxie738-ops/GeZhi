@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     FORUM_MODERATOR_IDS: str = "[]"
     TEACHER_STUDENT_ASSIGNMENTS: str = "{}"
     ANALYTICS_RECORDED_TIMEZONE: str = ""
+
+    # B1 structure is prepared explicitly; every teaching stage defaults off.
+    TEACHING_ENABLED: bool = False
+    TEACHING_ASSIGNMENTS_ENABLED: bool = False
+    TEACHING_FEEDBACK_ENABLED: bool = False
+    TEACHING_REVISIONS_ENABLED: bool = False
+    TEACHING_INSTITUTION_ID: str = ""
+    TEACHING_TRUSTED_DELEGATIONS: str = "{}"
     LEARNING_DIAGNOSIS_INTERNAL_TOKEN: str = ""
 
     # Academic search
