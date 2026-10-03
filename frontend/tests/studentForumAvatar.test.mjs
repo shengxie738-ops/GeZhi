@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-
-const frontendRoot = new URL('../', import.meta.url);
-const studentForum = readFileSync(new URL('js/components/StudentForum.js', frontendRoot), 'utf8');
-
-assert.match(studentForum, /import\s+\{\s*toBackendAssetUrl\s*\}\s+from\s+['"]\.\.\/config\/env\.js['"]/);
-assert.match(studentForum, /return\s+toBackendAssetUrl\(path\);/);
-assert.doesNotMatch(studentForum, /localhost:8000/);
-
-console.log('studentForumAvatar tests passed');
+import {readFileSync} from 'node:fs';
+const root=new URL('../',import.meta.url);
+for(const file of ['StudentForum','TeacherForumManager']){
+ const source=readFileSync(new URL(`js/components/${file}.js`,root),'utf8');
+ assert.match(source,/from ['"]\.\.\/utils\/forumIdentity\.js['"]/);
+ assert.match(source,/resolveForumAvatar\(/);
+ assert.match(source,/@error="onForumAvatarError\(\$event\)"/);
+ assert.doesNotMatch(source,/dicebear|toBackendAssetUrl|localhost:8000/);
+}
+const svg=readFileSync(new URL('assets/avatars/forum-default.svg',root),'utf8');
+assert.match(svg,/<svg/);assert.doesNotMatch(svg.replace(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/,''),/<script|<image|<text|href=|url\(|https?:/i);
+console.log('studentForumAvatar local-boundary tests passed');
