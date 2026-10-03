@@ -1,6 +1,7 @@
 from sqlalchemy import inspect, text
 
 from app.core.database import Base, SessionLocal, engine
+from app.core.schema_policy import startup_table_allowed
 from app.models import git_coach  # noqa: F401
 from app.models import chat_message, code_diagnosis, domain_record, gitea_account_binding, ranked_question, sms_verification_code, student_profile, user_account, user_custom_ai_model, user_knowledge, user_rag  # noqa: F401
 
@@ -51,7 +52,8 @@ def _sync_domain_payloads() -> None:
 def init_db() -> None:
     # Coach schema is versioned and explicitly migrated, never implicitly changed.
     Base.metadata.create_all(bind=engine, tables=[table for table in Base.metadata.sorted_tables
-                                                if not table.name.startswith("git_coach_")
+                                                if startup_table_allowed(table)
+                                                and not table.name.startswith("git_coach_")
                                                 and table.name != "team_git_project_identities"])
     _ensure_columns("user_accounts", USER_ACCOUNT_COLUMNS)
     _ensure_columns("chat_messages", CHAT_MESSAGE_COLUMNS)
