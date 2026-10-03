@@ -51,10 +51,10 @@ function request(options = {}) {
     _token: token || undefined
   };
 
-  return cloudProxyRequest(options, data);
+  return cloudProxyRequest(options, data, token);
 }
 
-function cloudProxyRequest(options, data) {
+function cloudProxyRequest(options, data, token) {
   return new Promise((resolve, reject) => {
     if (!wx.cloud || !wx.cloud.callFunction) {
       reject(new Error('云开发未初始化，请在微信开发者工具中开通并选择云环境'));
@@ -69,6 +69,10 @@ function cloudProxyRequest(options, data) {
       },
       success(res) {
         try {
+          if (!ownsRequestSession(token)) {
+            reject(staleSessionError());
+            return;
+          }
           const result = res.result || {};
           const statusCode = result.statusCode || 200;
           const body = result.data;
@@ -92,10 +96,27 @@ function cloudProxyRequest(options, data) {
         }
       },
       fail(err) {
+        if (!ownsRequestSession(token)) {
+          reject(staleSessionError());
+          return;
+        }
         reject(new Error((err && err.errMsg) || '云函数调用失败，请检查云环境与 apiProxy 部署状态'));
       }
     });
   });
+}
+
+// Ordinary requests belong to the effective token captured when they were sent.
+// A late response must not expire or resolve into a replacement session.
+function ownsRequestSession(token) {
+  const current = wx.getStorageSync(TOKEN_KEY) || wx.getStorageSync(LEGACY_TOKEN_KEY);
+  return (current || '') === (token || '');
+}
+
+function staleSessionError() {
+  const error = new Error('登录状态已变化，请刷新后重试');
+  error.code = 'STALE_SESSION';
+  return error;
 }
 
 function uploadFile(options = {}) {

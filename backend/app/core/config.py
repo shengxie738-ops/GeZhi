@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     AGENT_CONFIG_WRITERS: str = "[]"
     FORUM_MODERATOR_IDS: str = "[]"
     TEACHER_STUDENT_ASSIGNMENTS: str = "{}"
+    ANALYTICS_RECORDED_TIMEZONE: str = ""
     LEARNING_DIAGNOSIS_INTERNAL_TOKEN: str = ""
 
     # Academic search

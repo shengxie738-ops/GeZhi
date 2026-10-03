@@ -4,6 +4,11 @@ import { homeworkApi } from '../api/homework.js';
 import { forumApi } from '../api/forum.js';
 import { formatTime } from '../utils/helpers.js';
 
+const historicalActionLabel = item => {
+    const label = item?.recordEvidence?.label;
+    return '历史记录；依据未核验' + (typeof label === 'string' && label && label !== '历史记录；依据未核验' ? `；${label}` : '');
+};
+
 export default {
     name: 'TeacherDashboard',
     emits: ['show-toast'],
@@ -99,7 +104,7 @@ export default {
                     payload: { desc: student.reason, subject: student.subject || '', priority: 'normal' }
                 });
                 if (!result?.record?.id) throw new Error('服务器未返回任务回执');
-                emit('show-toast', '任务已保存，可在学情决策台查看下发记录', 'success');
+                emit('show-toast', '交互记录已保存', 'success');
                 showInterventionModal.value = false;
                 activeInterventionStudent.value = null;
             } catch (error) {
@@ -111,16 +116,16 @@ export default {
             try {
                 const items = await analyticsApi.getActionQueue();
                 alertStudents.value = (Array.isArray(items) ? items : []).map(item => {
-                    const ids = [...new Set((item.studentId ? [item.studentId] : (item.studentIds || []))
+                    const ids = [...new Set((Array.isArray(item.studentIds) && item.studentIds.length ? item.studentIds : (item.studentId ? [item.studentId] : []))
                         .filter(id => typeof id === 'string' && id.trim()))];
                     return { ...item, targetStudentIds: ids,
                         name: ids.length > 1 ? `已分配学生组（${ids.length}人）` : (item.studentName || '指定学生'),
-                        recordId: item.id, avatarSeed: item.id };
+                        recordId: item.id, avatarSeed: item.id, evidenceLabel: historicalActionLabel(item) };
                 }).filter(item => item.targetStudentIds.length);
                 interventionError.value = '';
             } catch (error) {
                 alertStudents.value = [];
-                interventionError.value = '无法加载学情预警，请到学情决策台重试';
+                interventionError.value = '历史行动记录暂不可用，请到学情决策台重试';
             }
         };
 
@@ -426,11 +431,11 @@ export default {
                         <!-- 模块 B：AI 学情异常预警与干预 -->
                         <div class="dashboard-card bg-white border border-slate-200 shadow-sm p-8 rounded-2xl">
                             <h3 class="text-base font-bold text-slate-800 flex items-center gap-1.5 mb-4">
-                                <i class="ph ph-warning-diamond text-base text-[#1c2b38]"></i> AI 学情预警与个性化干预
+                                <i class="ph ph-warning-diamond text-base text-[#1c2b38]"></i> 历史行动记录与手动交互
                             </h3>
                             
                             <div v-if="alertStudents.length === 0" class="py-6 text-center text-xs text-slate-400">
-                                <i class="ph ph-smiley-wink text-base text-emerald-500"></i> {{ interventionError ? '学情预警暂不可用' : '当前没有可下发的学情预警' }}
+                                <i class="ph ph-smiley-wink text-base text-emerald-500"></i> {{ interventionError ? '历史行动记录暂不可用' : '暂无已保存历史行动记录' }}
                             </div>
                             <div v-else class="flex flex-col gap-4">
                                 <div v-for="student in alertStudents" :key="student.recordId" class="p-4 bg-slate-50/60 rounded-xl flex items-center justify-between gap-4 transition-all hover:bg-slate-100/60">
@@ -440,11 +445,11 @@ export default {
                                         </div>
                                         <div class="min-w-0">
                                             <h4 class="font-bold text-sm text-slate-800 truncate">{{ student.name }}</h4>
-                                            <p class="text-[11px] text-[#b91c1c] font-semibold mt-0.5 truncate">{{ student.reason }}</p>
+                                            <p class="text-[11px] text-slate-600 mt-0.5 truncate">{{ student.reason }}</p><p class="text-[11px] text-slate-500">{{ student.evidenceLabel }}</p>
                                         </div>
                                     </div>
                                     <button @click="openIntervention(student)" class="shrink-0 px-4.5 py-2 bg-[#1c2b38] hover:bg-[#253645] active:scale-95 text-white font-semibold tracking-wider rounded-full text-xs transition-all flex items-center gap-1 shadow-sm whitespace-nowrap">
-                                        <i class="ph ph-lightning"></i> AI干预
+                                        <i class="ph ph-lightning"></i> 手动保存交互
                                     </button>
                                 </div>
                             </div>
@@ -510,7 +515,7 @@ export default {
                             <div class="mt-1.5 p-3 bg-slate-50 border border-slate-100 rounded-xl">
                                 <span class="font-bold text-slate-800">{{ activeInterventionStudent.name }}</span>
                                 <span class="text-slate-400 mx-2">|</span>
-                                <span class="text-[#b91c1c] font-semibold">{{ activeInterventionStudent.reason }}</span>
+                                <span class="text-slate-600">{{ activeInterventionStudent.reason }}</span><small>{{ activeInterventionStudent.evidenceLabel }}</small>
                             </div>
                         </div>
 
