@@ -28,12 +28,12 @@ from app.services.teaching.policy import read_teaching_policy
 from app.services.teaching.types import (
     LockPlan, LockedContext, MutationResult, PreviewFootprint, ReceiptLookup,
     ScopeRef, TeachingAction, WriteIntent, WriteOperation, WriteResult,
-    exact_identifier,
+    exact_identifier, ASSESSMENT_ACTIONS, ASSESSMENT_WRITE_ACTIONS,
 )
 
 WRITE_ACTIONS = frozenset({TeachingAction.CREATE_COURSE, TeachingAction.UPDATE_COURSE,
     TeachingAction.CREATE_OFFERING, TeachingAction.COURSE_MANAGE,
-    TeachingAction.ROSTER_MANAGE, TeachingAction.ROLES_MANAGE})
+    TeachingAction.ROSTER_MANAGE, TeachingAction.ROLES_MANAGE}) | ASSESSMENT_WRITE_ACTIONS
 _SET_FIELDS = frozenset({"student_ids", "permissions"})
 _KEY = re.compile(r"[A-Za-z0-9._:-]{8,128}\Z", re.ASCII)
 
@@ -96,9 +96,15 @@ def canonical_request_hash(action, scope: ScopeRef, target_id, command) -> str:
         _error(422, "validation_error")
     if target_id is not None and not exact_identifier(target_id):
         _error(422, "validation_error")
+    if action in ASSESSMENT_WRITE_ACTIONS:
+        from app.services.teaching.assessment_writes import normalize_assessment_command
+        command = normalize_assessment_command(action, scope, target_id, command)
     body = {"version": 1, "action": action.value, "scope_type": scope.kind,
             "scope_id": scope.id, "target_id": target_id, "command": command}
-    return sha256(_json(body).encode("utf-8")).hexdigest()
+    encoded = _json(body).encode("utf-8")
+    if action in ASSESSMENT_WRITE_ACTIONS and len(encoded) > 524288:
+        _error(422, "validation_error")
+    return sha256(encoded).hexdigest()
 
 
 def digest_id_set(kind: str, ids) -> str:
@@ -113,6 +119,9 @@ def make_write_intent(actor_id, action, scope, target_id, idempotency_key, comma
         _error(422, "validation_error")
     validate_key(idempotency_key)
     digest = canonical_request_hash(action, scope, target_id, command)
+    if TeachingAction(action) in ASSESSMENT_WRITE_ACTIONS:
+        from app.services.teaching.assessment_writes import normalize_assessment_command
+        command = normalize_assessment_command(TeachingAction(action), scope, target_id, command)
     return WriteIntent(actor_id, TeachingAction(action), scope, target_id, idempotency_key,
                        _freeze(_canonical(command)), 1, digest)
 
@@ -351,6 +360,9 @@ def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=Non
     _require_same_transaction(connection, transaction)
     with session.no_autoflush:
         actor, initial = access._begin_read(session, actor_id)
+        if access._action(action) in ASSESSMENT_ACTIONS:
+            from app.services.teaching.assessment_access import require_assessment_available
+            require_assessment_available(session, initial)
     require_clean_transaction(session)
     _require_same_transaction(connection, transaction)
     with _no_mutation(session):
@@ -372,15 +384,43 @@ def _collect_locked_context(session, action, scope, *, actor, initial, intent=No
         lookup = ReceiptLookup.from_intent(intent)
     elif lookup is not None:
         lookup = replace(lookup, actor_id=actor.username)
-    preview_id = intent.canonical_payload.get("preview_id") if intent else None
-    footprint = _preview_footprint(session, roots, preview_id)
-    if mutation is None:
-        plan = LockPlan(roots.course.id if roots.course else None,
-                        roots.offering.id if roots.offering else None, receipt_lookup=lookup,
-                        course_visibility_offering_ids=roots.course_visibility_offering_ids)
+    is_assessment = action in ASSESSMENT_ACTIONS
+    if is_assessment:
+        from app.services.teaching import assessment_writes as assessment
+        source = roots.course.source_teacher_id
+        roots = replace(roots, policy=read_teaching_policy(initial, source, actor_id=actor.username))
+        if lookup is not None:
+            discovery = assessment.discover_assessment_receipt(session, actor.username, action, scope, lookup.idempotency_key)
+        else:
+            discovery = None
+        roots = replace(roots, assessment_receipt=discovery)
+        if intent is not None:
+            spec = assessment.collect_assessment_spec(session, intent, roots)
+            plan = assessment.assessment_lock_plan(roots, intent, spec)
+        else:
+            spec = assessment.assessment_recovery_spec(session, roots, action) if lookup is not None else assessment.assessment_read_spec(session, roots, action)
+            subjects = (spec.student_id,) if spec.student_id is not None else ()
+            plan = LockPlan(root_course_id=roots.course.id, root_offering_id=roots.offering.id,
+                account_ids=subjects, enrollment_subject_ids=subjects, receipt_lookup=lookup, assessment=spec)
+        roots = replace(roots, lock_plan=plan)
+        footprint = None
+        if mutation is not None:
+            proposed = mutation.collect_locks(session, intent, roots, None)
+            require_clean_transaction(session)
+            if proposed != plan:
+                _error(503, "invalid_lock_footprint")
     else:
-        plan = mutation.collect_locks(session, intent, roots, footprint)
-        require_clean_transaction(session)
+        preview_id = intent.canonical_payload.get("preview_id") if intent else None
+        footprint = _preview_footprint(session, roots, preview_id)
+        if mutation is None:
+            plan = LockPlan(roots.course.id if roots.course else None,
+                            roots.offering.id if roots.offering else None, receipt_lookup=lookup,
+                            course_visibility_offering_ids=roots.course_visibility_offering_ids)
+        else:
+            plan = mutation.collect_locks(session, intent, roots, footprint)
+            require_clean_transaction(session)
+        if plan.assessment is not None:
+            _error(503, "invalid_lock_footprint")
     plan = _complete_plan(plan, roots, lookup, footprint)
     accounts = {subject: _locked_account(session, subject) for subject in plan.account_ids}
     roles, enrollments = {}, {}
@@ -404,10 +444,26 @@ def _collect_locked_context(session, action, scope, *, actor, initial, intent=No
             "offering_revision": roots.offering.revision if roots.offering else None,
             "roster_revision": roots.offering.roster_revision if roots.offering else None,
             "state": roots.offering.state if roots.offering else None}))
+    if is_assessment:
+        if lookup is not None:
+            assessment.verify_assessment_receipt(context.assessment_receipt, receipt)
+        context = replace(context, assessment=assessment.lock_assessment_rows(session, context, plan.assessment, receipt))
     inputs = access._final_inputs(session, initial)
     policy = read_teaching_policy(inputs, source_id, actor_id=actor.username, target_subject_id=plan.target_subject_id)
+    if is_assessment:
+        if intent is not None and receipt is None and (policy.digest, policy.generation) != (roots.policy.digest, roots.policy.generation):
+            _error(503, "lock_footprint_changed")
+        context = replace(context, policy=policy, pre_mutation=_freeze({**dict(context.pre_mutation),
+            "assessment_baseline": assessment.assessment_baseline(context.assessment),
+            "assessment_command": dict(intent.canonical_payload) if intent is not None else {}}))
+        if action in ASSESSMENT_WRITE_ACTIONS and (intent is not None or receipt is not None):
+            context = replace(context, assessment_shape=assessment.allocate_assessment_shape(context, action, intent.canonical_payload if intent else {}))
     at = _server_clock(session)
     authorization = access.authorize_locked_action(context, policy, action, at)
+    if is_assessment and receipt is not None:
+        # Pure loaded-row consistency checks follow current authority. No SQL,
+        # mutable-head/draft preconditions or audience resolution occurs here.
+        assessment.validate_assessment_receipt_target(context)
     return replace(context, authorization=authorization, policy=policy)
 
 
@@ -480,6 +536,10 @@ def _post_clock(session, context):
     stable = {id(row): _stable_row_key(row) for row in protected if row is not None}
     state = {"flushing": False}
     own_appends = set()
+    assessment_check = assessment_complete = None
+    if context.assessment is not None:
+        from app.services.teaching.assessment_writes import assessment_mutation_boundary
+        assessment_check, assessment_complete = assessment_mutation_boundary(context)
 
     def reject_sql(execute_state):
         _error(503, "post_clock_query_forbidden")
@@ -494,6 +554,10 @@ def _post_clock(session, context):
 
     def before_flush(session, flush_context, instances):
         _require_same_transaction(connection, transaction)
+        if assessment_check is not None:
+            assessment_check(session, own_appends)
+            state["flushing"] = True
+            return
         if session.deleted:
             _error(503, "undeclared_mutation")
         for row in session.dirty:
@@ -516,6 +580,9 @@ def _post_clock(session, context):
         event.listen(target, name, listener)
     try:
         yield lambda row: own_appends.add(id(row))
+        if assessment_check is not None:
+            assessment_check(session, own_appends)
+            assessment_complete()
         require_clean_transaction(session)
         _require_same_transaction(connection, transaction)
     finally:
@@ -523,8 +590,13 @@ def _post_clock(session, context):
             event.remove(target, name, listener)
 
 
-def _validate_mutation(result):
+def _validate_mutation(result, *, action: TeachingAction):
     if not isinstance(result, MutationResult) or result.http_status not in {200, 201}:
+        _error(503, "invalid_mutation_result")
+    if action in ASSESSMENT_WRITE_ACTIONS:
+        from app.services.teaching.assessment_writes import validate_assessment_mutation
+        return validate_assessment_mutation(result, action)
+    if action not in WRITE_ACTIONS:
         _error(503, "invalid_mutation_result")
     if (result.revision_kind not in {"course", "offering", "roster", "role", "preview"}
             or type(result.before_revision) is not int or result.before_revision < 0
@@ -558,9 +630,15 @@ def execute_write(session: Session, intent: WriteIntent, authorization_scope: Sc
                     result = _result(context.receipt, True)
                     require_clean_transaction(session)
                     return result
+                if intent.action in ASSESSMENT_WRITE_ACTIONS:
+                    from app.services.teaching.assessment_writes import validate_assessment_new
+                    validate_assessment_new(context, intent.action, intent.canonical_payload, at)
                 mutation.validate_new(context, intent.canonical_payload, at)
                 result = mutation.apply_new(context, intent.canonical_payload, at)
-                original, effects = _validate_mutation(result)
+                original, effects = _validate_mutation(result, action=intent.action)
+                if intent.action in ASSESSMENT_WRITE_ACTIONS:
+                    from app.services.teaching.assessment_writes import validate_assessment_binding
+                    original, effects = validate_assessment_binding(context, result)
                 receipt = WriteReceipt(id=str(uuid4()), institution_id=intent.scope.institution_id,
                     actor_id=context.authorization.actor_id, action=intent.action.value, scope_type=intent.scope.kind,
                     scope_id=intent.scope.id, target_type=result.result_type, target_id=result.result_id,
@@ -570,12 +648,16 @@ def execute_write(session: Session, intent: WriteIntent, authorization_scope: Sc
                 allow_append(receipt)
                 session.add(receipt)
                 session.flush()
-                access_event = AccessEvent(id=str(uuid4()), institution_id=intent.scope.institution_id,
-                    receipt_id=receipt.id, actor_id=context.authorization.actor_id, actor_role=context.authorization.account_role,
-                    action=intent.action.value, scope_type=intent.scope.kind, scope_id=intent.scope.id,
-                    target_type=result.result_type, target_id=result.result_id, revision_kind=result.revision_kind,
-                    before_revision=result.before_revision, after_revision=result.after_revision,
-                    reason=intent.canonical_payload.get("reason", ""), occurred_at=at, effect_metadata=effects)
+                if intent.action in ASSESSMENT_WRITE_ACTIONS:
+                    from app.services.teaching.assessment_writes import build_assessment_event
+                    access_event = build_assessment_event(receipt, context, result)
+                else:
+                    access_event = AccessEvent(id=str(uuid4()), institution_id=intent.scope.institution_id,
+                        receipt_id=receipt.id, actor_id=context.authorization.actor_id, actor_role=context.authorization.account_role,
+                        action=intent.action.value, scope_type=intent.scope.kind, scope_id=intent.scope.id,
+                        target_type=result.result_type, target_id=result.result_id, revision_kind=result.revision_kind,
+                        before_revision=result.before_revision, after_revision=result.after_revision,
+                        reason=intent.canonical_payload.get("reason", ""), occurred_at=at, effect_metadata=effects)
                 allow_append(access_event)
                 session.add(access_event)
                 session.flush()

@@ -255,7 +255,7 @@ class PreviewChangesDTO(StrictDTO):
 # Only original receipt/recovery projections are released here. Mutation input
 # DTOs and the wider teaching HTTP surface belong to subsequent tasks.
 IdempotencyKey = Annotated[str, StringConstraints(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
-WriteActionName = Literal["course_create", "course_update", "offering_create", "course_manage", "roster_manage", "roles_manage"]
+WriteActionName = Literal["course_create", "course_update", "offering_create", "course_manage", "roster_manage", "roles_manage", "assignment_create", "assignment_update", "assignment_private_update", "assignment_freeze", "release_preview", "release_create", "submission_create"]
 
 
 class ReceiptQuery(StrictDTO):

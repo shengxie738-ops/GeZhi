@@ -12,6 +12,7 @@ import unicodedata
 if TYPE_CHECKING:
     from app.models.teaching import Course, Enrollment, Offering, TeachingRole, WriteReceipt
     from app.models.user_account import UserAccount
+    from app.services.teaching.assessment_types import AssessmentLockSpec, AssessmentLockedRows, AssessmentReceiptDiscovery, AssessmentMutationShape
 
 
 def exact_identifier(value: str, maximum: int = 255) -> bool:
@@ -51,7 +52,27 @@ class TeachingAction(str, Enum):
     PRIVATE_SPEC_VIEW = "private_spec_view"
     REVIEW = "review"
     PUBLISH = "publish"
+    ASSIGNMENT_CREATE = "assignment_create"
+    ASSIGNMENT_UPDATE = "assignment_update"
+    ASSIGNMENT_PRIVATE_UPDATE = "assignment_private_update"
+    ASSIGNMENT_FREEZE = "assignment_freeze"
+    RELEASE_PREVIEW = "release_preview"
+    RELEASE_CREATE = "release_create"
+    SUBMISSION_CREATE = "submission_create"
+    ASSIGNMENT_READ = "assignment_read"
+    ASSIGNMENT_LIST = "assignment_list"
+    ASSIGNMENT_VERSIONS_LIST = "assignment_versions_list"
+    ASSIGNMENT_VERSION_READ = "assignment_version_read"
+    ASSIGNMENT_PRIVATE_READ = "assignment_private_read"
+    RELEASE_READ = "release_read"
+    SUBMISSION_READ = "submission_read"
+    SUBMISSION_LIST = "submission_list"
+    RELEASE_PREVIEW_READ = "release_preview_read"
 
+
+ASSESSMENT_WRITE_ACTIONS = frozenset({TeachingAction.ASSIGNMENT_CREATE, TeachingAction.ASSIGNMENT_UPDATE, TeachingAction.ASSIGNMENT_PRIVATE_UPDATE, TeachingAction.ASSIGNMENT_FREEZE, TeachingAction.RELEASE_PREVIEW, TeachingAction.RELEASE_CREATE, TeachingAction.SUBMISSION_CREATE})
+ASSESSMENT_READ_ACTIONS = frozenset({TeachingAction.ASSIGNMENT_READ, TeachingAction.ASSIGNMENT_LIST, TeachingAction.ASSIGNMENT_VERSIONS_LIST, TeachingAction.ASSIGNMENT_VERSION_READ, TeachingAction.ASSIGNMENT_PRIVATE_READ, TeachingAction.RELEASE_READ, TeachingAction.SUBMISSION_READ, TeachingAction.SUBMISSION_LIST, TeachingAction.RELEASE_PREVIEW_READ})
+ASSESSMENT_ACTIONS = ASSESSMENT_WRITE_ACTIONS | ASSESSMENT_READ_ACTIONS
 
 ACTION_PERMISSION = {
     TeachingAction.COURSE_MANAGE: Permission.COURSE_MANAGE,
@@ -192,6 +213,9 @@ class LockedContext(AuthorizationContext):
     accounts: Mapping[str, Any] = field(default_factory=dict)
     roles: Mapping[str, Any] = field(default_factory=dict)
     enrollments: Mapping[str, Any] = field(default_factory=dict)
+    assessment: "AssessmentLockedRows | None" = None
+    assessment_receipt: "AssessmentReceiptDiscovery | None" = None
+    assessment_shape: "AssessmentMutationShape | None" = None
     preview: Any = None
     preview_footprint: "PreviewFootprint | None" = None
     lock_plan: "LockPlan | None" = None
@@ -256,6 +280,7 @@ class LockPlan:
     preview_id: str | None = None
     receipt_lookup: ReceiptLookup | None = None
     target_subject_id: str | None = None
+    assessment: "AssessmentLockSpec | None" = None
     course_visibility_offering_ids: tuple[str, ...] = ()
 
 
