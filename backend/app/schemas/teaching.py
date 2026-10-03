@@ -70,9 +70,11 @@ class EnrollmentDTO(StrictDTO):
 class OfferingAccessDTO(StrictDTO):
     teaching: bool
     learning: bool
-    configured_permissions: list[Permission]
-    available_actions: list[TeachingAction]
+    configured_permissions: list[Permission] = Field(description="Current configured authority; does not establish operational write safety")
+    available_actions: list[TeachingAction] = Field(description="Operational actions only; HTTP adapters expose no write actions while the hard safety gate is closed")
     role_scope: Literal["offering", "assigned"] | None
+    writes_available: Literal[False] = Field(default=False, description="B1 production writes remain unconditionally unavailable")
+    write_reason: Literal["write_safety_unproven"] = "write_safety_unproven"
 
 
 class CourseDTO(StrictDTO):
@@ -176,12 +178,14 @@ class StageDTO(StrictDTO):
 class CapabilityDTO(StrictDTO):
     account_role: Literal["student", "teacher"]
     configured: bool
-    available: bool
-    can_create_course: bool
+    available: bool = Field(description="B1 read readiness only; independent of write safety")
+    can_create_course: bool = Field(description="Operational course creation; the public adapter returns false while write safety is unproven")
     reason: str
     assignments: StageDTO
     feedback: StageDTO
     revisions: StageDTO
+    writes_available: Literal[False] = Field(default=False, description="B1 production writes remain unconditionally unavailable")
+    write_reason: Literal["write_safety_unproven"] = "write_safety_unproven"
 
 
 class PreviewIssueDTO(StrictDTO):
@@ -219,10 +223,10 @@ class RosterPreviewDTO(StrictDTO):
     mode: Literal["merge", "replace"]
     expected_roster_revision: Count
     offering_revision: Revision
-    target_count: Count
-    add_count: Count
-    keep_count: Count
-    update_count: Count
+    target_count: Count = Field(description="Complete proposed status-active set: add_count + keep_count")
+    add_count: Count = Field(description="New or re-enabled target rows")
+    keep_count: Count = Field(description="All retained status-active rows; includes the update_count subset")
+    update_count: Count = Field(description="Explicit period-change subset of keep_count; do not add it again to target_count")
     withdrawals_count: Count
     target_digest: Digest
     withdrawals_digest: Digest
@@ -463,10 +467,10 @@ class RosterApplicationDTO(StrictDTO):
     offering_id: Id
     preview_id: Id
     roster_revision: Revision
-    target_count: Count
-    added_count: Count
-    kept_count: Count
-    updated_count: Count
+    target_count: Count = Field(description="Complete accepted target set: added_count + kept_count + updated_count")
+    added_count: Count = Field(description="Actual new or re-enabled rows")
+    kept_count: Count = Field(description="Unchanged retained rows; excludes updated_count")
+    updated_count: Count = Field(description="Actual changed retained rows; disjoint from kept_count")
     withdrawn_count: Count
     target_digest: Digest
     withdrawals_digest: Digest

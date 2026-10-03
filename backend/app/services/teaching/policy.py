@@ -10,6 +10,28 @@ import json
 from app.services.teaching.types import ASSESSMENT_PERMISSIONS, Permission, TeachingPolicyInputs, exact_identifier
 
 
+def capture_deployment_policy(settings) -> TeachingPolicyInputs:
+    """Capture exactly seven stable deployment fields as one frozen generation.
+
+    The caller owns process initialization. Never call this per field, per
+    request or as an update API: policy changes require a coordinated restart.
+    The generation is private provenance, not a distributed revocation proof.
+    Missing deployment configuration is disabled with empty trusted documents.
+    """
+    values = {
+        "institution_id": getattr(settings, "TEACHING_INSTITUTION_ID", ""),
+        "enabled": getattr(settings, "TEACHING_ENABLED", False),
+        "assignments_enabled": getattr(settings, "TEACHING_ASSIGNMENTS_ENABLED", False),
+        "feedback_enabled": getattr(settings, "TEACHING_FEEDBACK_ENABLED", False),
+        "revisions_enabled": getattr(settings, "TEACHING_REVISIONS_ENABLED", False),
+        "trusted_roster_json": getattr(settings, "TEACHER_STUDENT_ASSIGNMENTS", "{}"),
+        "trusted_delegations_json": getattr(settings, "TEACHING_TRUSTED_DELEGATIONS", "{}"),
+    }
+    generation = "deployment-" + sha256(json.dumps(values, ensure_ascii=False,
+        sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return TeachingPolicyInputs(**values, generation=generation)
+
+
 @dataclass(frozen=True)
 class RosterEntry:
     present: bool
