@@ -81,7 +81,7 @@ def test_source_owner_eligibility_and_unrelated_teacher_no_management(dbcase):
     assert a.authorize_action(db, "owner", t.TeachingAction.CREATE_COURSE, t.ScopeRef("school", "institution", "school")).actor_id == "owner"
     own = a.authorize_action(db, "owner", t.TeachingAction.ROSTER_MANAGE, offering_scope(t))
     assert t.Permission.ROSTER_MANAGE in own.permissions
-    deny(lambda: a.authorize_action(db, "other", t.TeachingAction.ROSTER_MANAGE, offering_scope(t)), status=403)
+    deny(lambda: a.authorize_action(db, "other", t.TeachingAction.ROSTER_MANAGE, offering_scope(t)), status=404)
     # Ownership grants shell reads but mutations still require the local role.
     db.execute(update(m.TeachingRole).where(m.TeachingRole.subject_id == "owner").values(status="revoked"))
     assert a.authorize_action(db, "owner", t.TeachingAction.READ_OFFERING, offering_scope(t)).teaching
@@ -193,7 +193,7 @@ def test_permissions_are_independent_and_assigned_scope_has_no_offering_grant(db
 def test_overbroad_stored_role_is_rejected_atomically_not_intersected(dbcase):
     db, a, t, m, _, _ = dbcase
     db.execute(update(m.TeachingRole).where(m.TeachingRole.subject_id == "co").values(permissions=["PUBLISH", "ROSTER_MANAGE"]))
-    deny(lambda: a.authorize_action(db, "co", t.TeachingAction.ROSTER_MANAGE, offering_scope(t)), status=403)
+    deny(lambda: a.authorize_action(db, "co", t.TeachingAction.ROSTER_MANAGE, offering_scope(t)), status=404)
     db.execute(update(m.TeachingRole).where(m.TeachingRole.subject_id == "assistant").values(scope="assigned", permissions=["ROSTER_MANAGE"]))
     deny(lambda: a.authorize_action(db, "assistant", t.TeachingAction.ROSTER_MANAGE, offering_scope(t)), status=403)
 
@@ -205,7 +205,7 @@ def test_locked_decision_uses_final_clock_and_coherent_supplied_policy_only(dbca
     locked = t.LockedContext(**{field.name: getattr(context, field.name) for field in dataclasses.fields(context)})
     policy = feature("app.services.teaching.policy").read_teaching_policy(snapshot(), "owner", actor_id="co")
     assert a.authorize_locked_action(locked, policy, t.TeachingAction.ROSTER_MANAGE, NOW).actor_id == "co"
-    deny(lambda: a.authorize_locked_action(locked, policy, t.TeachingAction.ROSTER_MANAGE, NOW+timedelta(microseconds=1)), status=403)
+    deny(lambda: a.authorize_locked_action(locked, policy, t.TeachingAction.ROSTER_MANAGE, NOW+timedelta(microseconds=1)), status=404)
     deny(lambda: a.authorize_locked_action(context, policy, t.TeachingAction.ROSTER_MANAGE, NOW), code="lock_orchestration_required", status=503)
     deny(lambda: a.authorize_action(db, "co", t.TeachingAction.ROSTER_MANAGE, offering_scope(t), lock=True), code="lock_orchestration_required", status=503)
 

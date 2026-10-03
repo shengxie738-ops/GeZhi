@@ -19,6 +19,7 @@ from app.services.teaching.types import (
     ACTION_PERMISSION, ASSESSMENT_PERMISSIONS, DEFAULT_POLICY_INPUTS,
     AuthorizationContext, AuthorizationSnapshot, LockedContext, ObjectRef,
     Permission, ScopeRef, TeachingAction, TeachingPolicyInputs, exact_identifier,
+    CourseVisibilitySnapshot, ReadonlyOffering, ReadonlyTeachingRole, ReadonlyEnrollment,
 )
 from app.schemas.teaching import (
     CapabilityDTO, CourseDTO, CoursePageDTO, CourseQuery, EnrollmentDTO,
@@ -137,13 +138,13 @@ def _active(row, at):
 
 
 def _permissions(row):
-    if row is None or not isinstance(row.permissions, list):
+    if row is None or not (isinstance(row.permissions, list) or isinstance(row, ReadonlyTeachingRole) and isinstance(row.permissions, tuple)):
         return None
     try:
         permissions = frozenset(Permission(value) for value in row.permissions)
     except (TypeError, ValueError):
         return None
-    if row.permissions != sorted(permission.value for permission in permissions):
+    if list(row.permissions) != sorted(permission.value for permission in permissions):
         return None
     if row.scope not in {"offering", "assigned"} or row.scope == "assigned" and not permissions <= ASSESSMENT_PERMISSIONS:
         return None
@@ -225,6 +226,44 @@ def _validate_roots(context):
         _deny(403, "row_scope_mismatch")
 
 
+def readonly_course_visibility(offering, role, enrollment):
+    """Copy only authority inputs; no live Offering/relationship mutation grant."""
+    shell = ReadonlyOffering(offering.id, offering.institution_id, offering.course_id, offering.state)
+    role_copy = None if role is None else ReadonlyTeachingRole(
+        role.id, role.institution_id, role.offering_id, role.subject_id,
+        role.granted_account_role, role.label,
+        tuple(role.permissions) if isinstance(role.permissions, list) else None,
+        role.scope, role.status, _utc(role.effective_from), _utc(role.effective_until), role.revision)
+    enrollment_copy = None if enrollment is None else ReadonlyEnrollment(
+        enrollment.id, enrollment.institution_id, enrollment.offering_id, enrollment.student_id,
+        enrollment.status, _utc(enrollment.effective_from), _utc(enrollment.effective_until),
+        enrollment.revision, enrollment.source_kind, enrollment.source_teacher_id)
+    return CourseVisibilitySnapshot(shell, role_copy, enrollment_copy)
+
+
+def _course_shell_visible(context, policy, at):
+    # evaluate every complete actor-only candidate at the same final time and
+    # coherent policy; no SQL, cached visibility boolean or new root lock.
+    for candidate in context.course_visibility:
+        if not isinstance(candidate, CourseVisibilitySnapshot):
+            _deny(503, "invalid_lock_footprint")
+        shell = candidate.offering
+        if (shell.institution_id != context.scope.institution_id or shell.course_id != context.course.id
+                or not exact_identifier(shell.id, 36)):
+            _deny(503, "invalid_lock_footprint")
+        scoped = AuthorizationContext(context.actor_account,
+            ScopeRef(context.scope.institution_id, "offering", shell.id),
+            source_account=context.source_account, course=context.course,
+            offering=shell, role=candidate.role, enrollment=candidate.enrollment)
+        try:
+            _evaluate(scoped, policy, TeachingAction.READ_OFFERING, at)
+            return True
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+    return False
+
+
 def _evaluate(context, policy, action, at):
     action = _action(action)
     _validate_action_scope(action, context.scope)
@@ -260,8 +299,10 @@ def _evaluate(context, policy, action, at):
         if scope.kind != "institution" or not owner:
             _deny(403, "source_owner_required")
     elif action in {TeachingAction.UPDATE_COURSE, TeachingAction.CREATE_OFFERING}:
-        if scope.kind != "course" or not owner:
-            _deny(403, "source_owner_required")
+        if not owner:
+            if not _course_shell_visible(context, policy, at):
+                _deny(404, "not_found")
+            _deny(403, "permission_denied")
     elif action == TeachingAction.READ_COURSE:
         if scope.kind != "course" or not owner:
             _deny(404, "scope_not_found")
@@ -274,6 +315,8 @@ def _evaluate(context, policy, action, at):
     else:
         required = ACTION_PERMISSION.get(action)
         if scope.kind != "offering" or permissions is None or required not in permissions or context.role.scope != "offering":
+            if not (teaching or learning):
+                _deny(404, "not_found")
             _deny(403, "permission_denied")
         if required in ASSESSMENT_PERMISSIONS:
             _deny(403, "assessment_stage_unavailable")
@@ -313,14 +356,20 @@ def authorize_action(session: Session, actor_id: str, action: TeachingAction, sc
         _deny(404, "scope_not_found")
     _validate_action_scope(action, scope)
     context = _load_context(session, actor, scope, object_ref)
-    if action == TeachingAction.READ_COURSE and context.course.source_teacher_id != actor.username:
+    if action in {TeachingAction.READ_COURSE, TeachingAction.UPDATE_COURSE, TeachingAction.CREATE_OFFERING} and context.course.source_teacher_id != actor.username:
         contexts = _offering_contexts(session, actor, initial, course_id=scope.id)
         inputs, at = _final_inputs(session, initial), utcnow()
         _object_scope(context)
-        visible = _visible(contexts, inputs, at, "all")
-        if not visible:
-            _deny(404, "scope_not_found")
-        return replace(visible[0][1], scope=scope)
+        if action == TeachingAction.READ_COURSE:
+            visible = _visible(contexts, inputs, at, "all")
+            if not visible:
+                _deny(404, "scope_not_found")
+            return replace(visible[0][1], scope=scope)
+        # Unlocked decision remains a fresh read only. Actual writes use the
+        # orchestrator's declared, locked readonly footprint instead.
+        context = replace(context, course_visibility=tuple(
+            readonly_course_visibility(item.offering, item.role, item.enrollment) for item in contexts))
+        return _evaluate(context, _policy(context, inputs), action, at)
     inputs = _final_inputs(session, initial)
     return _evaluate(context, _policy(context, inputs), action, utcnow())
 

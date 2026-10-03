@@ -1,7 +1,7 @@
 """Dedicated B1 adapter, intentionally not mounted in the aggregate application.
 
-Only recovery routes and the reusable commit-before-response helper are released.
-Future mutation endpoints must use strict DTOs, this dependency and commit_write.
+Task4 course/lifecycle/local-role routes and recovery use strict DTOs, the
+dedicated dependency and the accepted commit-before-response helper.
 """
 import logging
 from uuid import uuid4
@@ -146,3 +146,54 @@ async def recover_by_id(receipt_id: str, account: UserAccount = Depends(get_teac
         raise HTTPException(404, "not_found")
     result = get_receipt(db, account.username, receipt_id)
     return _response(200, "ok", _write_data(result))
+
+
+# Task4 only: these routes stay on the standalone unmounted B1 router.
+from app.schemas.teaching import (
+    CreateCourseCommand, UpdateCourseCommand, CreateOfferingCommand,
+    UpdateOfferingCommand, TransitionOfferingCommand, SetRoleCommand,
+)
+from app.services.teaching.courses import prepare_course_write
+from app.services.teaching.roles import prepare_role_write
+
+
+def _course_command(db, account, purpose, command, key, target_id=None):
+    intent, operation = prepare_course_write(db, account.username, purpose, command, key, target_id)
+    return commit_write(db, intent, intent.scope, operation)
+
+
+@router.post("/courses")
+async def create_course(command: CreateCourseCommand, key: str = Header(alias="Idempotency-Key"),
+                        account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    return _course_command(db, account, "course_create", command, key)
+
+
+@router.patch("/courses/{course_id}")
+async def update_course(course_id: str, command: UpdateCourseCommand, key: str = Header(alias="Idempotency-Key"),
+                        account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    return _course_command(db, account, "course_update", command, key, course_id)
+
+
+@router.post("/courses/{course_id}/offerings")
+async def create_offering(course_id: str, command: CreateOfferingCommand, key: str = Header(alias="Idempotency-Key"),
+                          account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    return _course_command(db, account, "offering_create", command, key, course_id)
+
+
+@router.patch("/offerings/{offering_id}")
+async def update_offering(offering_id: str, command: UpdateOfferingCommand, key: str = Header(alias="Idempotency-Key"),
+                          account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    return _course_command(db, account, "offering_update", command, key, offering_id)
+
+
+@router.post("/offerings/{offering_id}/transitions")
+async def transition_offering(offering_id: str, command: TransitionOfferingCommand, key: str = Header(alias="Idempotency-Key"),
+                              account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    return _course_command(db, account, "offering_transition", command, key, offering_id)
+
+
+@router.put("/offerings/{offering_id}/roles/{subject_id}")
+async def set_role(offering_id: str, subject_id: str, command: SetRoleCommand, key: str = Header(alias="Idempotency-Key"),
+                    account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    intent, operation = prepare_role_write(db, account.username, offering_id, subject_id, command, key)
+    return commit_write(db, intent, intent.scope, operation)

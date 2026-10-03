@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator, model_validator
 
 from app.services.teaching.types import Permission, TeachingAction
 
@@ -251,3 +251,141 @@ class WriteResultDTO(StrictDTO):
     receipt: WriteReceiptDTO
     result: dict
     replayed: bool
+
+
+# Task4 command and immutable acceptance DTOs. These do not supply authority.
+Title = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+TimeZoneName = Annotated[str, StringConstraints(min_length=1, max_length=64)]
+Reason = Annotated[str, StringConstraints(min_length=1, max_length=1000)]
+
+
+class Task4Command(StrictDTO):
+    @field_validator("*", mode="before")
+    @classmethod
+    def trim_metadata(cls, value, info):
+        if isinstance(value, str) and info.field_name in {"title", "code", "term", "reason"}:
+            if any(unicodedata.category(char).startswith("C") for char in value):
+                raise ValueError("control characters are forbidden")
+            return value.strip()
+        return value
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def command_timezone(cls, value, info):
+        if info.field_name == "timezone" and value is not None:
+            return CourseDTO.known_timezone(value)
+        return value
+
+
+class CreateCourseCommand(Task4Command):
+    title: Title
+    code: Annotated[str, StringConstraints(max_length=64)] = ""
+    description: Annotated[str, StringConstraints(max_length=4000)] = ""
+    timezone: TimeZoneName
+
+
+class UpdateCourseCommand(Task4Command):
+    expected_revision: Revision
+    title: Title | None = None
+    code: Annotated[str, StringConstraints(max_length=64)] | None = None
+    description: Annotated[str, StringConstraints(max_length=4000)] | None = None
+    timezone: TimeZoneName | None = None
+
+    @model_validator(mode="after")
+    def meaningful_update(self):
+        supplied = self.model_fields_set - {"expected_revision"}
+        if not supplied or any(getattr(self, name) is None for name in supplied):
+            raise ValueError("at least one non-null mutable field required")
+        return self
+
+
+class CreateOfferingCommand(Task4Command):
+    title: Title
+    term: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    timezone: TimeZoneName | None = None
+
+
+class UpdateOfferingCommand(Task4Command):
+    expected_revision: Revision
+    title: Title | None = None
+    term: Annotated[str, StringConstraints(min_length=1, max_length=64)] | None = None
+    timezone: TimeZoneName | None = None
+
+    @model_validator(mode="after")
+    def meaningful_update(self):
+        supplied = self.model_fields_set - {"expected_revision"}
+        if not supplied or any(getattr(self, name) is None for name in supplied):
+            raise ValueError("at least one non-null mutable field required")
+        return self
+
+
+class TransitionOfferingCommand(Task4Command):
+    expected_revision: Revision
+    target_state: Literal["draft", "active", "archived"]
+    reason: Reason
+
+
+class SetRoleCommand(Task4Command):
+    expected_role_revision: Count
+    status: Literal["active", "revoked"]
+    label: Literal["teacher", "assistant"]
+    permissions: list[Permission] = Field(max_length=len(Permission))
+    scope: Literal["offering", "assigned"]
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
+    reason: Reason
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def permission_values(cls, values):
+        if not isinstance(values, list) or any(not isinstance(value, (str, Permission)) for value in values):
+            raise ValueError("permission array required")
+        try:
+            return sorted({Permission(value) for value in values}, key=lambda value: value.value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("unknown permission") from exc
+
+    @field_validator("effective_from", "effective_until", mode="before")
+    @classmethod
+    def utc_wire_time(cls, value):
+        if isinstance(value, str):
+            # Accept RFC3339 UTC strings only; no local/naive interpretation.
+            if "T" not in value or not value.endswith(("Z", "+00:00")):
+                raise ValueError("UTC timestamp required")
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("UTC timestamp required") from exc
+        return value
+
+    @model_validator(mode="after")
+    def bounded_role(self):
+        from app.services.teaching.types import MANAGEMENT_PERMISSIONS
+        if self.scope == "assigned" and set(self.permissions) & MANAGEMENT_PERMISSIONS:
+            raise ValueError("assigned scope cannot manage offering")
+        if self.status == "revoked" and self.permissions:
+            raise ValueError("revocation requires empty permissions")
+        if self.effective_from is not None and self.effective_until is not None and self.effective_until <= self.effective_from:
+            raise ValueError("effective interval must be strictly increasing")
+        return self
+
+
+class CourseWriteResultDTO(StrictDTO):
+    course_id: Id
+    revision: Revision
+
+
+class OfferingWriteResultDTO(StrictDTO):
+    offering_id: Id
+    revision: Revision
+
+
+class TransitionWriteResultDTO(OfferingWriteResultDTO):
+    state: Literal["draft", "active", "archived"]
+
+
+class RoleWriteResultDTO(StrictDTO):
+    role_id: Id
+    subject_id: Subject
+    revision: Revision
+    status: Literal["active", "revoked"]

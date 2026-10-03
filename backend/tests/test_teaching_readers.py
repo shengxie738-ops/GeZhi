@@ -139,7 +139,7 @@ def test_persisted_preview_actor_scoped_full_counts_and_change_pages(dbcase):
     second = a.get_roster_preview_changes(db, "owner", "o1", "p1", schema.PreviewChangesQuery(kind="withdraw", limit=100, cursor=first.next_cursor))
     assert first.items+second.items == ids and second.next_cursor is None
     deny(lambda: a.get_roster_preview(db, "co", "o1", "p1"), status=404)
-    deny(lambda: a.get_roster_preview(db, "owner", "other", "p1"), status=403)
+    deny(lambda: a.get_roster_preview(db, "owner", "other", "p1"), status=404)
     db.execute(update(m.TeachingRole).where(m.TeachingRole.subject_id == "owner").values(status="revoked"))
     deny(lambda: a.get_roster_preview(db, "owner", "o1", "p1"), status=403)
 
