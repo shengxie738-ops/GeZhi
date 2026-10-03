@@ -197,3 +197,50 @@ async def set_role(offering_id: str, subject_id: str, command: SetRoleCommand, k
                     account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
     intent, operation = prepare_role_write(db, account.username, offering_id, subject_id, command, key)
     return commit_write(db, intent, intent.scope, operation)
+
+
+# Task5 roster adapters only. The aggregate application remains unmounted.
+from app.schemas.teaching import RosterPreviewCommand, RosterApplicationCommand, PreviewChangesQuery
+from app.services.teaching.rosters import prepare_roster_write, get_roster_preview, list_roster_preview_changes
+
+
+@router.post("/offerings/{offering_id}/roster-previews")
+async def create_roster_preview(offering_id: str, command: RosterPreviewCommand,
+                                key: str = Header(alias="Idempotency-Key"),
+                                account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    intent, operation = prepare_roster_write(db, account.username, offering_id, "preview", command, key)
+    return commit_write(db, intent, intent.scope, operation)
+
+
+@router.post("/offerings/{offering_id}/roster-applications")
+async def create_roster_application(offering_id: str, command: RosterApplicationCommand,
+                                    key: str = Header(alias="Idempotency-Key"),
+                                    account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    intent, operation = prepare_roster_write(db, account.username, offering_id, "apply", command, key)
+    return commit_write(db, intent, intent.scope, operation)
+
+
+@router.get("/offerings/{offering_id}/roster-previews/{preview_id}")
+async def read_roster_preview(offering_id: str, preview_id: str, request: Request,
+                              account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    if request.query_params:
+        raise HTTPException(422, "validation_error")
+    result = get_roster_preview(db, account.username, offering_id, preview_id)
+    return _response(200, "ok", result.model_dump(mode="json"))
+
+
+@router.get("/offerings/{offering_id}/roster-previews/{preview_id}/changes")
+async def read_roster_preview_changes(offering_id: str, preview_id: str, request: Request,
+                                      account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    pairs = list(request.query_params.multi_items())
+    if len(pairs) != len({key for key, value in pairs}):
+        raise HTTPException(422, "validation_error")
+    values = dict(pairs)
+    if "limit" in values:
+        limit = values["limit"]
+        if not limit.isascii() or not limit.isdecimal() or len(limit) > 3:
+            raise HTTPException(422, "validation_error")
+        values["limit"] = int(limit)
+    query = PreviewChangesQuery.model_validate(values)
+    result = list_roster_preview_changes(db, account.username, offering_id, preview_id, query)
+    return _response(200, "ok", result.model_dump(mode="json"))

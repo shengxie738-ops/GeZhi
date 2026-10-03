@@ -189,6 +189,30 @@ class PreviewIssueDTO(StrictDTO):
     subject_id: Subject | None = None
 
 
+class RosterPeriodCommand(StrictDTO):
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
+
+    @field_validator("effective_from", "effective_until", mode="before")
+    @classmethod
+    def utc_wire_time(cls, value):
+        if isinstance(value, str):
+            if "T" not in value or not value.endswith(("Z", "+00:00")):
+                raise ValueError("UTC timestamp required")
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("UTC timestamp required") from exc
+        return value
+
+    @model_validator(mode="after")
+    def ordered_period(self):
+        if self.effective_from is not None and self.effective_until is not None and self.effective_until <= self.effective_from:
+            raise ValueError("effective interval must be strictly increasing")
+        return self
+
+
+
 class RosterPreviewDTO(StrictDTO):
     id: Id
     offering_id: Id
@@ -203,6 +227,12 @@ class RosterPreviewDTO(StrictDTO):
     target_digest: Digest
     withdrawals_digest: Digest
     withdraw_sample: list[Subject] = Field(max_length=20)
+    add_sample: list[Subject] = Field(default_factory=list, max_length=20)
+    keep_sample: list[Subject] = Field(default_factory=list, max_length=20)
+    update_sample: list[Subject] = Field(default_factory=list, max_length=20)
+    validation_issue_count: Count = 0
+    period: RosterPeriodCommand | None = None
+    period_target_count: Count = 0
     validation_issues: list[PreviewIssueDTO]
     can_apply: bool
     expired: bool
@@ -389,3 +419,54 @@ class RoleWriteResultDTO(StrictDTO):
     subject_id: Subject
     revision: Revision
     status: Literal["active", "revoked"]
+
+
+# Task5 strict full-set roster commands. These never carry authority claims.
+class RosterPreviewCommand(StrictDTO):
+    mode: Literal["merge", "replace"]
+    expected_roster_revision: Count
+    student_ids: list[Subject] = Field(max_length=10000)
+    period: RosterPeriodCommand | None = None
+
+    @field_validator("student_ids")
+    @classmethod
+    def exact_subjects(cls, values):
+        from app.services.teaching.types import exact_identifier
+        if any(not exact_identifier(value) for value in values):
+            raise ValueError("exact account identifiers required")
+        return values
+
+    @field_validator("period", mode="before")
+    @classmethod
+    def supplied_period_is_object(cls, value):
+        if value is None:
+            raise ValueError("omit period to retain existing intervals")
+        return value
+
+
+class RosterApplicationCommand(StrictDTO):
+    preview_id: Id
+    expected_roster_revision: Count
+    confirmed_withdrawals_digest: Digest
+    confirmed_withdrawals_count: Count
+
+    @field_validator("preview_id")
+    @classmethod
+    def exact_preview(cls, value):
+        from app.services.teaching.types import exact_identifier
+        if not exact_identifier(value, 36):
+            raise ValueError("exact preview identifier required")
+        return value
+
+
+class RosterApplicationDTO(StrictDTO):
+    offering_id: Id
+    preview_id: Id
+    roster_revision: Revision
+    target_count: Count
+    added_count: Count
+    kept_count: Count
+    updated_count: Count
+    withdrawn_count: Count
+    target_digest: Digest
+    withdrawals_digest: Digest
