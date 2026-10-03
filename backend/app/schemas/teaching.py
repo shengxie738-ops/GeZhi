@@ -216,3 +216,38 @@ class PreviewChangesDTO(StrictDTO):
     total_count: Count
     next_cursor: Subject | None
     as_of: datetime
+
+
+# Only original receipt/recovery projections are released here. Mutation input
+# DTOs and the wider teaching HTTP surface belong to subsequent tasks.
+IdempotencyKey = Annotated[str, StringConstraints(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
+WriteActionName = Literal["course_create", "course_update", "offering_create", "course_manage", "roster_manage", "roles_manage"]
+
+
+class ReceiptQuery(StrictDTO):
+    action: WriteActionName
+    scope_type: Literal["institution", "course", "offering"]
+    scope_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    key: IdempotencyKey
+
+
+class WriteReceiptDTO(StrictDTO):
+    id: Id
+    action: TeachingAction
+    scope_type: Literal["institution", "course", "offering"]
+    scope_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    target_type: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    target_id: Id
+    result_type: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    result_id: Id
+    canonicalization_version: Literal[1]
+    request_hash: Digest
+    accepted_at: datetime
+    http_status: int = Field(ge=200, lt=300)
+    original_result: dict
+
+
+class WriteResultDTO(StrictDTO):
+    receipt: WriteReceiptDTO
+    result: dict
+    replayed: bool
