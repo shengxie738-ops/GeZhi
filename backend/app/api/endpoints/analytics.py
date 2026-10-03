@@ -1,11 +1,13 @@
 import json
 import re
 from datetime import datetime, timezone, timedelta
+from math import isfinite
 from statistics import mean
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher, teacher_student_ids
@@ -15,14 +17,12 @@ from app.core.responses import ok
 from app.core.username_policy import is_valid_student_username
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
+from app.models.domain_record import DomainRecord
 from app.repositories.json_store import JsonStore, make_record_key
-from app.core.config import Settings
-from app.services.model_registry import build_chat_model
+from app.core.config import settings
 from app.utils.datetime import utc_now_iso
 
 router = APIRouter()
-
-
 RADAR_INDICATORS = [
     {"name": "规划一致性", "max": 100},
     {"name": "代码质量与工程", "max": 100},
@@ -31,8 +31,8 @@ RADAR_INDICATORS = [
     {"name": "专注度均值", "max": 100},
     {"name": "Checkpoint完成率", "max": 100},
 ]
-
-WEEKLY_ACTIVITY_DATES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+SourceRead = dict[str, Any]
+StoredRecord = dict[str, Any]
 
 
 class FreePayload(BaseModel):
@@ -40,640 +40,449 @@ class FreePayload(BaseModel):
         extra = "allow"
 
 
-GRADE_LETTER_MAP = {"A": 92, "B": 82, "C": 72, "D": 62, "E": 52}
+def _parse_recorded_timezone_declaration(value: Any) -> timezone | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if value == "UTC":
+        return timezone.utc
+    match = re.fullmatch(r"([+-])([0-9]{2}):([0-9]{2})", value)
+    if not match:
+        return None
+    sign, hours, minutes = match.groups()
+    hours, minutes = int(hours), int(minutes)
+    if minutes > 59 or hours > 14 or (hours == 14 and minutes != 0):
+        return None
+    return timezone(timedelta(minutes=(hours * 60 + minutes) * (1 if sign == "+" else -1)))
 
 
-def _safe_int(val, default: int = 50) -> int:
-    """安全转换为 int，失败时返回默认值"""
-    try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return default
+def _timezone_label(tz: timezone | None) -> str | None:
+    if tz is None:
+        return None
+    minutes = int(tz.utcoffset(None).total_seconds() / 60)
+    if minutes == 0:
+        return "UTC"
+    return f"{'+' if minutes >= 0 else '-'}{abs(minutes) // 60:02d}:{abs(minutes) % 60:02d}"
 
 
-def _author_matches(item: dict[str, Any], username: str, real_name: str) -> bool:
-    author_username = str(item.get("authorUsername") or "").strip()
-    author = str(item.get("author") or "").strip()
-    if author_username and author_username == username:
-        return True
-    if real_name and author == real_name:
-        return True
-    if author and author == username:
-        return True
-    return False
-
-
-def _submission_numeric_score(sub: dict[str, Any]) -> int | None:
-    grade = sub.get("grade")
-    if grade is not None:
-        letter = str(grade).upper()
-        if letter in GRADE_LETTER_MAP:
-            return GRADE_LETTER_MAP[letter]
+def _parse_recorded_instant(value: Any, *, naive_timezone: timezone | None = None) -> datetime | None:
+    if isinstance(value, str):
         try:
-            return int(float(grade))
-        except (ValueError, TypeError):
-            pass
-    if sub.get("aiScore") is not None:
-        return _safe_int(sub.get("aiScore"), 0)
-    return None
+            value = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        if naive_timezone is None:
+            return None
+        value = value.replace(tzinfo=naive_timezone)
+    return value.astimezone(timezone.utc)
 
 
-def _compute_radar_values(
-    username: str,
-    real_name: str,
-    profile: StudentProfile | None,
-    store: JsonStore | None,
-    *,
-    all_homeworks: list[dict[str, Any]] | None = None,
-    forum_posts: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """基于作业诊断、考试、论坛、画像与日常 Checkpoint 计算六维雷达。"""
-    knowledge = _safe_int(getattr(profile, "knowledge", 50) or 50)
-    pace = _safe_int(getattr(profile, "pace", 50) or 50)
-
-    submissions = store.list_payloads("homework", "submission", owner_id=username) if store else []
-    attempts = store.list_payloads("exams", "attempt", owner_id=username) if store else []
-    mistakes = store.list_payloads("exams", "mistake", owner_id=username) if store else []
-
-    alina_scores: list[int] = []
-    ninja_scores: list[int] = []
-    profx_scores: list[int] = []
-    homework_numeric: list[int] = []
-    for sub in submissions:
-        scores = ((sub.get("diagnosis") or {}).get("scores") or {})
-        if scores.get("alina") is not None:
-            alina_scores.append(_safe_int(scores.get("alina"), 0))
-        if scores.get("codeninja") is not None:
-            ninja_scores.append(_safe_int(scores.get("codeninja"), 0))
-        if scores.get("profx") is not None:
-            profx_scores.append(_safe_int(scores.get("profx"), 0))
-        numeric = _submission_numeric_score(sub)
-        if numeric is not None:
-            homework_numeric.append(numeric)
-
-    homework_avg = round(mean(homework_numeric)) if homework_numeric else knowledge
-
-    exam_scores: list[int] = []
-    prog_scores: list[int] = []
-    obj_pcts: list[int] = []
-    for att in attempts:
-        if att.get("programmingScore") is not None:
-            prog_scores.append(_safe_int(att.get("programmingScore"), 0))
-        obj = att.get("objectiveScore")
-        max_obj = att.get("maxObjectiveScore") or att.get("objectiveMax")
-        if obj is not None and max_obj is not None:
-            try:
-                max_val = float(max_obj)
-                if max_val > 0:
-                    obj_pcts.append(round(float(obj) / max_val * 100))
-                    continue
-            except (ValueError, TypeError):
-                pass
-        if obj is not None:
-            exam_scores.append(_safe_int(obj, 0))
-        elif att.get("totalScore") is not None:
-            exam_scores.append(_safe_int(att.get("totalScore"), 0))
-
-    exam_avg = round(mean(exam_scores)) if exam_scores else knowledge
-
-    # 1 规划一致性 ← Alina 诊断均值，兜底 pace
-    if alina_scores:
-        planning = round(mean(alina_scores))
-        planning_evidence = {
-            "source": "diagnosis.scores.alina",
-            "label": f"Alina诊断 {len(alina_scores)} 次均值 {planning}",
-            "sampleCount": len(alina_scores),
-            "rawMean": planning,
-        }
-    else:
-        planning = pace
-        planning_evidence = {
-            "source": "profile.pace",
-            "label": f"画像步调兜底 {planning}",
-            "sampleCount": 0,
-            "rawMean": planning,
-        }
-
-    # 2 代码质量与工程 ← CodeNinja 0.7 + 编程分 0.3
-    ninja_avg = round(mean(ninja_scores)) if ninja_scores else None
-    prog_avg = round(mean(prog_scores)) if prog_scores else None
-    if ninja_avg is not None and prog_avg is not None:
-        code_quality = round(ninja_avg * 0.7 + prog_avg * 0.3)
-        code_evidence = {
-            "source": "diagnosis.codeninja+exam.programmingScore",
-            "label": f"CodeNinja {ninja_avg} ×0.7 + 编程分 {prog_avg} ×0.3",
-            "sampleCount": len(ninja_scores) + len(prog_scores),
-            "rawMean": code_quality,
-        }
-    elif ninja_avg is not None:
-        code_quality = ninja_avg
-        code_evidence = {
-            "source": "diagnosis.scores.codeninja",
-            "label": f"CodeNinja诊断 {len(ninja_scores)} 次均值 {code_quality}",
-            "sampleCount": len(ninja_scores),
-            "rawMean": code_quality,
-        }
-    elif prog_avg is not None:
-        code_quality = prog_avg
-        code_evidence = {
-            "source": "exam.programmingScore",
-            "label": f"考试编程分均值 {code_quality}",
-            "sampleCount": len(prog_scores),
-            "rawMean": code_quality,
-        }
-    else:
-        code_quality = exam_avg if exam_scores else knowledge
-        code_evidence = {
-            "source": "exam_avg" if exam_scores else "profile.knowledge",
-            "label": f"{'考试均分' if exam_scores else '画像知识'}兜底 {code_quality}",
-            "sampleCount": len(exam_scores),
-            "rawMean": code_quality,
-        }
-
-    # 3 理论逻辑完备度 ← Prof.X + 客观题得分率
-    profx_avg = round(mean(profx_scores)) if profx_scores else None
-    obj_avg = round(mean(obj_pcts)) if obj_pcts else (round(mean(exam_scores)) if exam_scores else None)
-    theory_parts = [v for v in [profx_avg, obj_avg] if v is not None]
-    if theory_parts:
-        theory = round(mean(theory_parts))
-        if profx_avg is not None and obj_avg is not None:
-            theory_source = "diagnosis.profx+exam.objective"
-            theory_label = f"Prof.X {profx_avg} 与客观题 {obj_avg} 均值"
-        elif profx_avg is not None:
-            theory_source = "diagnosis.scores.profx"
-            theory_label = f"Prof.X诊断 {len(profx_scores)} 次均值 {theory}"
-        else:
-            theory_source = "exam.objective"
-            theory_label = f"考试客观题均值 {theory}"
-        theory_evidence = {
-            "source": theory_source,
-            "label": theory_label,
-            "sampleCount": len(profx_scores) + len(obj_pcts) + (len(exam_scores) if not obj_pcts else 0),
-            "rawMean": theory,
-        }
-    else:
-        theory = homework_avg
-        theory_evidence = {
-            "source": "homework_avg",
-            "label": f"作业均分兜底 {theory}",
-            "sampleCount": len(homework_numeric),
-            "rawMean": theory,
-        }
-
-    # 4 学术论坛活跃度 ← 发帖+10 / 回帖+5，封顶 100
-    posts = forum_posts if forum_posts is not None else (store.list_payloads("forum", "post") if store else [])
-    activity = 0
-    post_count = 0
-    reply_count = 0
-    for post in posts:
-        if _author_matches(post, username, real_name):
-            activity += 10
-            post_count += 1
-        for reply in post.get("replies") or []:
-            if _author_matches(reply, username, real_name):
-                activity += 5
-                reply_count += 1
-    forum_score = min(100, activity)
-    forum_evidence = {
-        "source": "forum/post+replies",
-        "label": f"发帖 {post_count} · 回帖 {reply_count}",
-        "sampleCount": post_count + reply_count,
-        "rawMean": forum_score,
-    }
-
-    # 5 专注度均值 ← 0.6*pace + 0.4*错题代理
-    unmastered = [m for m in mistakes if not m.get("mastered")]
-    repeated = [m for m in unmastered if _safe_int(m.get("wrongCount", 1), 1) > 1]
-    mistake_proxy = max(0, 100 - len(unmastered) * 5 - len(repeated) * 8)
-    focus = min(100, max(0, round(0.6 * pace + 0.4 * mistake_proxy)))
-    focus_evidence = {
-        "source": "profile.pace+mistakes",
-        "label": f"步调 {pace} · 未掌握 {len(unmastered)} · 反复错 {len(repeated)}",
-        "sampleCount": len(mistakes),
-        "rawMean": focus,
-    }
-
-    # 6 Checkpoint完成率 ← 仅 type==daily
-    homeworks = all_homeworks if all_homeworks is not None else (store.list_payloads("homework", "homework") if store else [])
-    daily = [h for h in homeworks if h.get("type") == "daily"]
-    sub_by_hw = {str(sub.get("homeworkId")): sub for sub in submissions if sub.get("homeworkId")}
-    completed = 0
-    for hw in daily:
-        status = (sub_by_hw.get(str(hw.get("id"))) or {}).get("status")
-        if status in ("submitted", "graded"):
-            completed += 1
-    checkpoint_rate = round(completed / len(daily) * 100) if daily else 0
-    checkpoint_evidence = {
-        "source": "homework.type=daily",
-        "label": f"日常 Checkpoint {completed}/{len(daily)}",
-        "sampleCount": len(daily),
-        "rawMean": checkpoint_rate,
-    }
-
-    radar_values = [planning, code_quality, theory, forum_score, focus, checkpoint_rate]
-    return {
-        "radarValues": radar_values,
-        "radarEvidence": {
-            "规划一致性": planning_evidence,
-            "代码质量与工程": code_evidence,
-            "理论逻辑完备度": theory_evidence,
-            "学术论坛活跃度": forum_evidence,
-            "专注度均值": focus_evidence,
-            "Checkpoint完成率": checkpoint_evidence,
-        },
-        "homeworkAvg": homework_avg,
-        "examAvg": exam_avg,
-        "focus": focus,
-        "progress": homework_avg,
-        "errorCount": len(mistakes),
-        "unmasteredCount": len(unmastered),
-        "forumCount": post_count,
-        "checkpointRate": checkpoint_rate,
-    }
-
-
-def _student_card(
-    account: UserAccount,
-    profile: StudentProfile | None,
-    index: int,
-    store: JsonStore | None = None,
-    *,
-    all_homeworks: list[dict[str, Any]] | None = None,
-    forum_posts: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """生成学生卡片，聚合真实作业/考试/论坛/诊断数据"""
-    username = account.username
-    real_name = account.real_name or username
-    metrics = _compute_radar_values(
-        username,
-        real_name,
-        profile,
-        store,
-        all_homeworks=all_homeworks,
-        forum_posts=forum_posts,
-    )
-    progress = metrics["progress"]
-    focus = metrics["focus"]
-
-    return {
-        "id": username,
-        "userId": username,
-        "username": username,
-        "name": real_name,
-        "className": account.class_name or "",
-        "progress": progress,
-        "focus": focus,
-        "goal": getattr(profile, "goal", "") if profile else "",
-        "status": "online",
-        "currentAgent": "Alina",
-        "alert": progress < 50 or focus < 50,
-        "errorCount": metrics["errorCount"],
-        "forumCount": metrics["forumCount"],
-        "activeRate": focus,
-        "radarValues": metrics["radarValues"],
-        "radarEvidence": metrics["radarEvidence"],
-        "checkpointRate": metrics["checkpointRate"],
-    }
-
-
-def _student_cards(db: Session, student_ids: set[str]) -> list[dict[str, Any]]:
-    students = db.query(UserAccount).filter(UserAccount.role == "student", UserAccount.username.in_(student_ids)).order_by(UserAccount.created_at.asc()).all()
-    # 纵深防御：即使库里混入非法账号（自动化测试残留、直接插库），
-    # 画像也只聚合"纯数字学号或含中文姓名"的学生
-    students = [student for student in students if is_valid_student_username(student.username)]
-    profiles = {
-        item.user_id: item
-        for item in db.query(StudentProfile).filter(StudentProfile.user_id.in_([student.username for student in students] or [""])).all()
-    }
-    store = JsonStore(db)
-    all_homeworks = store.list_payloads("homework", "homework")
-    forum_posts = store.list_payloads("forum", "post")
-    return [
-        _student_card(
-            student,
-            profiles.get(student.username),
-            index + 1,
-            store,
-            all_homeworks=all_homeworks,
-            forum_posts=forum_posts,
-        )
-        for index, student in enumerate(students)
-    ]
-
-
-def _student_records(store: JsonStore, module: str, record_type: str, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Use persisted ownership, never caller-editable payload labels, for aggregation."""
-    return [record for sid in sorted({str(s["username"]) for s in students})
-            for record in store.list_payloads(module, record_type, owner_id=sid)]
-
-
-def _teacher_records(store: JsonStore, record_type: str, teacher_id: str) -> list[dict[str, Any]]:
-    allowed = teacher_student_ids(teacher_id)
-    return [record for record in store.list_payloads("analytics", record_type, owner_id=teacher_id)
-            if record.get("studentIds") and set(record["studentIds"]).issubset(allowed)]
-
-
-def _build_student_timeline(matched: dict[str, Any], error_count: int, pending_intervention: bool = False) -> list[dict[str, Any]]:
-    progress = _safe_int(matched.get("progress"), 0)
-    alert = bool(matched.get("alert")) or pending_intervention
-    return [
-        {
-            "label": "作业提交",
-            "value": "节奏稳定" if progress >= 60 else "低于班级均值",
-            "tone": "good" if progress >= 60 else "risk",
-        },
-        {
-            "label": "错题新增",
-            "value": f"{error_count} 个卡点",
-            "tone": "risk" if error_count > 2 else "normal",
-        },
-        {
-            "label": "AI 会诊",
-            "value": matched.get("currentAgent") or "Alina",
-            "tone": "good",
-        },
-        {
-            "label": "教师干预",
-            "value": "待跟进" if alert else "暂无异常",
-            "tone": "risk" if alert else "good",
-        },
-    ]
-
-
-def _rounded_mean(values: list[int | float], default: int = 0) -> int:
-    return round(mean(values)) if values else default
-
-
-def _class_radar_values(students: list[dict[str, Any]]) -> list[int]:
-    if not students:
-        return [0, 0, 0, 0, 0, 0]
-
-    radar_rows = [item.get("radarValues") or [] for item in students]
-    return [
-        _rounded_mean([int(row[index] or 0) for row in radar_rows if len(row) > index])
-        for index in range(6)
-    ]
-
-
-def _weekly_activity_rates(students: list[dict[str, Any]], store: JsonStore | None = None) -> list[int]:
-    """基于真实提交时间戳按星期聚合周活跃率，无数据时降级为默认偏移"""
-    student_count = len(students)
-    if student_count == 0:
-        return [0] * 7
-
-    if store:
-        # 按星期几聚合所有学生的提交时间戳（0=周一, 6=周日）
-        weekday_active = [0] * 7
-        all_submissions = _student_records(store, "homework", "submission", students)
-        all_attempts = _student_records(store, "exams", "attempt", students)
-
-        active_students_per_day = [set() for _ in range(7)]
-
-        for sub in all_submissions:
-            if sub.get("status") == "graded":
-                submitted_at = sub.get("submittedAt") or sub.get("createdAt")
-                if submitted_at:
-                    try:
-                        dt = datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))
-                        wd = dt.weekday()  # 0=周一
-                        active_students_per_day[wd].add(sub.get("studentId", ""))
-                    except Exception:
-                        pass
-
-        for att in all_attempts:
-            submitted_at = att.get("submittedAt")
-            if submitted_at:
-                try:
-                    dt = datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))
-                    wd = dt.weekday()
-                    active_students_per_day[wd].add(att.get("studentId", ""))
-                except Exception:
-                    pass
-
-        # 如果有真实提交数据，计算每天的活跃率
-        total_active = sum(len(s) for s in active_students_per_day)
-        if total_active > 0:
-            return [
-                min(100, max(0, round(len(active_students_per_day[d]) / student_count * 100)))
-                for d in range(7)
-            ]
-
-    # 降级：使用原有基线偏移方案
-    baseline = _rounded_mean([int(item.get("activeRate") or item.get("focus") or 0) for item in students], 0)
-    offsets = [-16, -8, -4, 2, 6, 10, 12]
-    return [min(100, max(0, baseline + offset)) for offset in offsets]
-
-
-def _hourly_active_data(students: list[dict[str, Any]], store: JsonStore | None = None) -> list[int]:
-    """基于真实提交/考试时间戳聚合24小时活跃分布，无数据时使用合理默认曲线"""
-    student_count = len(students)
-    if student_count == 0:
-        return [0] * 24
-
-    # 默认曲线（在无真实数据时作为兜底）
-    default_curve = [
-        0.08, 0.04, 0.02, 0.00, 0.00, 0.02,
-        0.12, 0.32, 0.54, 0.72, 0.86, 0.78,
-        0.52, 0.58, 0.76, 0.88, 0.72, 0.56,
-        0.82, 0.94, 1.00, 0.84, 0.58, 0.28,
-    ]
-
-    if not store:
-        return [min(student_count, round(student_count * ratio)) for ratio in default_curve]
-
-    # 从真实数据聚合每小时活跃学生数
-    hourly_active: dict[int, set[str]] = {h: set() for h in range(24)}
-
-    # 收集作业提交时间
+def _read_metric_records(db: Session, module: str, record_type: str, *, owner_ids: set[str] | None,
+                         recorded_timezone: timezone | None = None) -> SourceRead:
+    result = {"available": True, "source": f"{module}/{record_type}", "records": [], "reason": None,
+              "recordedTimezone": recorded_timezone, "recordedTimezoneDeclaration": _timezone_label(recorded_timezone)}
+    if owner_ids is not None and not owner_ids:
+        return result
     try:
-        submissions = _student_records(store, "homework", "submission", students)
-        for sub in submissions:
-            ts = sub.get("submittedAt") or sub.get("createdAt") or sub.get("updatedAt")
-            if ts:
-                try:
-                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                    hourly_active[dt.hour].add(sub.get("studentId") or sub.get("ownerId") or "")
-                except (ValueError, AttributeError):
-                    pass
-    except Exception:
-        pass
-
-    # 收集考试提交时间
-    try:
-        attempts = _student_records(store, "exams", "attempt", students)
-        for att in attempts:
-            ts = att.get("submittedAt") or att.get("clientStartedAt") or att.get("createdAt")
-            if ts:
-                try:
-                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                    hourly_active[dt.hour].add(att.get("studentId") or att.get("ownerId") or "")
-                except (ValueError, AttributeError):
-                    pass
-    except Exception:
-        pass
-
-    # 统计每小时活跃学生数
-    result = [len(hourly_active[h]) for h in range(24)]
-
-    # 如果没有任何真实数据，使用默认曲线
-    if sum(result) == 0:
-        return [min(student_count, round(student_count * ratio)) for ratio in default_curve]
-
+        query = db.query(DomainRecord).filter(DomainRecord.module == module, DomainRecord.record_type == record_type)
+        if owner_ids is not None:
+            query = query.filter(DomainRecord.owner_id.in_(owner_ids))
+        rows = query.all()
+    except SQLAlchemyError:
+        result.update(available=False, reason="source_unavailable")
+        return result
+    selected = {}
+    for row in rows:
+        key = (row.module, row.record_type, row.record_key, row.owner_id)
+        # Ordering metadata only: this never enables UTC time-placement for a naive row.
+        instant = _parse_recorded_instant(row.updated_at, naive_timezone=recorded_timezone)
+        stamp = instant.isoformat() if instant is not None else (row.updated_at.isoformat() if isinstance(row.updated_at, datetime) else str(row.updated_at or ""))
+        order = (stamp, row.id or 0)
+        if key not in selected or order > selected[key][0]:
+            selected[key] = (order, row)
+    for _, row in sorted(selected.values(), key=lambda pair: pair[1].id or 0):
+        decode_error = False
+        try:
+            payload = json.loads(row.payload)
+        except (json.JSONDecodeError, TypeError):
+            payload, decode_error = {}, True
+        if not isinstance(payload, dict):
+            payload, decode_error = {}, True
+        result["records"].append({"dbId": row.id, "module": row.module, "recordType": row.record_type,
+            "recordKey": row.record_key, "ownerId": row.owner_id, "role": row.role, "status": row.status,
+            "createdAt": row.created_at, "updatedAt": row.updated_at, "payload": payload, "decodeError": decode_error})
     return result
 
 
-def _weak_points(db: Session, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    mistakes = _student_records(JsonStore(db), "exams", "mistake", students)
-    total_students = max(1, len(students))
-    weak_points = []
-
-    for index, item in enumerate(mistakes[:6], start=1):
-        wrong_count = int(item.get("wrongCount") or item.get("count") or 1)
-        weak_points.append(
-            {
-                "id": item.get("id") or f"wp-{index}",
-                "topic": item.get("questionTitle") or item.get("title") or item.get("topic") or "未命名薄弱点",
-                "errorRate": min(100, max(0, round(wrong_count / total_students * 100))),
-                "subject": item.get("subject") or "综合能力诊断",
-                "category": item.get("category") or "错题诊断",
-                "details": item.get("analysis")
-                or item.get("details")
-                or "系统基于学生错题、提交记录与课堂行为聚合生成该薄弱点。",
-            }
-        )
-
-    return weak_points
+def _observed_mean(values: list[Any]) -> int | None:
+    valid = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool) and isfinite(v) and 0 <= v <= 100]
+    return round(mean(valid)) if valid else None
 
 
-def _auto_generate_advices(store: JsonStore, students: list[dict[str, Any]], teacher_id: str) -> list[dict[str, Any]]:
-    """自动生成 AI 建议（供 overview 自动初始化使用，不调用 AI 时使用规则兜底）"""
-    mistakes = _student_records(store, "exams", "mistake", students)
-    submissions = _student_records(store, "homework", "submission", students)
-
-    high_risk_count = len([s for s in students if s.get("alert")])
-    unmastered_count = len([m for m in mistakes if not m.get("mastered")])
-    submitted_count = len([s for s in submissions if s.get("status") in ("submitted", "graded")])
-
-    tag_counts: dict[str, int] = {}
-    for m in mistakes:
-        if not m.get("mastered"):
-            for tag in (m.get("knowledgeTags") or []):
-                tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
-
-    advices = [
-        {"id": make_record_key("adv"), "type": "urgency", "title": "紧急：关注高危学生",
-         "reason": f"当前有 {high_risk_count} 名学生进度低于50%",
-         "suggestion": "安排一对一辅导或下发补弱作业", "active": True},
-        {"id": make_record_key("adv"), "type": "knowledge", "title": "知识薄弱点补强",
-         "reason": f"未掌握错题 {unmastered_count} 道",
-         "suggestion": "针对高频错题知识点创建专项练习", "active": True},
-        {"id": make_record_key("adv"), "type": "engagement", "title": "提升作业完成率",
-         "reason": f"已提交作业 {submitted_count} 份",
-         "suggestion": "对未提交学生发送催交提醒", "active": False},
-    ]
-
-    for adv in advices:
-        adv["studentIds"] = [s["username"] for s in students]
-        store.upsert("analytics", "advice", adv["id"], adv, owner_id=teacher_id)
-
-    return advices
+def _metric_evidence(*, evidence_status: str, provenance_status: str, source: str, label: str,
+                     sample_count: int, reason: str | None = None, window: dict | None = None,
+                     raw_mean: int | float | None = None) -> dict[str, Any]:
+    if evidence_status not in {"measured", "self_reported", "inferred", "unavailable"} or provenance_status not in {"verified_server", "legacy_unknown", "demo", "mixed"}:
+        raise ValueError("Unsupported metric evidence status")
+    if evidence_status == "unavailable":
+        raw_mean = None
+    return {"evidenceStatus": evidence_status, "provenanceStatus": provenance_status, "source": source,
+            "label": label, "sampleCount": sample_count, "rawMean": raw_mean, "reason": reason, "window": window}
 
 
-def _auto_generate_actions(store: JsonStore, students: list[dict[str, Any]], teacher_id: str) -> list[dict[str, Any]]:
-    """自动生成行动队列（供 overview 自动初始化使用，纯规则引擎）"""
-    mistakes = _student_records(store, "exams", "mistake", students)
-    homeworks = [h for h in store.list_payloads("homework", "homework") if h.get("teacherId") == teacher_id]
-    now_iso = utc_now_iso()
-    actions: list[dict[str, Any]] = []
+def _unavailable(source: str, label: str, reason: str) -> dict[str, Any]:
+    return _metric_evidence(evidence_status="unavailable", provenance_status="legacy_unknown", source=source,
+                            label=label, sample_count=0, reason=reason)
 
-    # 规则 1：高危学生 → 督学行动
-    high_risk = [s for s in students if s.get("alert")]
-    for s in high_risk[:5]:
-        actions.append({
-            "id": make_record_key("act"), "type": "nudge",
-            "studentName": s["name"], "studentId": s.get("username", ""),
-            "title": f"督学提醒：{s['name']} 进度落后",
-            "status": "pending", "reason": f"进度 {s['progress']}%，需关注",
-            "createdAt": now_iso,
-        })
 
-    # 规则 2：未掌握高频错题 → 补弱行动
-    unmastered = [m for m in mistakes if not m.get("mastered")]
-    tag_counts: dict[str, int] = {}
-    for m in unmastered:
-        for tag in (m.get("knowledgeTags") or []):
-            tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
-    for tag, count in sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:3]:
-        actions.append({
-            "id": make_record_key("act"), "type": "remediation",
-            "studentName": "全班", "studentId": "",
-            "title": f"补弱作业：{tag}（{count}人错题）",
-            "status": "pending", "reason": f"该知识点有 {count} 道未掌握错题",
-            "createdAt": now_iso,
-        })
+def _inventory_evidence(source: SourceRead, label: str, count: int | None, *, provenance="legacy_unknown") -> dict[str, Any]:
+    return _metric_evidence(evidence_status="measured" if count is not None else "unavailable", provenance_status=provenance,
+        source=source["source"], label=label, sample_count=count if count is not None else 0,
+        raw_mean=count, reason="complete_record_read" if count is not None else source.get("reason") or "malformed_record")
 
-    # 规则 3：即将截止作业 → 催交行动
-    for hw in homeworks:
-        deadline = hw.get("deadline", "")
-        if deadline and hw.get("status") != "submitted":
-            actions.append({
-                "id": make_record_key("act"), "type": "reminder",
-                "studentName": "全班", "studentId": "",
-                "title": f"催交提醒：{hw.get('title', '作业')}",
-                "status": "pending", "reason": f"截止时间: {deadline}",
-                "createdAt": now_iso,
-            })
 
-    for action in actions:
-        action["studentIds"] = [s["username"] for s in students]
-        store.upsert("analytics", "action", action["id"], action, owner_id=teacher_id)
+def _activity_window(*, now: datetime, tz: timezone = timezone.utc) -> dict[str, Any]:
+    if tz != timezone.utc:
+        raise ValueError("Analytics windows support UTC only")
+    instant = _parse_recorded_instant(now)
+    if instant is None:
+        raise ValueError("An aware now is required")
+    end = instant.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end - timedelta(days=7)
+    iso = lambda value: value.isoformat().replace("+00:00", "Z")
+    return {"timezone": "UTC", "startInclusive": iso(start), "endExclusive": iso(end), "asOf": iso(instant)}
 
-    return actions
+
+def _activity_series(students: list[dict[str, Any]], sources: list[SourceRead], *, now: datetime,
+                     tz: timezone = timezone.utc) -> dict[str, Any]:
+    window = _activity_window(now=now, tz=tz)
+    start = _parse_recorded_instant(window["startInclusive"])
+    end = _parse_recorded_instant(window["endExclusive"])
+    instant = _parse_recorded_instant(now)
+    owners = {s["username"] for s in students if isinstance(s.get("username"), str) and s["username"]}
+    daily, hourly = [set() for _ in range(7)], [set() for _ in range(24)]
+    seen, count, valid, invalid, excluded = set(), 0, 0, 0, 0
+    complete = True
+    reasons, used_declarations = [], set()
+    for source in sources:
+        if not source["available"]:
+            complete = False; reasons.append("source_unavailable")
+        for row in source["records"]:
+            if (row.get("module"), row.get("recordType")) not in {("homework", "submission"), ("exams", "attempt")}:
+                excluded += 1
+                continue
+            owner = row.get("ownerId")
+            if not owner or owner not in owners:
+                excluded += 1; continue
+            key = (row.get("module"), row.get("recordType"), row.get("recordKey"), owner)
+            if key in seen:
+                continue
+            seen.add(key); count += 1
+            if row.get("decodeError"):
+                complete = False; reasons.append("malformed_record"); continue
+            created = row.get("createdAt")
+            dt = _parse_recorded_instant(created, naive_timezone=source.get("recordedTimezone"))
+            if dt is None:
+                invalid += 1; complete = False
+                naive = isinstance(created, datetime) and created.tzinfo is None
+                if isinstance(created, str):
+                    try:
+                        naive = datetime.fromisoformat(created.replace("Z", "+00:00")).tzinfo is None
+                    except ValueError:
+                        naive = False
+                reasons.append(source.get("timezoneReason", "recorded_timezone_unconfigured") if naive else "invalid_recorded_timestamp")
+                continue
+            if (isinstance(created, datetime) and created.tzinfo is None) or (isinstance(created, str) and datetime.fromisoformat(created.replace("Z", "+00:00")).tzinfo is None):
+                used_declarations.add(source.get("recordedTimezoneDeclaration"))
+            if dt > instant or not start <= dt < end:
+                excluded += 1; continue
+            valid += 1
+            daily[(dt.date() - start.date()).days].add(owner); hourly[dt.hour].add(owner)
+    total = count if all(s["available"] for s in sources) else None
+    denom = len(owners)
+    reason = reasons[0] if reasons else ("empty_roster" if not denom else "complete_record_read")
+    declaration = next(iter(used_declarations)) if len(used_declarations) == 1 else None
+    evidence = _metric_evidence(evidence_status="measured" if complete else "unavailable", provenance_status="legacy_unknown",
+        source="homework/submission+exams/attempt", label="按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        sample_count=valid, reason=reason, window=window)
+    evidence.update(coverageComplete=complete, validRecordCount=valid, invalidTimestampCount=invalid,
+        excludedRecordCount=excluded, denominatorCount=denom, timeBasis="DomainRecord.created_at", verifiedSampleCount=0,
+        recordedTimezone=declaration, recordedTimezoneSource="operator_declaration" if declaration else None)
+    inventory = _metric_evidence(evidence_status="measured" if total is not None else "unavailable", provenance_status="legacy_unknown",
+        source="homework/submission+exams/attempt", label="已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+        sample_count=total if total is not None else 0, raw_mean=total,
+        reason="complete_record_read" if total is not None else "source_unavailable")
+    return {"weeklyActivityDates": [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)],
+        "weeklyActivityCounts": [len(v) for v in daily] if complete else [None] * 7,
+        "weeklyActivityRates": [round(len(v) / denom * 100) for v in daily] if complete and denom else [None] * 7,
+        "weeklyActivityEvidence": evidence, "hourlyActiveData": [len(v) for v in hourly] if complete else [None] * 24,
+        "hourlyActiveEvidence": {**evidence, "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验"},
+        "recordedSubmissionCount": total, "recordedSubmissionEvidence": inventory,
+        "hourlyFocusData": [None] * 24, "hourlyFocusEvidence": _unavailable("focus", "未测量", "no_focus_measurement_source"),
+        "hourlyBehaviors": [], "hourlyBehaviorsEvidence": _unavailable("behavior", "暂无行为证据", "no_behavior_measurement_source")}
+
+
+def _recorded_policy() -> tuple[timezone | None, str]:
+    raw = settings.ANALYTICS_RECORDED_TIMEZONE
+    tz = _parse_recorded_timezone_declaration(raw)
+    reason = "recorded_timezone_unconfigured" if not isinstance(raw, str) or not raw.strip() else "invalid_recorded_timezone_declaration"
+    return tz, reason
+
+
+def _scoped_source(db: Session, module: str, kind: str, owners: set[str] | None, *, policy=None) -> SourceRead:
+    tz, reason = policy if policy is not None else _recorded_policy()
+    source = _read_metric_records(db, module, kind, owner_ids=owners, recorded_timezone=tz)
+    source["timezoneReason"] = reason
+    return source
+
+
+def _source_count(source: SourceRead) -> int | None:
+    return len(source["records"]) if source["available"] and not any(r["decodeError"] for r in source["records"]) else None
+
+
+def _forum_counts(db: Session, username: str) -> tuple[int | None, int | None]:
+    posts = _read_metric_records(db, "forum", "post", owner_ids=None)
+    sidecars = _read_metric_records(db, "forum", "reply_identity", owner_ids={username})
+    if _source_count(posts) is None or _source_count(sidecars) is None:
+        return None, None
+    authorities = set()
+    for row in sidecars["records"]:
+        data = row["payload"]; post_id, reply_id = data.get("postId"), data.get("replyId")
+        if (isinstance(post_id, str) and isinstance(reply_id, str) and row["recordKey"] == reply_id
+            and row["ownerId"] == username and row["role"] == "student"
+            and data.get("authorId") == username and data.get("authorRole") == row["role"]):
+            authorities.add((post_id, reply_id))
+    post_keys, reply_keys = set(), set()
+    for row in posts["records"]:
+        if row["ownerId"] == username and row["role"] == "student":
+            post_keys.add(row["recordKey"])
+        replies = row["payload"].get("replies")
+        if isinstance(replies, list):
+            for reply in replies:
+                reply_id = reply.get("id") if isinstance(reply, dict) else None
+                if isinstance(reply_id, str) and reply_id and (row["recordKey"], reply_id) in authorities:
+                    reply_keys.add((row["recordKey"], reply_id))
+    return len(post_keys), len(reply_keys)
+
+
+def _recorded_grade_facts(submissions: SourceRead, attempts: SourceRead) -> list[dict[str, Any]]:
+    """Saved facts are separate from progress and the six academic dimensions."""
+    facts = []
+    def numeric(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value) and value >= 0
+    def append(kind, value, source, label, *, maximum=None, inferred=False):
+        facts.append({"kind": kind, "value": value, "maximum": maximum,
+            "recordEvidence": _metric_evidence(evidence_status="inferred" if inferred else "measured",
+                provenance_status="legacy_unknown", source=source, label=label + "；来源未核验，不构成进度或掌握度测量",
+                sample_count=1, raw_mean=value if numeric(value) else None)})
+    for row in submissions["records"]:
+        if row["decodeError"]:
+            continue
+        grade = row["payload"].get("grade")
+        if isinstance(grade, str) and grade.strip():
+            append("letter_grade", grade, "homework/submission.grade", "已保存等级文本（未转换为百分数）")
+        elif numeric(grade):
+            append("numeric_grade", grade, "homework/submission.grade", "已保存成绩字段（量表未核验）")
+    for row in attempts["records"]:
+        if row["decodeError"]:
+            continue
+        data = row["payload"]
+        score = data.get("objectiveScore")
+        maximum = data.get("maxObjectiveScore", data.get("objectiveMax"))
+        if numeric(score) and numeric(maximum) and maximum > 0 and score <= maximum:
+            append("objective_percentage", round(score / maximum * 100), "exams/attempt.objectiveScore/maxObjectiveScore",
+                   "按已保存分数和满分推算的客观题得分率", maximum=maximum, inferred=True)
+        for key, kind in [("programmingScore", "programming_raw_score"), ("totalScore", "exam_raw_score")]:
+            if numeric(data.get(key)):
+                append(kind, data[key], "exams/attempt." + key, "已保存原始分数（不进入100分雷达）")
+    return facts
+
+
+def _student_card(account: UserAccount, profile: StudentProfile | None, db: Session, *, policy) -> dict[str, Any]:
+    username = account.username
+    submissions = _scoped_source(db, "homework", "submission", {username}, policy=policy)
+    mistakes = _scoped_source(db, "exams", "mistake", {username}, policy=policy)
+    attempts = _scoped_source(db, "exams", "attempt", {username}, policy=policy)
+    values, evidence = [], {}
+    for indicator, score_key in zip(RADAR_INDICATORS[:3], ["alina", "codeninja", "profx"]):
+        scores = []
+        for row in submissions["records"]:
+            diagnosis = row["payload"].get("diagnosis")
+            raw_scores = diagnosis.get("scores") if isinstance(diagnosis, dict) else None
+            value = raw_scores.get(score_key) if isinstance(raw_scores, dict) else None
+            if _observed_mean([value]) is not None:
+                scores.append(value)
+        value = _observed_mean(scores) if _source_count(submissions) is not None else None
+        values.append(value)
+        evidence[indicator["name"]] = _metric_evidence(evidence_status="inferred" if value is not None else "unavailable",
+            provenance_status="legacy_unknown", source=f"diagnosis.scores.{score_key}", label="已记录诊断分数；推断，来源未核验",
+            sample_count=len(scores), raw_mean=value, reason=None if value is not None else "no_verified_diagnostic_measurement")
+    post_count, reply_count = _forum_counts(db, username)
+    forum_score = min(100, 10 * post_count + 5 * reply_count) if post_count is not None and reply_count is not None and post_count + reply_count else None
+    values += [forum_score, None, None]
+    evidence[RADAR_INDICATORS[3]["name"]] = _metric_evidence(evidence_status="inferred" if forum_score is not None else "unavailable",
+        provenance_status="verified_server" if post_count is not None else "legacy_unknown", source="forum/post+reply_identity",
+        label="推断贡献指数（发帖×10+回帖×5，最高100）；不是学术能力测量", sample_count=(post_count or 0)+(reply_count or 0), raw_mean=forum_score,
+        reason=None if forum_score is not None else "no_contribution_index_observations")
+    focus_evidence = _unavailable("focus", "专注度未测量", "no_focus_measurement_source")
+    progress_evidence = _unavailable("progress", "进度未测量", "assignment_denominator_unavailable")
+    evidence[RADAR_INDICATORS[4]["name"]] = focus_evidence
+    evidence[RADAR_INDICATORS[5]["name"]] = _unavailable("checkpoint", "Checkpoint未测量", "assignment_denominator_unavailable")
+    mistake_count = len(mistakes["records"]) if mistakes["available"] else None
+    mistake_evidence = _inventory_evidence(mistakes, "已保存错题记录数；来源未核验", mistake_count)
+    mistake_evidence.update(factCoverageComplete=_source_count(mistakes) is not None,
+        unreadableRecordCount=sum(row["decodeError"] for row in mistakes["records"]))
+    forum_source = {"source": "forum/post+reply_identity", "reason": "source_unavailable"}
+    return {"id": username, "userId": username, "username": username, "name": account.real_name or username,
+        "className": account.class_name or "", "goal": getattr(profile, "goal", "") if profile else "",
+        "goalEvidence": _unavailable("profile.goal", "已保存画像文本", "profile_text_not_measurement"),
+        "progress": None, "progressEvidence": progress_evidence, "focus": None, "focusEvidence": focus_evidence,
+        "activeRate": None, "activeRateEvidence": focus_evidence, "status": "unknown", "currentAgent": None, "agentName": None,
+        "alert": None, "alertEvidence": _unavailable("risk", "风险评估未启用", "risk_model_not_defined"),
+        "errorCount": mistake_count, "errorCountEvidence": mistake_evidence,
+        "unmasteredCount": None, "forumCount": post_count, "replyCount": reply_count,
+        "forumCountEvidence": _inventory_evidence(forum_source, "已保存且作者身份核验的论坛发帖数", post_count, provenance="verified_server"),
+        "replyCountEvidence": _inventory_evidence(forum_source, "已保存且作者身份核验的论坛回复数", reply_count, provenance="verified_server"),
+        "checkpointRate": None, "radarValues": values, "radarEvidence": evidence,
+        "recordedGrades": _recorded_grade_facts(submissions, attempts)}
+
+
+def _canonical_student_ids(db: Session, requested: set[str]) -> set[str]:
+    if not requested:
+        return set()
+    return {row.username for row in db.query(UserAccount).filter(UserAccount.role == "student", UserAccount.username.in_(requested)).all()
+            if is_valid_student_username(row.username)}
+
+
+def _student_cards(db: Session, student_ids: set[str], *, policy=None) -> list[dict[str, Any]]:
+    policy = policy if policy is not None else _recorded_policy()
+    allowed = _canonical_student_ids(db, student_ids)
+    if not allowed:
+        return []
+    students = db.query(UserAccount).filter(UserAccount.username.in_(allowed)).order_by(UserAccount.created_at.asc(), UserAccount.username.asc()).all()
+    profiles = {row.user_id: row for row in db.query(StudentProfile).filter(StudentProfile.user_id.in_(allowed)).all()}
+    return [_student_card(row, profiles.get(row.username), db, policy=policy) for row in students]
+
+
+def _class_radar_values(students: list[dict[str, Any]]) -> list[int | None]:
+    result = []
+    for i, indicator in enumerate(RADAR_INDICATORS):
+        samples = [s["radarValues"][i] for s in students
+            if s["radarEvidence"][indicator["name"]]["evidenceStatus"] == "measured"
+            and s["radarEvidence"][indicator["name"]]["provenanceStatus"] == "verified_server"]
+        result.append(_observed_mean(samples))
+    return result
+
+
+def _class_radar_evidence(students: list[dict[str, Any]], *, reason="no_verified_dimension_measurement") -> dict[str, Any]:
+    return {indicator["name"]: {**_unavailable("class_radar", indicator["name"] + "未测量", reason), "studentCount": len(students)} for indicator in RADAR_INDICATORS}
+
+
+def _teacher_records(store: JsonStore, record_type: str, teacher_id: str, *, policy=None) -> list[dict[str, Any]]:
+    allowed = _canonical_student_ids(store.db, teacher_student_ids(teacher_id))
+    source = _scoped_source(store.db, "analytics", record_type, {teacher_id}, policy=policy)
+    if _source_count(source) is None:
+        raise HTTPException(status_code=503, detail="analytics_source_unavailable")
+    records = []
+    for row in source["records"]:
+        data = dict(row["payload"])
+        data["id"] = row["recordKey"]
+        recipients = data.get("studentIds")
+        valid = isinstance(recipients, list) and bool(recipients) and all(isinstance(v, str) and v in allowed for v in recipients)
+        if not valid:
+            # Never expose a foreign target. A malformed interaction has an unavailable denominator.
+            if record_type != "interaction" or (isinstance(recipients, list) and any(isinstance(v, str) and v not in allowed for v in recipients)):
+                continue
+            data["studentIds"] = []
+        if record_type in {"advice", "action"}:
+            data["recordEvidence"] = _unavailable("analytics/" + record_type, "历史记录；依据未核验", "historical_basis_unverified")
+        records.append(data)
+    return records
+
+
+def _project_interactions(db: Session, teacher_id: str, *, policy=None) -> list[dict[str, Any]]:
+    policy = policy if policy is not None else _recorded_policy()
+    records = _teacher_records(JsonStore(db), "interaction", teacher_id, policy=policy)
+    allowed = _canonical_student_ids(db, teacher_student_ids(teacher_id))
+    completions = _scoped_source(db, "analytics", "interaction_completion", allowed, policy=policy)
+    readable = _source_count(completions) is not None
+    for record in records:
+        ids = record.get("studentIds")
+        valid = isinstance(ids, list) and bool(ids) and all(isinstance(v, str) and v in allowed for v in ids)
+        recipients = set(ids) if valid else set()
+        iid = record.get("id")
+        valid = valid and isinstance(iid, str) and bool(iid)
+        completed = {row["ownerId"] for row in completions["records"] if row["ownerId"] in recipients and row["payload"].get("interactionId") == iid} if readable and valid else None
+        denominator = len(recipients) if valid and readable else None
+        numerator = len(completed) if completed is not None else None
+        record.update(recipientCount=denominator, completionRecordCount=numerator, completedCount=numerator,
+            completionRate=round(numerator / denominator * 100) if denominator else None,
+            completionEvidence=_metric_evidence(evidence_status="self_reported" if numerator is not None else "unavailable",
+                provenance_status="legacy_unknown", source="analytics/interaction_completion", label="已记录交互完成率；账号自报完成，来源未核验",
+                sample_count=numerator or 0, raw_mean=None, reason=None if numerator is not None else "completion_denominator_or_source_unavailable"))
+    return records
+
+
+def _weak_points(db: Session, students: list[dict[str, Any]], *, policy=None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    source = _scoped_source(db, "exams", "mistake", {s["username"] for s in students}, policy=policy)
+    if _source_count(source) is None:
+        return [], _inventory_evidence(source, "已记录错题暂不可用", None)
+    items = []
+    for row in source["records"][:6]:
+        data = row["payload"]
+        repeats = data.get("wrongCount", data.get("count"))
+        repeats = repeats if isinstance(repeats, (int, float)) and not isinstance(repeats, bool) and isfinite(repeats) and repeats >= 0 else None
+        items.append({"id": f"mistake-{row['dbId']}", "topic": data.get("questionTitle") or data.get("title") or data.get("topic") or "未命名已记录错题",
+            "subject": data.get("subject") or "", "category": "已记录错题", "details": data.get("analysis") or data.get("details") or "",
+            "errorRate": None, "recordCount": 1, "affectedStudentCount": 1, "repeatCount": repeats,
+            "recordEvidence": _inventory_evidence(source, "已保存错题及分析文本；来源未核验", 1)})
+    return items, _inventory_evidence(source, "当前显示的已记录错题数；来源未核验", len(items))
+
+
+def _optional_teacher_list(db: Session, teacher: str, kind: str, *, policy=None) -> tuple[list, dict]:
+    try:
+        values = _project_interactions(db, teacher, policy=policy) if kind == "interaction" else _teacher_records(JsonStore(db), kind, teacher, policy=policy)
+        return values, _metric_evidence(evidence_status="measured", provenance_status="legacy_unknown", source="analytics/" + kind,
+            label="已保存记录列表；历史依据未核验", sample_count=len(values), reason="complete_record_read")
+    except HTTPException as error:
+        if error.status_code != 503:
+            raise
+        return [], _unavailable("analytics/" + kind, "记录来源暂不可用", "source_unavailable")
+
+
+def _analytics_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @router.get("/analytics/overview")
 async def get_overview_stats(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    students = _student_cards(db, teacher_student_ids(payload["sub"]))
-    progress_values = [item["progress"] for item in students]
-    focus_values = [item["focus"] for item in students]
-    interactions = _teacher_records(JsonStore(db), "interaction", payload["sub"])
-    store = JsonStore(db)
-
-    # 自动初始化：如果 AI 建议为空，自动生成一次
-    advices = _teacher_records(store, "advice", payload["sub"])
-    if not advices and students:
-        try:
-            advices = _auto_generate_advices(store, students, payload["sub"])
-        except Exception:
-            advices = []
-
-    # 自动初始化：如果行动队列为空，自动生成一次
-    actions = _teacher_records(store, "action", payload["sub"])
-    if not actions and students:
-        try:
-            actions = _auto_generate_actions(store, students, payload["sub"])
-        except Exception:
-            actions = []
-
-    return ok(
-        {
-            "radarIndicators": RADAR_INDICATORS,
-            "classRadarValues": _class_radar_values(students),
-            "weeklyActivityDates": WEEKLY_ACTIVITY_DATES,
-            "weeklyActivityRates": _weekly_activity_rates(students, store),
-            "hourlyActiveData": _hourly_active_data(students, store),
-            "weakPoints": _weak_points(db, students),
-            "summary": {
-                "studentCount": len(students),
-                "averageProgress": round(mean(progress_values)) if progress_values else 0,
-                "averageFocus": round(mean(focus_values)) if focus_values else 0,
-                "activeInterventions": len([item for item in interactions if item.get("status") == "running"]),
-            },
-            "aiAdvices": advices,
-            "actionQueue": actions,
-            "interactionRecords": interactions,
-        }
-    )
+    now = _analytics_now()
+    policy = _recorded_policy()
+    students = _student_cards(db, teacher_student_ids(payload["sub"]), policy=policy)
+    owners = {s["username"] for s in students}
+    activity = _activity_series(students, [_scoped_source(db, "homework", "submission", owners, policy=policy), _scoped_source(db, "exams", "attempt", owners, policy=policy)], now=now)
+    advices, advice_evidence = _optional_teacher_list(db, payload["sub"], "advice", policy=policy)
+    actions, action_evidence = _optional_teacher_list(db, payload["sub"], "action", policy=policy)
+    interactions, interaction_evidence = _optional_teacher_list(db, payload["sub"], "interaction", policy=policy)
+    weak_points, weak_evidence = _weak_points(db, students, policy=policy)
+    pairs = [(r["completionRecordCount"], r["recipientCount"]) for r in interactions if r.get("recipientCount") is not None and r.get("completionRecordCount") is not None]
+    denom = sum(v[1] for v in pairs)
+    response = round(sum(v[0] for v in pairs) / denom * 100) if denom else None
+    summary = {"studentCount": len(students), "studentCountEvidence": _metric_evidence(evidence_status="measured", provenance_status="verified_server",
+        source="current_canonical_roster", label="当前已分配规范学生账号数", sample_count=len(students), raw_mean=len(students)),
+        "averageProgress": None, "averageProgressEvidence": _unavailable("progress", "进度未测量", "assignment_denominator_unavailable"),
+        "averageFocus": None, "averageFocusEvidence": _unavailable("focus", "专注度未测量", "no_focus_measurement_source"), "activeInterventions": len([r for r in interactions if r.get("status") == "running"]) if interaction_evidence["evidenceStatus"] != "unavailable" else None,
+        "activeInterventionsEvidence": interaction_evidence, "responseRate": response,
+        "responseRateEvidence": _metric_evidence(evidence_status="self_reported" if response is not None else "unavailable", provenance_status="legacy_unknown",
+            source="analytics/interaction_completion", label="已记录交互完成率；账号自报完成", sample_count=sum(v[0] for v in pairs), raw_mean=response, reason=None if response is not None else "no_valid_completion_denominator"),
+        "recordedSubmissionCount": activity.pop("recordedSubmissionCount"), "recordedSubmissionEvidence": activity.pop("recordedSubmissionEvidence")}
+    return ok({"radarIndicators": RADAR_INDICATORS, "classRadarValues": _class_radar_values(students), "classRadarEvidence": _class_radar_evidence(students),
+        **activity, "weakPoints": weak_points, "weakPointsEvidence": weak_evidence, "summary": summary,
+        "aiAdvices": advices, "aiAdvicesEvidence": advice_evidence, "actionQueue": actions, "actionQueueEvidence": action_evidence,
+        "interactionRecords": interactions, "interactionRecordsEvidence": interaction_evidence})
 
 
 @router.get("/analytics/students")
@@ -687,178 +496,61 @@ async def search_students(q: str = "", payload: dict = Depends(require_teacher),
     students = _student_cards(db, teacher_student_ids(payload["sub"]))
     if not keyword:
         return ok({"query": q, "matches": [], "total": 0})
-
-    scored: list[tuple[int, dict[str, Any]]] = []
+    scored = []
     for item in students:
-        name = str(item.get("name") or "").lower()
-        username = str(item.get("username") or item.get("userId") or "").lower()
-        class_name = str(item.get("className") or "").lower()
-        if keyword == name or keyword == username:
-            score = 0
-        elif name.startswith(keyword) or username.startswith(keyword):
-            score = 1
-        elif keyword in name or keyword in username or keyword in class_name:
-            score = 2
-        else:
-            continue
-        scored.append((score, item))
-
-    scored.sort(key=lambda pair: (pair[0], str(pair[1].get("name") or "")))
+        name, username, class_name = (str(item.get(k) or "").lower() for k in ["name", "username", "className"])
+        score = 0 if keyword in {name, username} else (1 if name.startswith(keyword) or username.startswith(keyword) else 2)
+        if keyword in name or keyword in username or keyword in class_name:
+            scored.append((score, item))
+    scored.sort(key=lambda pair: (pair[0], str(pair[1].get("name") or ""), pair[1]["username"]))
     matches = [item for _, item in scored]
     return ok({"query": q, "matches": matches, "total": len(matches), "bestMatch": matches[0] if matches else None})
 
 
 @router.get("/analytics/students/me")
 async def get_my_radar(user_id: str = "", payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
-    """学生端同源六维雷达：与教师端同一套 _compute_radar_values。"""
     username = (user_id or "").strip()
     if not username:
         raise HTTPException(status_code=400, detail="user_id is required")
     ensure_self_or_teacher(username, payload)
-
-    students = _student_cards(db, {username})
-    matched = next(
-        (item for item in students if item.get("username") == username or item.get("userId") == username),
-        None,
-    )
-    class_values = [80, 75, 63, 72, 78, 69]
-
-    if not matched:
-        account = db.query(UserAccount).filter(UserAccount.username == username).first()
-        profile = db.query(StudentProfile).filter(StudentProfile.user_id == username).first()
-        store = JsonStore(db)
-        metrics = _compute_radar_values(
-            username,
-            (account.real_name if account else None) or username,
-            profile,
-            store,
-        )
-        return ok(
-            {
-                "studentId": username,
-                "name": (account.real_name if account else None) or username,
-                "radarIndicators": RADAR_INDICATORS,
-                "radarValues": metrics["radarValues"],
-                "classRadarValues": class_values,
-                "radarEvidence": metrics["radarEvidence"],
-                "progress": metrics["progress"],
-                "focus": metrics["focus"],
-                "goal": getattr(profile, "goal", "") if profile else "",
-            }
-        )
-
-    return ok(
-        {
-            "studentId": matched.get("id") or username,
-            "name": matched.get("name", username),
-            "radarIndicators": RADAR_INDICATORS,
-            "radarValues": matched.get("radarValues", []),
-            "classRadarValues": class_values,
-            "radarEvidence": matched.get("radarEvidence", {}),
-            "progress": matched.get("progress", 0),
-            "focus": matched.get("focus", 0),
-            "goal": matched.get("goal", ""),
-            "agentName": matched.get("currentAgent", ""),
-        }
-    )
+    matched = next(iter(_student_cards(db, {username})), None)
+    if matched is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return ok({**matched, "studentId": username, "radarIndicators": RADAR_INDICATORS, "classRadarValues": [None] * 6,
+               "classRadarEvidence": _class_radar_evidence([], reason="class_comparison_scope_unavailable")})
 
 
 @router.get("/analytics/students/{student_id}")
 async def get_student_details(student_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     ensure_self_or_teacher(student_id, payload)
-    store = JsonStore(db)
-    students = _student_cards(db, {student_id})
-    matched = next(
-        (
-            item
-            for item in students
-            if str(item["id"]) == str(student_id) or item["username"] == student_id or item.get("userId") == student_id
-        ),
-        None,
-    )
-    if not matched:
-        matched = {
-            "id": student_id,
-            "username": student_id,
-            "name": student_id,
-            "progress": 0,
-            "focus": 0,
-            "goal": "",
-            "currentAgent": "",
-            "alert": False,
-            "radarValues": [0, 0, 0, 0, 0, 0],
-            "radarEvidence": {},
-        }
-
-    username = matched.get("username") or matched.get("userId") or student_id
-    mistakes = [
-        item
-        for item in _student_records(store, "exams", "mistake", students)
-        if item.get("studentId") == username or item.get("studentId") == student_id
-    ]
-    pending_nudges = store.list_payloads("analytics", "nudge", owner_id=username)
-    pending_intervention = bool(matched.get("alert")) or any(
-        item.get("status") in (None, "sent", "unread", "active") for item in pending_nudges
-    )
-
-    return ok(
-        {
-            "studentId": matched.get("id") or student_id,
-            "username": username,
-            "name": matched.get("name", student_id),
-            "progress": matched.get("progress", 0),
-            "focus": matched.get("focus", 0),
-            "goal": matched.get("goal", ""),
-            "agentName": matched.get("currentAgent", ""),
-            "errors": [
-                {
-                    "id": item.get("id"),
-                    "topic": item.get("questionTitle") or item.get("title", ""),
-                    "severity": "high" if item.get("wrongCount", 0) > 2 else "medium",
-                    "count": item.get("wrongCount", 1),
-                    "date": item.get("lastWrongAt") or item.get("createdAt", ""),
-                }
-                for item in mistakes
-            ],
-            "radarValues": matched.get("radarValues", []),
-            "radarEvidence": matched.get("radarEvidence", {}),
-            "radarIndicators": RADAR_INDICATORS,
-            "timeline": _build_student_timeline(matched, len(mistakes), pending_intervention),
-        }
-    )
+    policy = _recorded_policy()
+    matched = next(iter(_student_cards(db, {student_id}, policy=policy)), None)
+    if matched is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    mistakes = _scoped_source(db, "exams", "mistake", {student_id}, policy=policy)
+    errors = []
+    for row in mistakes["records"]:
+        if row["decodeError"]:
+            continue
+        item = row["payload"]; count = item.get("wrongCount")
+        count = count if isinstance(count, (int, float)) and not isinstance(count, bool) and isfinite(count) and count >= 0 else None
+        errors.append({"id": f"mistake-{row['dbId']}", "topic": item.get("questionTitle") or item.get("title") or "",
+            "severity": None, "count": count, "date": item.get("lastWrongAt") or item.get("createdAt") or None,
+            "recordEvidence": _inventory_evidence(mistakes, "已保存错题文本及自报日期；来源未核验", 1)})
+    # The inspected producers do not establish a trustworthy event chronology.
+    return ok({**matched, "studentId": student_id, "radarIndicators": RADAR_INDICATORS, "errors": errors,
+        "timeline": [], "timelineEvidence": _unavailable("timeline", "暂无可展示的已记录时间线", "verified_chronology_unavailable")})
 
 
 @router.post("/analytics/students/{student_id}/nudge")
 async def send_nudge_message(student_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     ensure_self_or_teacher(student_id, auth)
-    data = payload.model_dump()
-    # 优先用 username 作为 owner_id，保证学生端 list_payloads(owner_id=username) 能读到
-    students = _student_cards(db, {student_id})
-    matched = next(
-        (
-            item
-            for item in students
-            if str(item["id"]) == str(student_id) or item["username"] == student_id or item.get("userId") == student_id
-        ),
-        None,
-    )
-    owner_id = student_id
-    record_id = make_record_key("nudge")
-    JsonStore(db).upsert(
-        "analytics",
-        "nudge",
-        record_id,
-        {
-            "id": record_id,
-            "studentId": owner_id,
-            "message": data.get("message", ""),
-            "createdAt": utc_now_iso(),
-            "status": "sent",
-        },
-        owner_id=owner_id,
-        status="sent",
-    )
-    return ok({"success": True, "nudgedAt": utc_now_iso(), "studentId": owner_id})
+    if not _student_cards(db, {student_id}):
+        raise HTTPException(status_code=404, detail="Student not found")
+    data = payload.model_dump(); record_id = make_record_key("nudge")
+    JsonStore(db).upsert("analytics", "nudge", record_id, {"id": record_id, "studentId": student_id,
+        "message": data.get("message", ""), "createdAt": utc_now_iso(), "status": "sent"}, owner_id=student_id, status="sent")
+    return ok({"success": True, "nudgedAt": utc_now_iso(), "studentId": student_id})
 
 
 @router.get("/analytics/advices")
@@ -872,12 +564,9 @@ async def get_action_queue(payload: dict = Depends(require_teacher), db: Session
 
 
 @router.get("/analytics/interactions")
-async def get_interaction_records(
-    payload: dict = Depends(require_teacher),
-    db: Session = Depends(get_db),
-    x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
-):
-    interactions = _teacher_records(JsonStore(db), "interaction", payload["sub"])
+async def get_interaction_records(payload: dict = Depends(require_teacher), db: Session = Depends(get_db),
+    x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client")):
+    interactions = _project_interactions(db, payload["sub"])
     if is_miniprogram_client(x_gezhi_client):
         return api_response(page_items(interactions, limit=len(interactions) or 20))
     return ok(interactions)
@@ -1028,142 +717,13 @@ async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: 
     return ok({"success": True, "completionRate": completion_rate, "completedCount": completed})
 
 
+
+
 @router.post("/analytics/advices/generate")
 async def generate_ai_advices(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    """基于班级学情数据调用 AI 生成干预建议"""
-    store = JsonStore(db)
-    students = _student_cards(db, teacher_student_ids(auth["sub"]))
-    if not students:
-        return ok([])
-    mistakes = _student_records(store, "exams", "mistake", students)
-    submissions = _student_records(store, "homework", "submission", students)
-
-    # 聚合班级数据
-    student_count = len(students)
-    high_risk = [s for s in students if s.get("alert")]
-    high_risk_count = len(high_risk)
-    avg_progress = round(mean([s["progress"] for s in students])) if students else 0
-    unmastered_count = len([m for m in mistakes if not m.get("mastered")])
-    submitted_count = len([s for s in submissions if s.get("status") in ("submitted", "graded")])
-
-    # 薄弱知识点聚合
-    tag_counts: dict[str, int] = {}
-    for m in mistakes:
-        if not m.get("mastered"):
-            for tag in (m.get("knowledgeTags") or []):
-                tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
-    weak_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-
-    # 兜底建议
-    fallback_advices = [
-        {"id": "adv-1", "type": "urgency", "title": "紧急：关注高危学生",
-         "reason": f"当前有 {high_risk_count} 名学生进度低于50%",
-         "suggestion": "安排一对一辅导或下发补弱作业", "active": True},
-        {"id": "adv-2", "type": "knowledge", "title": "知识薄弱点补强",
-         "reason": f"未掌握错题 {unmastered_count} 道",
-         "suggestion": "针对高频错题知识点创建专项练习", "active": True},
-        {"id": "adv-3", "type": "engagement", "title": "提升作业完成率",
-         "reason": f"已提交作业 {submitted_count} 份",
-         "suggestion": "对未提交学生发送催交提醒", "active": False},
-    ]
-
-    advices = fallback_advices
-    try:
-        prompt = (
-            f"你是教学干预策略AI助手。请基于以下班级学情数据生成3-5条干预建议。\n\n"
-            f"学生总数: {student_count}\n"
-            f"高危学生数: {high_risk_count}\n"
-            f"平均进度: {avg_progress}\n"
-            f"未掌握错题数: {unmastered_count}\n"
-            f"已提交作业数: {submitted_count}\n"
-            f"薄弱知识点: {weak_tags}\n\n"
-            f"请返回JSON数组格式:\n"
-            f'[{{"id": "adv-1", "type": "urgency|knowledge|engagement", '
-            f'"title": "标题", "reason": "原因", "suggestion": "建议", "active": true}}]'
-        )
-        response = build_chat_model(Settings().LLM_MODEL_DEFAULT, temperature=0.4).invoke(prompt)
-        content = getattr(response, "content", str(response))
-        match = re.search(r'\[.*\]', content, re.DOTALL)
-        if match:
-            parsed = json.loads(match.group())
-            if isinstance(parsed, list) and len(parsed) > 0:
-                advices = parsed
-    except Exception:
-        pass
-
-    # 持久化
-    for adv in advices:
-        adv_id = adv.get("id") or make_record_key("adv")
-        adv["id"] = adv_id
-        adv["studentIds"] = [s["username"] for s in students]
-        store.upsert("analytics", "advice", adv_id, adv, owner_id=auth["sub"])
-
-    return ok(advices)
+    raise HTTPException(status_code=503, detail="analytics_generation_unavailable")
 
 
 @router.post("/analytics/action-queue/generate")
 async def generate_action_queue(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    """基于规则引擎 + AI 生成今日行动队列"""
-    store = JsonStore(db)
-    students = _student_cards(db, teacher_student_ids(auth["sub"]))
-    if not students:
-        return ok([])
-    mistakes = _student_records(store, "exams", "mistake", students)
-    homeworks = [h for h in store.list_payloads("homework", "homework") if h.get("teacherId") == auth["sub"]]
-
-    actions: list[dict[str, Any]] = []
-    now_iso = utc_now_iso()
-
-    # 规则 1：高危学生 → 督学行动
-    high_risk = [s for s in students if s.get("alert")]
-    for s in high_risk[:5]:
-        actions.append({
-            "id": make_record_key("act"),
-            "type": "nudge",
-            "studentName": s["name"],
-            "studentId": s.get("username", ""),
-            "title": f"督学提醒：{s['name']} 进度落后",
-            "status": "pending",
-            "reason": f"进度 {s['progress']}%，需关注",
-            "createdAt": now_iso,
-        })
-
-    # 规则 2：未掌握高频错题 → 补弱行动
-    unmastered = [m for m in mistakes if not m.get("mastered")]
-    tag_counts: dict[str, int] = {}
-    for m in unmastered:
-        for tag in (m.get("knowledgeTags") or []):
-            tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
-    for tag, count in sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:3]:
-        actions.append({
-            "id": make_record_key("act"),
-            "type": "remediation",
-            "studentName": "全班",
-            "studentId": "",
-            "title": f"补弱作业：{tag}（{count}人错题）",
-            "status": "pending",
-            "reason": f"该知识点有 {count} 道未掌握错题",
-            "createdAt": now_iso,
-        })
-
-    # 规则 3：即将截止作业 → 催交行动
-    for hw in homeworks:
-        deadline = hw.get("deadline", "")
-        if deadline and hw.get("status") != "submitted":
-            actions.append({
-                "id": make_record_key("act"),
-                "type": "reminder",
-                "studentName": "全班",
-                "studentId": "",
-                "title": f"催交提醒：{hw.get('title', '作业')}",
-                "status": "pending",
-                "reason": f"截止时间: {deadline}",
-                "createdAt": now_iso,
-            })
-
-    # 持久化
-    for action in actions:
-        action["studentIds"] = [s["username"] for s in students]
-        store.upsert("analytics", "action", action["id"], action, owner_id=auth["sub"])
-
-    return ok(actions)
+    raise HTTPException(status_code=503, detail="analytics_generation_unavailable")
