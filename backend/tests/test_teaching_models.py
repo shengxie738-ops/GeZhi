@@ -50,15 +50,24 @@ def test_flags_default_off_and_capability_disabled_without_tables():
     assert schema.teaching_capability(enabled=True, institution_id="i", feedback_enabled=True).reason == "dependency_disabled"
     assert schema.teaching_capability(enabled=True, institution_id="i", revisions_enabled=True).reason == "dependency_disabled"
     assert schema.teaching_capability(enabled=True, institution_id="i", assignments_enabled=True, feedback_enabled=True, revisions_enabled=True).reason == "revisions_unavailable"
-    # Task1 has no teaching router. This is structural evidence only; Task6 owns HTTP.
+    # Task6 mounts the router while flags/startup-DDL remain independent gates.
+    # Structural AST only; never import or execute the aggregate/startup.
     for path in (BACKEND / "app/main.py", BACKEND / "app/api/api.py"):
         if path.exists():
             tree = ast.parse(path.read_text())
-            imports = [ast.unparse(n) for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))]
-            assert not any("teaching" in name for name in imports)
-            for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-                if isinstance(call.func, ast.Attribute) and call.func.attr == "include_router":
-                    assert "teaching" not in ast.unparse(call)
+            if path.name == "api.py":
+                imports = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+                           and n.module == "app.api.endpoints"]
+                assert sum(alias.name == "teaching" for node in imports for alias in node.names) == 1
+                includes = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                            and isinstance(n.func, ast.Attribute) and n.func.attr == "include_router"]
+                assert sum(bool(call.args) and ast.unparse(call.args[0]) == "teaching.router" for call in includes) == 1
+            else:
+                imports = [ast.unparse(n) for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))]
+                assert not any("teaching" in name for name in imports)
+                for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+                    if isinstance(call.func, ast.Attribute) and call.func.attr == "include_router":
+                        assert "teaching" not in ast.unparse(call)
     manifest = json.loads((BACKEND.parent / "stage-manifest.json").read_text())
     declarations = manifest["public_teaching_configuration_contract"]["declarations"]
     for name in (*flags, "TEACHING_INSTITUTION_ID", "TEACHING_TRUSTED_DELEGATIONS"):
