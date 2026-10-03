@@ -1,7 +1,7 @@
 /**
  * usePlugins.js - 插件市场与论文检索控制器 Hook
  */
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onScopeDispose, getCurrentScope } from 'vue';
 import {
     ACADEMIC_PLUGINS,
     PLUGIN_CATEGORIES,
@@ -64,6 +64,42 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const activeInputPlugins = ref([]);
 
     let currentPaperSearchController = null;
+    let sessionGeneration = 0;
+    let searchGeneration = 0;
+    const emptySearchSummary = () => ({ totalFetched: 0, totalRejected: 0, totalBeforeMerge: 0, totalAfterMerge: 0, snapshotCount: 0, snapshotComplete: true, effectiveQuery: '', queryTranslated: false });
+    const cancelPaperSearch = ({ reset = false } = {}) => {
+        searchGeneration += 1;
+        currentPaperSearchController?.abort();
+        currentPaperSearchController = null;
+        isSearchingPapers.value = false;
+        if (paperSearchStatus.value === 'searching') paperSearchStatus.value = 'cancelled';
+        if (reset) {
+            paperSearchQuery.value = '';
+            paperSearchResults.value = [];
+            paperSearchStatus.value = 'idle';
+            paperSourceStatuses.value = [];
+            paperSearchSummary.value = emptySearchSummary();
+            paperSearchError.value = '';
+            selectedPaper.value = null;
+        }
+    };
+    if (getCurrentScope()) onScopeDispose(() => cancelPaperSearch());
+    const restorePaperSearch = (snapshot = null) => {
+        cancelPaperSearch({ reset: true });
+        if (!snapshot) return;
+        paperSearchQuery.value = snapshot.query || '';
+        paperSearchResults.value = snapshot.results || [];
+        paperSearchStatus.value = snapshot.status || 'idle';
+        paperSearchSummary.value = { ...emptySearchSummary(), ...snapshot.summary };
+        paperSourceStatuses.value = snapshot.statuses || [];
+    };
+    const getPaperSearchSnapshot = () => ({
+        query: paperSearchQuery.value,
+        results: paperSearchResults.value,
+        status: paperSearchStatus.value,
+        summary: { ...paperSearchSummary.value },
+        statuses: paperSourceStatuses.value.map(status => ({ ...status }))
+    });
 
     watch(installedPluginIds, (newVal) => {
         try {
@@ -73,11 +109,20 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         } catch (e) {
             console.warn('[usePlugins] Failed to save installed plugins to storage:', e);
         }
-    }, { deep: true });
+    }, { deep: true, flush: 'sync' });
 
     watch(() => currentUser?.value?.username, () => {
+        sessionGeneration += 1;
+        cancelPaperSearch({ reset: true });
+        activeInputPlugins.value = [];
+        activeSearchPlugin.value = null;
+        selectedPluginDetail.value = null;
+        showPluginMarketModal.value = false;
+        showAddMenu.value = false;
+        marketSearchKeyword.value = '';
+        selectedCategory.value = 'all';
         installedPluginIds.value = readInstalledIds();
-    });
+    }, { flush: 'sync' });
 
     const installedPlugins = computed(() => {
         return installedPluginIds.value
@@ -134,6 +179,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const closePluginMarket = () => {
+        cancelPaperSearch();
         showPluginMarketModal.value = false;
         selectedPluginDetail.value = null;
         activeSearchPlugin.value = null;
@@ -155,6 +201,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const closePaperSearchDrawer = () => {
+        cancelPaperSearch();
         activeSearchPlugin.value = null;
     };
 
@@ -165,8 +212,11 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
      * @returns {Promise<boolean>}
      */
     const executePaperSearch = async (overrideQuery = null, pluginOverride = null) => {
-        const query = (overrideQuery !== null ? overrideQuery : paperSearchQuery.value).trim();
+        // Invalidate before validation, including no-source/empty-query transitions.
+        cancelPaperSearch();
+        const query = String(typeof overrideQuery === 'string' ? overrideQuery : paperSearchQuery.value).trim();
         if (!query) {
+            paperSearchStatus.value = 'idle';
             if (showToast) showToast('请输入检索关键词', 'error');
             return false;
         }
@@ -185,16 +235,18 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             return false;
         }
 
-        // 取消旧搜索
-        if (currentPaperSearchController) {
-            currentPaperSearchController.abort();
-        }
         const thisController = new AbortController();
         currentPaperSearchController = thisController;
+        const generation = searchGeneration;
+        const owner = getSessionId();
+        const session = sessionGeneration;
+        const isCurrent = () => thisController === currentPaperSearchController && !thisController.signal.aborted && generation === searchGeneration && session === sessionGeneration && owner === getSessionId();
 
         isSearchingPapers.value = true;
         paperSearchError.value = '';
         paperSearchStatus.value = 'searching';
+        paperSearchResults.value = [];
+        paperSearchSummary.value = emptySearchSummary();
 
         // 预填 searching 状态
         paperSourceStatuses.value = sourceKeys.map(key => ({
@@ -209,9 +261,10 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         try {
             const res = await searchAcademicPapers(query, {
                 sourceKeys,
+                cacheScope: `${owner}:${session}`,
                 signal: thisController.signal,
                 onSourceStatus: (event) => {
-                    if (thisController !== currentPaperSearchController) return;
+                    if (!isCurrent()) return;
                     const idx = paperSourceStatuses.value.findIndex(s => s.key === event.key);
                     if (idx !== -1) {
                         paperSourceStatuses.value[idx] = {
@@ -224,7 +277,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
                 }
             });
 
-            if (thisController === currentPaperSearchController) {
+            if (isCurrent()) {
                 paperSearchResults.value = res.items || [];
                 paperSearchStatus.value = res.status;
                 paperSearchSummary.value = {
@@ -233,7 +286,13 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
                     totalBeforeMerge: res.totalBeforeMerge,
                     totalAfterMerge: res.totalAfterMerge,
                     effectiveQuery: res.effectiveQuery || query,
-                    queryTranslated: Boolean(res.queryTranslated)
+                    queryTranslated: Boolean(res.queryTranslated),
+                    queryType: res.queryType,
+                    queryPlanning: res.queryPlanning,
+                    ranking: res.ranking,
+                    sourceRanks: res.sourceRanks,
+                    snapshotCount: (res.items || []).length,
+                    snapshotComplete: true
                 };
                 const outcome = interpretPaperSearchResponse(res);
                 paperSearchError.value = outcome.errorMessage;
@@ -244,8 +303,9 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             }
             return false;
         } catch (err) {
-            if (thisController === currentPaperSearchController) {
+            if (isCurrent()) {
                 if (err?.name === 'AbortError') {
+                    paperSearchStatus.value = 'cancelled';
                     return false;
                 }
                 paperSearchStatus.value = 'error';
@@ -255,7 +315,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             }
             return false;
         } finally {
-            if (thisController === currentPaperSearchController) {
+            if (isCurrent()) {
                 isSearchingPapers.value = false;
             }
         }
@@ -298,11 +358,13 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const insertPaperToChat = (paper) => {
-        if (!inputTextRef) return;
-        const snippet = `\n> 📚 **参考论文：${paper.title}** (${paper.year || ''}, ${paper.sources?.map(s => s.label).join('/') || ''})\n> 作者: ${paper.authorsText}\n> 摘要: ${(paper.abstract || '').slice(0, 160)}...\n\n请针对以上论文，结合我的问题进行深度分析：`;
+        if (!inputTextRef || !paper) return;
+        const sourceUrl = [paper.officialUrl, paper.openAccessUrl].find(url => /^https?:\/\//i.test(String(url || ''))) || '';
+        const snippet = `\n> 📚 参考论文：${paper.title || '无标题'} (${paper.year || ''}, ${paper.sources?.map(s => s.label).join('/') || ''})\n> 文献 ID: ${paper.id || ''}\n> 作者: ${paper.authorsText || '未提供'}\n> DOI: ${paper.doi || '未提供'}${paper.arxivId ? `\n> arXiv: ${paper.arxivId}` : ''}\n> 官方/开放链接: ${sourceUrl || '未提供'}\n> 来源摘要: ${paper.abstract || '来源未提供摘要'}\n> 阅读范围：仅有以上来源元数据及摘要，未读取全文；不可据此推断实验数值、方法细节或全文结论。\n\n请基于可用来源回答我的问题，说明缺失信息：`;
         inputTextRef.value = (inputTextRef.value || '') + snippet;
         closePluginMarket();
         closePaperSearchDrawer();
+        closePaperDetail();
         if (showToast) showToast('论文已引入当前任务输入框！', 'success');
     };
 
@@ -319,7 +381,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             activeInputPlugins.value.push(plugin);
         }
         showAddMenu.value = false;
-        if (showToast) showToast(`已挂载 @${plugin.name} 学术能力`, 'success');
+        if (showToast) showToast(plugin.canSearchLive ? `已选用 @${plugin.name} 检索来源` : `已添加 @${plugin.name} 标签（此工作台未启用执行能力）`, 'info');
     };
 
     const removeActiveInputPlugin = (pluginId) => {
@@ -370,6 +432,9 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         openPaperSearchDrawer,
         closePaperSearchDrawer,
         executePaperSearch,
+        cancelPaperSearch,
+        restorePaperSearch,
+        getPaperSearchSnapshot,
         searchFromPaperMode,
         openPaperDetail,
         closePaperDetail,

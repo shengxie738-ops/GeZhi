@@ -11,12 +11,12 @@ import {
     mergeAcademicPapers
 } from '../js/api/academic/paperModel.js';
 
-test('normalizeDoi: standardizes DOI string, removes prefixes and trailing punctuation', () => {
+test('normalizeDoi: standardizes DOI string, removes prefixes and preserves suffix punctuation', () => {
     assert.equal(normalizeDoi('10.1000/182'), '10.1000/182');
-    assert.equal(normalizeDoi('https://doi.org/10.1000/182.'), '10.1000/182');
-    assert.equal(normalizeDoi('http://dx.doi.org/10.48550/arXiv.1706.03762/'), '10.48550/arxiv.1706.03762');
-    assert.equal(normalizeDoi('doi:10.1000/182,'), '10.1000/182');
-    assert.equal(normalizeDoi('  10.1145/3377325.3377498;  '), '10.1145/3377325.3377498');
+    assert.equal(normalizeDoi('https://doi.org/10.1000/182.'), '10.1000/182.');
+    assert.equal(normalizeDoi('http://dx.doi.org/10.48550/arXiv.1706.03762/'), '10.48550/arxiv.1706.03762/');
+    assert.equal(normalizeDoi('doi:10.1000/182,'), '10.1000/182,');
+    assert.equal(normalizeDoi('  10.1145/3377325.3377498;  '), '10.1145/3377325.3377498;');
     assert.equal(normalizeDoi('invalid-doi'), '');
     assert.equal(normalizeDoi(''), '');
     assert.equal(normalizeDoi(null), '');

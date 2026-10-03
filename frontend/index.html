@@ -5,9 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>格至 - 智能协同教育系统</title>
+    <!-- Legacy Vue runtime needs inline scripts/eval; limit executable origins while
+         disabling plugin objects, foreign base URLs and cross-origin form posts. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s4.zstatic.net https://cdn.jsdmirror.com; style-src 'self' 'unsafe-inline' https:; connect-src 'self' https: http://127.0.0.1:8516 http://localhost:8516; img-src 'self' data: blob: https:; font-src 'self' data: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
     <!-- 优先检测登录态，未登录时立即无缝重定向到独立 React 登录页 -->
     <script>
-        if (localStorage.getItem('isLoggedIn') !== 'true') {
+        if (localStorage.getItem('isLoggedIn') !== 'true' || !localStorage.getItem('token')) {
             window.location.href = './login/index.html';
         }
     </script>
@@ -28,7 +31,7 @@
     <!-- Marked.js (Local Lib) -->
     <script src="./libs/marked.min.js"></script>
     <!-- DOMPurify CDN (For Markdown XSS Protection) -->
-    <script src="https://s4.zstatic.net/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <!-- All untrusted HTML uses the local fail-closed safeRendering module. -->
     <!-- Phosphor Icons (Local Lib) -->
     <script src="./libs/phosphor.js"></script>
     <!-- Apache ECharts (Local Lib) -->
@@ -2563,16 +2566,17 @@
 
         <!-- ==================== 认证模块 (已整合至独立 React 登录页) ==================== -->
         <transition name="fade">
-            <div v-if="!isLoggedIn"
+            <div v-if="!isLoggedIn || !authVerified"
                 class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 text-white">
                 <div class="animate-spin rounded-full h-10 w-10 border-4 border-slate-700 border-t-[#1c2b38] mb-4">
                 </div>
-                <p class="text-sm font-medium text-slate-400">正在重定向至登录中心...</p>
+                <p class="text-sm font-medium text-slate-400">{{ authError || '正在验证登录身份...' }}</p>
+                <button v-if="authError" @click="verifySession">重试登录验证</button>
             </div>
         </transition>
 
         <!-- ==================== 主系统模块 ==================== -->
-        <div v-if="isLoggedIn" class="h-full w-full flex relative home-bg-container">
+        <div v-if="isLoggedIn && authVerified" class="h-full w-full flex relative home-bg-container">
             <!-- Galaxy粒子背景 -->
             <canvas id="galaxyCanvas" class="absolute inset-0 z-0 pointer-events-none"></canvas>
             <!-- 极简侧边导航栏 -->
@@ -3376,6 +3380,8 @@
                                                 </div>
                                             </div>
 
+                                            <div v-if="historyError" role="status" class="px-2 pb-2 text-[11px] text-amber-700 break-words">{{ historyError }}</div>
+
                                             <!-- 内联新建大项目输入框 -->
                                             <div v-if="isCreatingProject" class="px-2 py-1 mb-1">
                                                 <div class="flex items-center gap-1 bg-white border border-violet-400 rounded-lg p-1 shadow-xs">
@@ -3509,7 +3515,7 @@
                                             <!-- 论文模式双态视图切换胶囊: 检索文献列表 ⇄ 研读对话记录 -->
                                             <div v-if="agentMode === 'paper' && (paperSearchResults.length > 0 || activeConversationMessages.length > 0)"
                                                 class="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200/80 shadow-2xs mr-1">
-                                                <button type="button" @click="paperActiveTab = 'results'"
+                                                <button type="button" @click="setPaperActiveTab('results')"
                                                     id="tab-paper-results-btn"
                                                     class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                     :class="paperActiveTab === 'results' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
@@ -3519,7 +3525,7 @@
                                                         {{ paperSearchResults.length }}
                                                     </span>
                                                 </button>
-                                                <button type="button" @click="paperActiveTab = 'dialog'"
+                                                <button type="button" @click="setPaperActiveTab('dialog')"
                                                     id="tab-paper-dialog-btn"
                                                     class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                     :class="paperActiveTab === 'dialog' ? 'bg-white text-violet-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
@@ -3733,6 +3739,13 @@
 
                                         <!-- ==================== 论文查询模式：多来源可核验检索状态与结果 ==================== -->
                                         <div v-if="agentMode === 'paper'" class="w-full max-w-3xl mt-6 flex flex-col gap-4">
+                                            <div v-if="paperWorkSyncStatus" role="status" class="p-3 rounded-xl border border-slate-200 bg-white text-xs flex items-center justify-between gap-3">
+                                                <span v-if="paperWorkSyncStatus.state === 'pending'" class="text-sky-700">工作记录已保存在本地，正在同步云端...</span>
+                                                <span v-else-if="paperWorkSyncStatus.state === 'saved'" class="text-emerald-700">工作记录已收到云端保存回执</span>
+                                                <span v-else-if="paperWorkSyncStatus.state === 'failed'" class="text-amber-700">仅本地保存；云端同步失败 {{ paperWorkSyncStatus.error }}</span>
+                                                <button v-if="paperWorkSyncStatus.state === 'failed'" type="button" @click="retryPaperWorkSync(paperWorkSyncStatus.conversationId)" class="shrink-0 text-sky-700 font-bold">重试同步</button>
+                                            </div>
+                                            <p class="text-[11px] text-slate-500">来源可核验表示书目记录有来源；主题相关度和全文内容仍需核对。未读取全文时只基于元数据及摘要研读。</p>
                                             <!-- 总状态与多来源增量状态栏 -->
                                             <div v-if="isSearchingPapers || paperSearchStatus !== 'idle' || paperSourceStatuses.length > 0"
                                                 class="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col gap-3">
@@ -3750,13 +3763,14 @@
                                                                 'bg-emerald-50 text-emerald-700 border border-emerald-200': paperSearchStatus === 'success',
                                                                 'bg-amber-50 text-amber-700 border border-amber-200': paperSearchStatus === 'partial',
                                                                 'bg-rose-50 text-rose-700 border border-rose-200': paperSearchStatus === 'error',
-                                                                'bg-slate-100 text-slate-600 border border-slate-200': paperSearchStatus === 'empty' || paperSearchStatus === 'idle'
+                                                                'bg-slate-100 text-slate-600 border border-slate-200': paperSearchStatus === 'empty' || paperSearchStatus === 'idle' || paperSearchStatus === 'cancelled'
                                                             }">
                                                             <span v-if="paperSearchStatus === 'searching'">正在检索...</span>
                                                             <span v-else-if="paperSearchStatus === 'success'">来源响应正常</span>
                                                             <span v-else-if="paperSearchStatus === 'partial'">部分来源不可用</span>
                                                             <span v-else-if="paperSearchStatus === 'error'">检索失败</span>
                                                             <span v-else-if="paperSearchStatus === 'empty'">已启用来源未找到匹配论文</span>
+                                                            <span v-else-if="paperSearchStatus === 'cancelled'">已取消</span>
                                                             <span v-else>就绪</span>
                                                         </span>
                                                     </div>
@@ -3765,10 +3779,14 @@
                                                     <div class="flex items-center gap-3">
                                                         <div v-if="paperSearchSummary.totalAfterMerge > 0 || paperSearchResults.length > 0"
                                                             class="text-slate-500 text-xs flex flex-col items-end gap-0.5">
-                                                            <span>来源返回 {{ paperSearchSummary.totalFetched }} 条，过滤低相关 {{ paperSearchSummary.totalRejected }} 条，去重后 {{ paperSearchSummary.totalAfterMerge }} 篇</span>
+                                                            <span>来源返回 {{ paperSearchSummary.totalFetched }} 条，剔除无效标题 {{ paperSearchSummary.totalRejected }} 条，去重后 {{ paperSearchSummary.totalAfterMerge }} 篇</span>
+                                                            <span>当前展示 {{ paperSearchResults.length }} 篇（各来源有返回上限）</span>
+                                                            <span v-if="paperSearchSummary.snapshotComplete === false" class="text-amber-700">此历史快照仅恢复 {{ paperSearchResults.length }} / {{ paperSearchSummary.totalAfterMerge }} 篇；重新检索可恢复当前来源结果</span>
                                                             <span v-if="paperSearchSummary.queryTranslated" class="text-sky-700 font-medium">
                                                                 实际检索词：{{ paperSearchSummary.effectiveQuery }}
                                                             </span>
+                                                            <span v-if="paperSearchSummary.queryPlanning?.constraints?.years?.length && !paperSearchSummary.queryPlanning.dateFilterApplied" class="text-amber-700">年份已保留在检索词中，尚未应用结构化年份筛选</span>
+                                                            <span v-if="paperSearchSummary.queryPlanning?.constraints?.exclusions?.length && !paperSearchSummary.queryPlanning.exclusionFilterApplied" class="text-amber-700">排除词已保留，来源未保证结构化排除筛选</span>
                                                         </div>
                                                         <button type="button" @click="returnToChatDialog"
                                                             id="status-return-to-chat-btn"
@@ -3787,7 +3805,7 @@
                                                             'bg-sky-50/70 border-sky-200 text-sky-800': src.status === 'searching',
                                                             'bg-emerald-50/70 border-emerald-200 text-emerald-800': src.status === 'success',
                                                             'bg-rose-50/70 border-rose-200 text-rose-800': src.status === 'error',
-                                                            'bg-slate-50 border-slate-200 text-slate-500': src.status === 'pending' || !src.status
+                                                            'bg-slate-50 border-slate-200 text-slate-500': src.status === 'pending' || src.status === 'skipped' || !src.status
                                                         }">
                                                         <span class="font-bold">{{ src.label || src.key }}</span>
                                                         <span v-if="src.status === 'searching'" class="flex items-center gap-1 text-sky-600">
@@ -3803,7 +3821,8 @@
                                                             <span>失败</span>
                                                             <span v-if="src.error" class="text-[10px] text-rose-500 max-w-[140px] truncate">({{ src.error }})</span>
                                                         </span>
-                                                        <span v-else class="text-slate-400">等待</span>
+                                                        <span v-else-if="src.status === 'skipped'" class="text-slate-500" :title="src.reason || src.error">跳过</span>
+                                <span v-else class="text-slate-400">等待</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -3843,7 +3862,7 @@
                                                 </div>
                                                 <h4 class="text-sm font-bold text-slate-800">学术检索异常</h4>
                                                 <p class="text-xs text-rose-600">{{ paperSearchError }}</p>
-                                                <button type="button" @click="executePaperSearch(paperSearchQuery || inputText)"
+                                                <button type="button" @click="sendMessage(paperSearchQuery || inputText)"
                                                     class="mt-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5">
                                                     <i class="ph ph-arrow-clockwise"></i>
                                                     <span>重新检索</span>
@@ -3873,9 +3892,10 @@
                                                                 <span>{{ paper.authorsText }}</span>
                                                             </span>
                                                             <span v-if="paper.venue" class="text-slate-400">· {{ paper.venue }}</span>
-                                                            <span v-if="paper.publicationType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono">
-                                                                {{ paper.publicationType }}
+                                                            <span v-if="paper.workType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono">
+                                                                {{ paper.workType }}
                                                             </span>
+                                                            <span v-if="paper.ranking && typeof paper.ranking.relevanceScore === 'number'" class="text-[10px] text-slate-500">检索概念覆盖度 {{ Math.round(paper.ranking.relevanceScore * 100) }}%（启发式，需人工核对）</span>
                                                             <span v-if="paper.citationCount !== null && paper.citationCount !== undefined" class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200/60">
                                                                 被引 {{ paper.citationCount }}
                                                             </span>
@@ -3936,7 +3956,7 @@
 
                                                 <!-- 结果列表底部贴心返回对话框引导 -->
                                                 <div class="pt-6 pb-12 flex flex-col items-center justify-center gap-3 text-center border-t border-slate-200/60 mt-4">
-                                                    <p class="text-xs text-slate-400">已展示全部来源可核验检索结果</p>
+                                                    <p class="text-xs text-slate-400">已展示本次来源返回的 {{ paperSearchResults.length }} 条合并记录；这是有上限的来源检索子集</p>
                                                     <button type="button" @click="returnToChatDialog"
                                                         id="bottom-return-to-chat-btn"
                                                         class="px-5 py-2.5 bg-white hover:bg-slate-50 text-violet-700 border border-violet-200 rounded-xl text-xs font-bold transition-all shadow-xs hover:shadow-md flex items-center gap-2 cursor-pointer active:scale-95">
@@ -4028,16 +4048,19 @@
                                                         <!-- 普通 Markdown 内容 -->
                                                         <div v-else
                                                             class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm markdown-body text-[14px] text-slate-800"
-                                                            v-html="parsedHtmlCache[msg.id] || msg.content"></div>
+                                                            v-html="renderMarkdown(msg.content)"></div>
 
+                                                        <p v-if="msg.deliveryStatus === 'empty'" role="status" class="mt-1 text-[11px] text-amber-700">模型未返回可显示的文本；请修正问题后重试</p>
+                                                        <p v-if="msg.syncState === 'pending'" role="status" class="mt-1 text-[11px] text-sky-600">正在确认云端保存...</p>
+                                                        <p v-else-if="msg.syncState === 'failed'" role="status" class="mt-1 text-[11px] text-amber-700">{{ msg.syncError || '云端保存未确认，请刷新历史记录核对' }}</p>
                                                         <!-- 若该消息附带文献检索结果，展示文献卡片直达入口 -->
                                                         <div v-if="msg.attachedPapers && msg.attachedPapers.length > 0"
                                                             class="mt-2.5 p-3 bg-sky-50/80 border border-sky-200/80 rounded-2xl flex items-center justify-between">
                                                             <div class="flex items-center gap-2 text-xs font-bold text-sky-800">
                                                                 <i class="ph ph-article text-sky-600 text-sm"></i>
-                                                                <span>该任务已关联检索 {{ msg.attachedPapers.length }} 篇经过学术源验证的真实文献</span>
+                                                                <span>该任务已关联检索 {{ msg.attachedPapers.length }} 篇来源书目记录</span>
                                                             </div>
-                                                            <button type="button" @click="paperSearchResults = msg.attachedPapers; paperSearchStatus = 'success'; paperActiveTab = 'results'"
+                                                            <button type="button" @click="restorePaperMessage(msg)"
                                                                 class="px-2.5 py-1 bg-white hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg border border-sky-300/60 transition-all flex items-center gap-1 shadow-2xs cursor-pointer">
                                                                 <i class="ph ph-arrow-up-right"></i>
                                                                 <span>查看文献卡片大厅</span>
@@ -4263,7 +4286,7 @@
                                             class="visual-guide-image-shell architecture-guide-shell w-full h-full p-2 overflow-auto">
                                             <div v-if="visualGuideImage?.renderedSvg"
                                                 class="architecture-guide-svg-layer w-full h-full flex items-center justify-center"
-                                                v-html="visualGuideImage.renderedSvg"></div>
+                                                v-text="visualGuideImage.renderedSvg"></div>
                                             <pre v-else-if="visualGuideImage?.treeText"
                                                 class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
                                             <div v-else class="architecture-render-failed">
@@ -4281,7 +4304,7 @@
                                                 class="visual-guide-bg-layer">
                                             <div v-if="visualGuideImage?.svg"
                                                 class="visual-guide-svg-layer w-full h-full flex items-center justify-center"
-                                                v-html="visualGuideImage.svg"></div>
+                                                v-text="visualGuideImage.svg"></div>
                                         </div>
 
                                         <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
@@ -4598,7 +4621,7 @@
                                                 class="visual-guide-image-shell architecture-guide-shell">
                                                 <div v-if="visualGuideImage?.renderedSvg"
                                                     class="architecture-guide-svg-layer"
-                                                    v-html="visualGuideImage.renderedSvg"></div>
+                                                    v-text="visualGuideImage.renderedSvg"></div>
                                                 <pre v-else-if="visualGuideImage?.treeText"
                                                     class="architecture-tree-text">{{ visualGuideImage.treeText }}</pre>
                                                 <div v-else class="architecture-render-failed">
@@ -4615,7 +4638,7 @@
                                                     class="visual-guide-bg-layer">
                                                 <div v-if="visualGuideImage?.svg"
                                                     class="visual-guide-svg-layer"
-                                                    v-html="visualGuideImage.svg"></div>
+                                                    v-text="visualGuideImage.svg"></div>
                                             </div>
                                             <div v-else-if="visualGuideImage?.imageUrl || visualGuideImage?.imageBase64"
                                                 class="visual-guide-image-shell">
@@ -4817,7 +4840,7 @@
 
                         <!-- 4.7. 考试中心 -->
                         <transition name="fade">
-                            <student-exam-center v-if="currentView === 'exam'" :current-user="currentUser"
+                            <student-exam-center ref="examCenterRef" v-if="currentView === 'exam'" :current-user="currentUser"
                                 @show-toast="showToast"></student-exam-center>
                         </transition>
 
@@ -4942,121 +4965,7 @@
                                 @show-toast="showToast"></teacher-dashboard>
                         </transition>
 
-                        <!-- 1. 全息监控面板 (Monitor) -->
-                        <transition name="fade">
-                            <div v-if="currentView === 't_monitor'"
-                                class="absolute inset-0 overflow-y-auto p-8 lg:p-12">
-                                <div class="max-w-7xl mx-auto">
-                                    <div class="flex justify-between items-end mb-8">
-                                        <div>
-                                            <h2 class="text-2xl font-bold text-slate-800 mb-1"
-                                                style="font-family: 'Noto Serif SC', serif;">多智能体协同全息监控</h2>
-                                            <p class="text-sm text-slate-400">实时追踪集群内 {{ mockStudents.length }} 名学习者的状态及
-                                                Agent 干预情况</p>
-                                        </div>
-                                        <div class="flex gap-3">
-                                            <button
-                                                class="glass-panel-liquid px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:text-[#1c2b38] transition-colors"><i
-                                                    class="ph ph-funnel"></i> 筛选告警</button>
-                                            <button
-                                                class="bg-[#1c2b38] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#253645] transition-colors"><i
-                                                    class="ph ph-video-camera"></i> 开启巡课</button>
-                                        </div>
-                                    </div>
 
-                                    <!-- 监控卡片网格 -->
-                                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                                        <div v-for="student in mockStudents" :key="student.id"
-                                            class="glass-panel-liquid p-6 relative overflow-hidden transition-all"
-                                            :class="student.alert ? 'ring-2 ring-[#b91c1c]/20' : ''">
-
-                                            <!-- 卡片顶部：学生信息与状态 -->
-                                            <div class="flex justify-between items-start mb-5">
-                                                <div class="flex items-center gap-3">
-                                                    <div
-                                                        class="w-12 h-12 rounded-full bg-gradient-to-br from-[#1c2b38] to-[#253645] text-white border border-white/20 flex items-center justify-center font-bold text-base select-none shadow-sm">
-                                                        {{ student.name ? student.name.charAt(0) : '学' }}
-                                                    </div>
-                                                    <div>
-                                                        <h3 class="text-base font-bold text-slate-800">{{ student.name
-                                                            }}</h3>
-                                                        <p class="text-xs text-slate-500">学号: 2024{{
-                                                            student.id.toString().padStart(4, '0') }}</p>
-                                                    </div>
-                                                </div>
-                                                <!-- 状态呼吸灯 -->
-                                                <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border"
-                                                    :class="student.status === 'offline' ? 'bg-slate-50 text-slate-500 border-slate-200' : (student.alert ? 'bg-red-50 text-red-600 border-red-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200')">
-                                                    <span v-if="student.status !== 'offline'"
-                                                        class="relative flex h-1.5 w-1.5">
-                                                        <span
-                                                            class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                                                            :class="student.alert ? 'bg-red-400' : 'bg-emerald-400'"></span>
-                                                        <span class="relative inline-flex rounded-full h-1.5 w-1.5"
-                                                            :class="student.alert ? 'bg-red-500' : 'bg-emerald-500'"></span>
-                                                    </span>
-                                                    <span v-else class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                                    {{ student.status === 'offline' ? '离线' : (student.alert ? '卡点预警' :
-                                                    '活跃中') }}
-                                                </div>
-                                            </div>
-
-                                            <!-- 当前目标与进度 -->
-                                            <div class="mb-5">
-                                                <p class="text-xs text-slate-500 mb-1.5">当前攻克目标</p>
-                                                <p class="text-sm font-semibold text-slate-700 truncate mb-3"
-                                                    :title="student.goal">{{ student.goal }}</p>
-
-                                                <div class="flex justify-between items-end mb-1">
-                                                    <p class="text-[10px] text-slate-400">总体进度</p>
-                                                    <p class="text-xs font-bold"
-                                                        :class="student.alert ? 'text-red-500' : 'text-[#b91c1c]'">{{
-                                                        student.progress }}%</p>
-                                                </div>
-                                                <div class="w-full bg-slate-100 rounded-full h-1.5">
-                                                    <div class="h-1.5 rounded-full transition-all duration-1000 ease-out"
-                                                        :class="student.alert ? 'bg-red-500' : 'bg-[#b91c1c]'"
-                                                        :style="`width: ${student.progress}%`"></div>
-                                                </div>
-                                            </div>
-
-                                            <!-- 底栏：Agent介入与专注度 -->
-                                            <div
-                                                class="flex justify-between items-center border-t border-slate-100 pt-4">
-                                                <div class="flex items-center gap-2">
-                                                    <div v-if="student.currentAgent"
-                                                        class="w-6 h-6 rounded-md bg-[#1c2b38]/10 text-[#1c2b38] flex items-center justify-center text-xs">
-                                                        <i class="ph ph-robot"></i>
-                                                    </div>
-                                                    <div v-else
-                                                        class="w-6 h-6 rounded-md bg-slate-100 text-slate-400 flex items-center justify-center text-xs">
-                                                        <i class="ph ph-minus"></i>
-                                                    </div>
-                                                    <div>
-                                                        <p class="text-[9px] text-slate-400">AI 介入</p>
-                                                        <p class="text-xs font-semibold text-slate-700">{{
-                                                            student.currentAgent || '暂无分配' }}</p>
-                                                    </div>
-                                                </div>
-
-                                                <div class="text-right">
-                                                    <p class="text-[9px] text-slate-400">实时专注度</p>
-                                                    <p class="text-sm font-bold font-mono"
-                                                        :class="student.focus < 50 ? 'text-red-500' : 'text-emerald-500'">
-                                                        {{ student.focus }}<span class="text-[10px] ml-0.5">/100</span>
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            <!-- 警告遮罩层 -->
-                                            <div v-if="student.alert"
-                                                class="absolute inset-0 bg-red-500/5 backdrop-blur-[1px] pointer-events-none border border-red-500/20 rounded-2xl">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </transition>
 
                         <!-- 2. 学情分析 (Analytics) -->
                         <transition name="fade">
@@ -5880,6 +5789,7 @@
                         </button>
                     </div>
 
+                    <p class="px-5 py-2 text-[11px] text-slate-500">此抽屉为来源预览，不生成任务记录；在论文工作台主输入框发送检索可保存任务。</p>
                     <!-- 来源增量状态与统计条 -->
                     <div v-if="paperSourceStatuses.length > 0 || paperSearchSummary.totalAfterMerge > 0"
                         class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-col gap-2">
@@ -5896,7 +5806,7 @@
                                     'bg-sky-50 border-sky-200 text-sky-800': src.status === 'searching',
                                     'bg-emerald-50 border-emerald-200 text-emerald-800': src.status === 'success',
                                     'bg-rose-50 border-rose-200 text-rose-800': src.status === 'error',
-                                    'bg-slate-100 border-slate-200 text-slate-500': src.status === 'pending' || !src.status
+                                    'bg-slate-100 border-slate-200 text-slate-500': src.status === 'pending' || src.status === 'skipped' || !src.status
                                 }">
                                 <span>{{ src.label || src.key }}</span>
                                 <span v-if="src.status === 'searching'" class="flex items-center gap-1 text-sky-600">
@@ -5909,6 +5819,7 @@
                                 <span v-else-if="src.status === 'error'" class="text-rose-700 font-bold" :title="src.error">
                                     失败
                                 </span>
+                                <span v-else-if="src.status === 'skipped'" class="text-slate-500" :title="src.reason || src.error">跳过</span>
                                 <span v-else class="text-slate-400">等待</span>
                             </div>
                         </div>
@@ -5947,7 +5858,7 @@
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-2">
                                     <span v-if="paper.authorsText"><i class="ph ph-users text-slate-400 mr-1"></i>{{ paper.authorsText }}</span>
-                                    <span v-if="paper.publicationType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono text-[10px]">{{ paper.publicationType }}</span>
+                                    <span v-if="paper.workType" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono text-[10px]">{{ paper.workType }}</span>
                                     <span v-if="paper.citationCount !== null && paper.citationCount !== undefined" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-bold">被引 {{ paper.citationCount }}</span>
                                     <span v-if="paper.doi" class="text-[10px] text-slate-400 font-mono truncate max-w-[180px]">DOI: {{ paper.doi }}</span>
                                 </div>
@@ -6026,8 +5937,8 @@
                                     <span v-if="selectedPaper.year" class="text-[10px] px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-bold">
                                         {{ selectedPaper.year }}
                                     </span>
-                                    <span v-if="selectedPaper.publicationType" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono">
-                                        {{ selectedPaper.publicationType }}
+                                    <span v-if="selectedPaper.workType" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono">
+                                        {{ selectedPaper.workType }}
                                     </span>
                                 </div>
                                 <h3 class="text-base sm:text-lg font-bold text-slate-900 leading-snug">{{ selectedPaper.title }}</h3>
@@ -6078,7 +5989,9 @@
                                 </div>
                                 <div class="text-slate-600 text-[11px] space-y-1">
                                     <div>被引次数：<span class="font-bold text-amber-700">{{ selectedPaper.citationCount !== null && selectedPaper.citationCount !== undefined ? selectedPaper.citationCount : '暂未统计' }}</span></div>
-                                    <div class="text-slate-400">引用量来源：{{ selectedPaper.citationSource || '开放学术元数据' }}</div>
+                                    <div class="text-slate-400">引用量来源：{{ selectedPaper.citationCountSource || '开放学术元数据' }}</div>
+                                    <div v-if="selectedPaper.ranking && typeof selectedPaper.ranking.relevanceScore === 'number'" class="text-slate-400">检索概念覆盖度：{{ Math.round(selectedPaper.ranking.relevanceScore * 100) }}%（启发式，非相关性保证）</div>
+                                    <div class="text-slate-400">阅读范围：来源元数据及摘要；未读取全文</div>
                                 </div>
                             </div>
                         </div>

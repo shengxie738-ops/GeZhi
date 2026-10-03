@@ -2,6 +2,7 @@ import base64
 import re
 import secrets
 import string
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -17,6 +18,19 @@ STALE_GITEA_URL_MARKERS = (
     "127.0.0.1",
     "host.docker.internal",
 )
+
+
+def is_gitea_webhook_secret_configured(secret: str | None) -> bool:
+    """Reject missing and known development placeholders, without exposing them.
+
+    This checks configuration readiness, not cryptographic entropy. Operators
+    must provision a dedicated random secret; signatures use the original value.
+    """
+    value = str(secret or "").strip().casefold()
+    return bool(value) and value not in {
+        "gezhi_webhook_secret_default", "replace_with_a_strong_webhook_secret",
+        "changeme", "change-me", "secret", "replace-me",
+    }
 
 
 def _random_password(length: int = 28) -> str:
@@ -74,6 +88,10 @@ def build_repository_urls(
     }
 
 
+class GiteaUnavailableError(RuntimeError):
+    """The provider is disabled or lacks service credentials."""
+
+
 class GiteaService:
     def __init__(
         self,
@@ -95,6 +113,10 @@ class GiteaService:
         self.ssh_user = str(ssh_user or settings.GITEA_SSH_USER or "git").strip() or "git"
         self.token = token if token is not None else settings.GITEA_API_TOKEN
         self.org = org if org is not None else settings.GITEA_ORG
+
+    def _require_available(self) -> None:
+        if not self.enabled or not self.token:
+            raise GiteaUnavailableError("Gitea unavailable: disabled or missing API token")
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -148,8 +170,7 @@ class GiteaService:
         *,
         auth: requests.auth.HTTPBasicAuth | None = None,
     ) -> bool:
-        if not self.enabled or not self.token:
-            return True
+        self._require_available()
         basic_auth = auth or self._user_basic_auth(username)
         for item in self.list_user_tokens(username, auth=basic_auth):
             if str(item.get("name") or "") == token_name:
@@ -166,10 +187,6 @@ class GiteaService:
                 response.raise_for_status()
         return True
 
-    def _mock_repository(self, name: str) -> dict[str, str]:
-        owner = self.org or "campus"
-        return self.repository_urls(owner=owner, repo=name, branch="main")
-
     def repository_urls(self, *, owner: str, repo: str, branch: str = "main") -> dict[str, str]:
         return build_repository_urls(
             owner=owner,
@@ -182,15 +199,17 @@ class GiteaService:
         )
 
     def _repository_payload(self, data: dict[str, Any], fallback_name: str) -> dict[str, Any]:
+        if (not isinstance(data.get("id"), int) or isinstance(data.get("id"), bool) or data["id"] <= 0
+                or not isinstance(data.get("owner"), dict) or not data["owner"].get("login") or not data.get("name")):
+            raise ValueError("Gitea repository response lacks remote identity")
         owner = (data.get("owner") or {}).get("login") or self.org or ""
         repo = data.get("name") or fallback_name
         branch = data.get("default_branch") or "main"
-        return self.repository_urls(owner=owner, repo=repo, branch=branch)
+        return {**self.repository_urls(owner=owner, repo=repo, branch=branch), "source": "gitea", "status": "available", "giteaRepositoryId": data.get("id")}
 
     def get_repository(self, *, owner: str, repo: str) -> dict[str, Any] | None:
         repo_name = normalize_repo_slug(repo)
-        if not self.enabled or not self.token:
-            return self._mock_repository(repo_name)
+        self._require_available()
         response = requests.get(
             f"{self.base_url}/api/v1/repos/{owner}/{repo_name}",
             headers=self._headers(),
@@ -213,8 +232,7 @@ class GiteaService:
         auto_init: bool = True,
     ) -> dict[str, Any]:
         repo_name = normalize_repo_slug(name)
-        if not self.enabled or not self.token:
-            return self._mock_repository(repo_name)
+        self._require_available()
 
         path = f"/api/v1/orgs/{self.org}/repos" if self.org else "/api/v1/user/repos"
         response = requests.post(
@@ -229,10 +247,6 @@ class GiteaService:
             headers=self._headers(),
             timeout=15,
         )
-        if response.status_code in (409, 422):
-            existing = self.get_repository(owner=self.org or "campus", repo=repo_name)
-            if existing:
-                return existing
         response.raise_for_status()
         data = response.json()
         return self._repository_payload(data if isinstance(data, dict) else {}, repo_name)
@@ -379,8 +393,7 @@ class GiteaService:
         return self.repository_urls(owner=owner, repo=repo, branch=branch)["archiveUrl"]
 
     def delete_repository(self, *, owner: str, repo: str) -> bool:
-        if not self.enabled or not self.token:
-            return True
+        self._require_available()
 
         response = requests.delete(
             f"{self.base_url}/api/v1/repos/{owner}/{repo}",
@@ -400,101 +413,76 @@ class GiteaService:
         return f"{settings.GITEA_PUBLIC_BACKEND_URL.rstrip('/')}{webhook_path}"
 
     def ensure_webhook(self, *, owner: str, repo: str, project_id: str, module: str = "team_git") -> dict[str, Any]:
+        """Write desired configuration, then verify public fields; never expose secrets.
+
+        Gitea hides stored secrets. An acknowledged current-secret write is the
+        verification strategy, not proof that an actual delivery reached us.
+        """
         webhook_url = self._webhook_url(project_id=project_id, module=module)
         events = ["push", "pull_request"]
+        result = {"configured": False, "url": webhook_url, "events": events,
+                  "source": "gitea", "status": "error", "deliveryVerified": False}
         if not self.enabled or not self.token:
-            return {"configured": True, "url": webhook_url, "events": events, "mock": True}
+            return {**result, "source": "unavailable", "status": "unavailable", "reason": "provider_unavailable"}
+        if not is_gitea_webhook_secret_configured(settings.GITEA_WEBHOOK_SECRET):
+            return {**result, "status": "unavailable", "reason": "missing_webhook_secret"}
+        path = f"{self.base_url}/api/v1/repos/{owner}/{repo}/hooks"
+        desired = {"config": {"url": webhook_url, "content_type": "json", "secret": settings.GITEA_WEBHOOK_SECRET},
+                   "events": events, "active": True, "branch_filter": "*"}
 
-        path = f"/api/v1/repos/{owner}/{repo}/hooks"
-        try:
-            list_response = requests.get(
-                f"{self.base_url}{path}",
-                headers=self._headers(),
-                timeout=10,
-            )
-            if list_response.status_code == 200:
-                hooks = list_response.json()
-                if isinstance(hooks, list):
-                    for hook in hooks:
-                        if not isinstance(hook, dict):
-                            continue
-                        config = hook.get("config") if isinstance(hook.get("config"), dict) else {}
-                        if str(config.get("url") or "") == webhook_url:
-                            return {
-                                "configured": bool(hook.get("active", True)),
-                                "url": webhook_url,
-                                "events": hook.get("events") or events,
-                                "id": hook.get("id"),
-                            }
-            elif list_response.status_code != 404:
-                list_response.raise_for_status()
-
-            response = requests.post(
-                f"{self.base_url}{path}",
-                json={
-                    "type": "gitea",
-                    "config": {
-                        "url": webhook_url,
-                        "content_type": "json",
-                        "secret": settings.GITEA_WEBHOOK_SECRET,
-                    },
-                    "events": events,
-                    "active": True,
-                },
-                headers=self._headers(),
-                timeout=10,
-            )
-            if response.status_code == 422:
-                return {"configured": True, "url": webhook_url, "events": events, "alreadyExists": True}
+        def find_hook():
+            response = requests.get(path, headers=self._headers(), timeout=10)
             response.raise_for_status()
-            data = response.json() if response.content else {}
-            return {
-                "configured": True,
-                "url": webhook_url,
-                "events": events,
-                "id": data.get("id") if isinstance(data, dict) else None,
-            }
-        except Exception as exc:
-            return {"configured": False, "url": webhook_url, "events": events, "error": str(exc)}
+            hooks = response.json()
+            if not isinstance(hooks, list):
+                raise ValueError("Invalid hook list")
+            matches = [hook for hook in hooks if isinstance(hook, dict)
+                       and isinstance(hook.get("config"), dict) and hook["config"].get("url") == webhook_url]
+            if len(matches) > 1:
+                raise ValueError("Ambiguous hook configuration")
+            return matches[0] if matches else None
+
+        try:
+            hook = find_hook()
+            created = False
+            if hook is None:
+                response = requests.post(path, json={"type": "gitea", **desired}, headers=self._headers(), timeout=10)
+                if response.status_code == 422:
+                    # Only a read-back-confirmed duplicate can enter the repair path.
+                    hook = find_hook()
+                    if hook is None:
+                        return {**result, "reason": "hook_creation_rejected"}
+                else:
+                    response.raise_for_status()
+                    hook = response.json()
+                    if not isinstance(hook, dict) or not hook.get("id"):
+                        return {**result, "reason": "invalid_hook_response"}
+                    # Creation acknowledged the current secret, no extra patch needed.
+                    created = True
+            else:
+                created = False
+            if not created:
+                if not hook.get("id"):
+                    return {**result, "reason": "invalid_hook_response"}
+                response = requests.patch(f"{path}/{hook['id']}", json=desired, headers=self._headers(), timeout=10)
+                response.raise_for_status()
+            verify = requests.get(f"{path}/{hook['id']}", headers=self._headers(), timeout=10)
+            verify.raise_for_status()
+            data = verify.json()
+            config = data.get("config", {}) if isinstance(data, dict) else {}
+            valid = (isinstance(data, dict) and data.get("active") is True and data.get("type") == "gitea"
+                     and set(events).issubset(data.get("events") or [])
+                     and config.get("url") == webhook_url and config.get("content_type") == "json"
+                     and data.get("branch_filter", "") in ("", "*", "**"))
+            if not valid:
+                return {**result, "reason": "hook_readback_mismatch"}
+            return {**result, "configured": True, "status": "available", "id": hook["id"],
+                    "secretVerification": "write_acknowledged"}
+        except (RequestException, ValueError, TypeError, KeyError):
+            return {**result, "reason": "hook_provisioning_failed"}
 
     def create_webhook(self, *, owner: str, repo: str, project_id: str, module: str = "team_git") -> bool:
-        """
-        向 Gitea 自动注册本项目的 Webhook 回调地址
-        """
-        if not self.enabled or not self.token:
-            return True
-
-        if module == "code_repository":
-            webhook_path = f"/api/code-repositories/{project_id}/webhooks/gitea"
-        else:
-            webhook_path = f"/api/team-git/projects/{project_id}/webhooks/gitea"
-        webhook_url = f"{settings.GITEA_PUBLIC_BACKEND_URL.rstrip('/')}{webhook_path}"
-        path = f"/api/v1/repos/{owner}/{repo}/hooks"
-        
-        try:
-            response = requests.post(
-                f"{self.base_url}{path}",
-                json={
-                    "type": "gitea",
-                    "config": {
-                        "url": webhook_url,
-                        "content_type": "json",
-                        "secret": settings.GITEA_WEBHOOK_SECRET
-                    },
-                    "events": ["push", "pull_request"],
-                    "active": True
-                },
-                headers=self._headers(),
-                timeout=10
-            )
-            # 若 Gitea Webhook 已存在，返回 422，我们允许已存在情况
-            if response.status_code == 422:
-                return True
-            response.raise_for_status()
-            return True
-        except Exception:
-            # Gitea API 失败 fallback
-            return False
+        return bool(self.ensure_webhook(owner=owner, repo=repo, project_id=project_id, module=module)["configured"])
 
     def get_user(self, username: str) -> dict[str, Any] | None:
         if not self.enabled or not self.token:
@@ -519,8 +507,7 @@ class GiteaService:
         must_change_password: bool = False,
         visibility: str = "private",
     ) -> dict[str, Any]:
-        if not self.enabled or not self.token:
-            return {"id": None, "login": username, "username": username, "email": email, "full_name": full_name}
+        self._require_available()
         existing = self.get_user(username)
         if existing:
             return existing
@@ -593,44 +580,60 @@ class GiteaService:
         return None
 
     def ensure_org_membership(self, username: str, role: str = "member") -> bool:
-        if not self.enabled or not self.token or not self.org:
+        self._require_available()
+        if not self.org:
             return True
         check = requests.get(
             f"{self.base_url}/api/v1/orgs/{self.org}/members/{username}",
             headers=self._headers(),
             timeout=15,
         )
-        if check.status_code == 200:
+        if check.status_code in (200, 204):
             return True
+        if check.status_code != 404:
+            check.raise_for_status()
         team_id = self._resolve_org_team_id()
         if team_id is None:
-            return True
+            raise RuntimeError("Gitea organization team unavailable")
         response = requests.put(
             f"{self.base_url}/api/v1/teams/{team_id}/members/{username}",
             headers=self._headers(),
             timeout=15,
         )
-        if response.status_code in (204, 422):
-            return True
-        return True
+        response.raise_for_status()
+        return response.status_code == 204
+
+    def get_repository_permission(self, *, owner: str, repo: str, username: str) -> str:
+        """Read the named actor's permission, never the service token's own role."""
+        self._require_available()
+        response = requests.get(f"{self.base_url}/api/v1/repos/{owner}/{repo}/collaborators/{username}/permission",
+                                headers=self._headers(), timeout=15)
+        if response.status_code in (403, 404):
+            return "none"
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict) or not isinstance(data.get("user"), dict):
+            return "none"
+        if str(data["user"].get("login") or "").casefold() != username.casefold():
+            return "none"
+        permission = data.get("permission")
+        return permission if permission in ("read", "write", "admin", "owner") else "none"
 
     def add_repository_collaborator(self, *, owner: str, repo: str, username: str, permission: str = "write") -> bool:
-        if not self.enabled or not self.token:
-            return True
+        self._require_available()
         response = requests.put(
             f"{self.base_url}/api/v1/repos/{owner}/{repo}/collaborators/{username}",
             json={"permission": permission},
             headers=self._headers(),
             timeout=15,
         )
-        if response.status_code in (204, 422):
+        if response.status_code == 204:
             return True
         response.raise_for_status()
         return True
 
     def create_user_token(self, username: str, token_name: str = "campus-learning-system") -> str:
-        if not self.enabled or not self.token:
-            return f"mock-gitea-token-{username}-{token_name}"
+        self._require_available()
         basic_auth = self._user_basic_auth(username)
         self.delete_user_token_by_name(username, token_name, auth=basic_auth)
         response = requests.post(
@@ -651,33 +654,76 @@ class GiteaService:
         data = response.json()
         return str(data.get("sha1") or data.get("token") or "")
 
-    def get_commit_diff(self, *, owner: str, repo: str, sha: str) -> str:
-        """
-        获取 Commit Diff，如果超过 4000 个字符则进行截断
-        """
+    def _get_diff(self, path: str, *, max_chars: int = 12000, timeout: float = 15) -> dict[str, Any]:
+        limit = max(1, min(int(max_chars), 100000))
+        result = {"status": "unavailable", "content": "", "source": "unavailable", "truncated": False,
+                  "limits": {"maxChars": limit}}
         if not self.enabled or not self.token:
-            return "Mock Commit Diff: code change detected."
-            
-        path = f"/api/v1/repos/{owner}/{repo}/commits/{sha}.diff"
+            return {**result, "reason": "provider_unavailable"}
+        response = None
+        started = time.monotonic()
         try:
-            response = requests.get(
-                f"{self.base_url}{path}",
-                headers={"Authorization": f"token {self.token}"},
-                timeout=10
-            )
+            response = requests.get(f"{self.base_url}{path}",
+                                    headers={**self._headers(), "Accept": "text/plain"}, timeout=max(0.1, min(float(timeout), 30)), stream=True)
             if response.status_code == 404:
-                return "Commit diff not found."
+                return {**result, "status": "not_found", "source": "gitea", "reason": "diff_not_found"}
             response.raise_for_status()
-            diff_text = response.text
-            
-            # 对超长 Diff 进行截断处理 (防止 AI Token 溢出)
-            MAX_DIFF_LEN = 4000
-            if len(diff_text) > MAX_DIFF_LEN:
-                diff_text = diff_text[:MAX_DIFF_LEN] + "\n\n... [Diff over limit, truncated by system]"
-            return diff_text
-        except Exception as e:
-            # API 失败 fallback
-            return f"Error retrieving commit diff: {str(e)}"
+            chunks = bytearray()
+            byte_limit = limit * 4 + 4
+            download_truncated = False
+            for chunk in response.iter_content(chunk_size=min(8192, byte_limit + 1)):
+                if time.monotonic() - started > max(0.1, min(float(timeout), 30)):
+                    return {**result, "status": "error", "source": "gitea", "reason": "diff_timeout"}
+                if not chunk:
+                    continue
+                remaining = byte_limit + 1 - len(chunks)
+                chunks.extend(chunk[:remaining])
+                if len(chunks) > byte_limit:
+                    download_truncated = True
+                    break
+            content = bytes(chunks).decode("utf-8", errors="replace")
+            if not content.strip():
+                return {**result, "source": "gitea", "reason": "empty_diff"}
+            # Login/error HTML must never be mistaken for review evidence.
+            if not content.lstrip().startswith(("diff --git ", "--- ")):
+                return {**result, "status": "error", "source": "gitea", "reason": "invalid_diff"}
+            return {**result, "status": "available", "source": "gitea", "content": content[:limit],
+                    "truncated": download_truncated or len(content) > limit}
+        except (RequestException, ValueError, TypeError):
+            return {**result, "status": "error", "source": "gitea", "reason": "diff_request_failed"}
+        finally:
+            if response is not None:
+                response.close()
+
+    def get_commit_diff(self, *, owner: str, repo: str, sha: str, max_chars: int = 12000, timeout: float = 15) -> dict[str, Any]:
+        return self._get_diff(f"/api/v1/repos/{owner}/{repo}/commits/{sha}.diff", max_chars=max_chars, timeout=timeout)
+
+    def get_pull_request_diff(self, *, owner: str, repo: str, number: int, max_chars: int = 12000, timeout: float = 15, expected_head_sha: str = "", expected_head_ref: str = "", expected_base_ref: str = "", expected_base_sha: str = "") -> dict[str, Any]:
+        path = f"/api/v1/repos/{owner}/{repo}/pulls/{int(number)}"
+        if not expected_head_sha or not self.enabled or not self.token:
+            return self._get_diff(path + ".diff", max_chars=max_chars, timeout=timeout)
+        result = {"status": "unavailable", "content": "", "source": "gitea", "truncated": False,
+                  "limits": {"maxChars": max(1, min(int(max_chars), 100000))}}
+        def revision():
+            response = requests.get(self.base_url + path, headers=self._headers(), timeout=max(0.1, min(float(timeout), 30)))
+            response.raise_for_status()
+            data = response.json()
+            head, base = data.get("head") or {}, data.get("base") or {}
+            return tuple(str(value or "") for value in (head.get("sha"), base.get("sha"), head.get("ref"), base.get("ref")))
+        try:
+            observed = revision()
+            head, base, head_ref, base_ref = observed
+            if (head != expected_head_sha or (expected_head_ref and head_ref != expected_head_ref)
+                    or (expected_base_ref and base_ref != expected_base_ref) or (expected_base_sha and base != expected_base_sha)):
+                return {**result, "reason": "pr_head_changed"}
+            diff = self._get_diff(path + ".diff", max_chars=max_chars, timeout=timeout)
+            if diff["status"] != "available":
+                return diff
+            if revision() != observed:
+                return {**result, "reason": "pr_head_changed"}
+            return {**diff, "headSha": head, "baseSha": base, "headRef": head_ref, "baseRef": base_ref}
+        except (RequestException, ValueError, TypeError, AttributeError):
+            return {**result, "status": "error", "reason": "pr_revision_unavailable"}
 
     def ping(self) -> dict[str, Any]:
         """Connectivity check for deploy health endpoints."""

@@ -127,41 +127,12 @@ export default {
             submittedAnswers.value[qId] = optionVal;
         };
 
-        // 运行代码测试 (Mock)
+        // 安全代码执行服务未启用
         const runCodeMock = () => {
-            if (runTesting.value) return;
-            runTesting.value = true;
+            runTesting.value = false;
             activeConsoleTab.value = 'console';
-            consoleLines.value = ['[Compiler] 启动 JavaScript ESM 编译器...', '[Console] 绑定 Proxy 拦截断言桶...'];
-            
-            setTimeout(() => {
-                const code = submittedAnswers.value.q3 || '';
-                try {
-                    if (selectedHomework.value.id === 'hw-daily-01') {
-                        const hasReflect = code.includes('Reflect');
-                        const hasProxy = code.includes('Proxy');
-                        if (hasProxy) {
-                            consoleLines.value.push('[Console] Success: reactive() 被成功拦截绑定！');
-                            if (hasReflect) {
-                                consoleLines.value.push('[Console] Success: 成功运用 Reflect 阻断 this 原型链指针漂移漏洞。');
-                            } else {
-                                consoleLines.value.push('[Console] Warn: 属性修改直接调用了 target[key]，继承 getter 时可能会引起 this 丢失。');
-                            }
-                        } else {
-                            consoleLines.value.push('[Console] Error: 未定义 Proxy 对象代理。');
-                        }
-                    } else if (selectedHomework.value.id === 'hw-daily-02') {
-                        consoleLines.value.push('[Console] Success: 用例 reverseList([1,2,3]) => [3,2,1] 运行通过；耗时 1.5ms。');
-                    } else {
-                        consoleLines.value.push('[Console] Success: 代码编译测试通过，暂未拦截异常。');
-                    }
-                } catch (e) {
-                    consoleLines.value.push(`[Console] Error: ${e.message}`);
-                } finally {
-                    runTesting.value = false;
-                    emit('show-toast', '算法试运行完成', 'success');
-                }
-            }, 1000);
+            consoleLines.value = ['代码运行不可用：隔离执行服务尚未启用。代码未执行，也未评判通过。'];
+            emit('show-toast', '代码运行服务未启用，代码仍可保存和提交', 'warning');
         };
 
         // 请求智能体协同诊断舱
@@ -196,7 +167,8 @@ export default {
             };
 
             try {
-                await homeworkApi.submitHomework(selectedHomework.value.id, payload);
+                const receipt = await homeworkApi.submitHomework(selectedHomework.value.id, payload);
+                if (!receipt?.success || !(receipt.attemptId || receipt.submissionId)) throw new Error('服务器未确认提交');
                 const hw = homeworkList.value.find(h => h.id === selectedHomework.value.id);
                 if (hw) {
                     hw.status = 'submitted';

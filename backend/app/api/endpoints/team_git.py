@@ -10,9 +10,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.responses import ok
+from app.repositories.json_store import atomic_store
 from app.core.security import decode_access_token
+from app.api.deps import get_auth_payload
+from fastapi.routing import APIRoute
 from app.models.user_account import UserAccount
 from requests.exceptions import RequestException
+
+from app.services.gitea_service import is_gitea_webhook_secret_configured
 
 from app.services.team_git_service import (
     apply_gitea_webhook,
@@ -41,7 +46,25 @@ from app.services.team_git_service import (
     resolve_team_project_id,
 )
 
-router = APIRouter()
+class TeamGitRoute(APIRoute):
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        async def handler(request):
+            try:
+                return await original(request)
+            except FileExistsError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except FileNotFoundError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except (RuntimeError, RequestException) as exc:
+                raise HTTPException(503 if str(exc) == "coach_schema_unavailable" else 502, str(exc)) from exc
+        return handler
+
+router = APIRouter(route_class=TeamGitRoute)
 
 
 class FreePayload(BaseModel):
@@ -66,28 +89,17 @@ def resolve_team_git_actor(
     fallback_username: str = "anonymous",
     fallback_role: str = "student",
 ) -> dict[str, Any]:
-    decoded = _decoded_token(authorization)
-    username = str((decoded or {}).get("sub") or fallback_username or "anonymous")
-    token_role = str((decoded or {}).get("role") or fallback_role or "student")
-    account = db.query(UserAccount).filter(UserAccount.username == username).first() if username else None
-    if account:
-        return {
-            "username": account.username,
-            "role": account.role or token_role,
-            "name": account.real_name or account.username,
-            "realName": account.real_name or account.username,
-            "studentId": account.student_id or "",
-            "teacherId": account.teacher_id or "",
-            "className": account.class_name or "",
-        }
+    decoded = get_auth_payload(authorization)
+    username = str(decoded["sub"])
+    account = db.query(UserAccount).filter(UserAccount.username == username).first()
+    if not account:
+        raise HTTPException(401, "account not found")
     return {
-        "username": username,
-        "role": token_role,
-        "name": username,
-        "realName": username,
-        "studentId": "",
-        "teacherId": "",
-        "className": "",
+        "username": account.username, "role": account.role,
+        "name": account.real_name or account.username,
+        "realName": account.real_name or account.username,
+        "studentId": account.student_id or "", "teacherId": account.teacher_id or "",
+        "className": account.class_name or "",
     }
 
 
@@ -96,7 +108,7 @@ def _actor_name(actor: dict[str, Any]) -> str:
 
 
 def verify_gitea_signature(payload_body: bytes, secret: str, signature: str | None) -> bool:
-    if not payload_body or not secret or not signature:
+    if not payload_body or not is_gitea_webhook_secret_configured(secret) or not signature:
         return False
     expected = hmac.new(secret.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, str(signature).strip())
@@ -112,7 +124,7 @@ def _ensure_project_access(db: Session, project_id: str, actor: dict[str, Any], 
 
 
 @router.get("/team-git/gitea-health")
-async def team_git_gitea_health():
+async def team_git_gitea_health(auth: dict = Depends(get_auth_payload)):
     result = check_gitea_health()
     if not result.get("ok"):
         return ok(result)
@@ -200,7 +212,7 @@ async def update_team_git_project(
     data = _payload(payload)
     actor = resolve_team_git_actor(authorization, db, fallback_username=data.get("actor") or "captain")
     _ensure_project_access(db, project_id, actor)
-    return ok(update_collaboration_project(db, project_id, data, actor=_actor_name(actor)))
+    return ok(update_collaboration_project(db, project_id, data, actor=actor))
 
 
 @router.get("/team-git/projects/{project_id}/repository-home")
@@ -317,9 +329,9 @@ async def create_team_git_repository(
     actor = resolve_team_git_actor(authorization, db, fallback_username=data.get("actor") or "teacher")
     _ensure_project_access(db, project_id, actor)
     try:
-        return ok(create_project_repository(db, project_id, actor=_actor_name(actor)))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ok(create_project_repository(db, project_id, actor=actor))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/team-git/projects/{project_id}/repository/bind")
@@ -332,7 +344,7 @@ async def bind_team_git_repository(
     data = _payload(payload)
     actor = resolve_team_git_actor(authorization, db, fallback_username=data.get("actor") or "teacher")
     _ensure_project_access(db, project_id, actor)
-    return ok(bind_project_repository(db, project_id, data, actor=_actor_name(actor)))
+    return ok(bind_project_repository(db, project_id, data, actor=actor))
 
 
 @router.post("/team-git/projects/{project_id}/tasks")
@@ -349,7 +361,7 @@ async def assign_team_git_task(
     if not member_id:
         raise HTTPException(status_code=400, detail="memberId is required")
     try:
-        return ok(assign_member_task(db, project_id, str(member_id), data, actor=_actor_name(actor)))
+        return ok(assign_member_task(db, project_id, str(member_id), data, actor=actor))
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -364,7 +376,7 @@ async def remind_team_git_members(
     data = _payload(payload)
     actor = resolve_team_git_actor(authorization, db, fallback_username=data.get("actor") or "captain")
     _ensure_project_access(db, project_id, actor)
-    return ok(remind_unsubmitted_members(db, project_id, data, actor=_actor_name(actor)))
+    return ok(remind_unsubmitted_members(db, project_id, data, actor=actor))
 
 
 @router.post("/team-git/projects/{project_id}/clone-confirmation")
@@ -396,7 +408,7 @@ async def refresh_team_git_project(
                 db,
                 project_id,
                 stage=data.get("stage") or "detected",
-                actor=_actor_name(actor),
+                actor=actor,
                 actor_info=actor,
                 allow_demo_stage=False,
             )
@@ -439,7 +451,7 @@ async def evaluate_team_git_contribution(
         fallback_role="teacher",
     )
     _ensure_project_access(db, project_id, actor)
-    return ok(evaluate_team_contribution(db, project_id, data, actor=_actor_name(actor)))
+    return ok(evaluate_team_contribution(db, project_id, data, actor=actor))
 
 
 @router.post("/team-git/projects/{project_id}/webhooks/gitea")
@@ -449,22 +461,54 @@ async def receive_team_git_webhook(
     background_tasks: BackgroundTasks,
     x_gitea_signature: str | None = Header(default=None, alias="X-Gitea-Signature"),
     x_gitea_event: str | None = Header(default=None, alias="X-Gitea-Event"),
+    x_gitea_delivery: str | None = Header(default=None, alias="X-Gitea-Delivery"),
     db: Session = Depends(get_db),
 ):
-    body = await request.body()
+    # Bound unsigned input before JSON decoding or HMAC computation.
+    chunks = bytearray()
+    async for chunk in request.stream():
+        if len(chunks) + len(chunk) > 1024 * 1024:
+            raise HTTPException(413, "webhook body exceeds 1 MiB")
+        chunks.extend(chunk)
+    body = bytes(chunks)
     if not verify_gitea_signature(body, settings.GITEA_WEBHOOK_SECRET, x_gitea_signature):
         raise HTTPException(status_code=403, detail="invalid gitea webhook signature")
     try:
         payload = json.loads(body.decode("utf-8") or "{}")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="invalid gitea webhook payload") from exc
-    # Inject X-Gitea-Event header as hook_name when not already present in body
-    if x_gitea_event and not payload.get("hook_name"):
-        payload["hook_name"] = x_gitea_event
-    try:
-        resolved_id = resolve_team_project_id(db, project_id, payload)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    result = apply_gitea_webhook(db, resolved_id, payload)
-    background_tasks.add_task(enqueue_git_coach_feedback, resolved_id, payload)
-    return ok(result)
+    if not isinstance(payload, dict):
+        raise ValueError("webhook payload must be an object")
+    if x_gitea_event not in {"push", "pull_request"}:
+        raise ValueError("unsupported webhook event")
+    if payload.get("hook_name") and payload["hook_name"] != x_gitea_event:
+        raise ValueError("webhook event header/body mismatch")
+    payload["hook_name"] = x_gitea_event
+    if x_gitea_event == "push":
+        commits = payload.get("commits")
+        if not isinstance(commits, list) or not isinstance(payload.get("ref"), str) or not payload["ref"].startswith("refs/heads/"):
+            raise ValueError("push requires branch ref and commits array")
+        import re
+        if any(not isinstance(c, dict) or not re.fullmatch(r"[0-9a-fA-F]{40,64}", str(c.get("id") or c.get("sha") or "")) for c in commits):
+            raise ValueError("push commits require full SHA identities")
+    else:
+        pr = payload.get("pull_request")
+        if not isinstance(pr, dict) or type(pr.get("number")) is not int or pr["number"] <= 0:
+            raise ValueError("pull request object and positive number required")
+        if payload.get("action") not in {"opened", "closed", "reopened", "synchronized", "synchronize", "edited", "assigned", "unassigned", "label_updated", "label_cleared", "milestoned", "demilestoned", "merged"}:
+            raise ValueError("unsupported pull request action")
+        if not all(isinstance(pr.get(k), dict) and pr[k].get("ref") for k in ("head", "base")):
+            raise ValueError("pull request head and base refs required")
+    resolved_id = resolve_team_project_id(db, project_id, payload)
+    from app.services.git_coach_jobs import enqueue_coach_event, schema_ready
+    if not schema_ready(db.get_bind()):
+        raise HTTPException(503, "coach_schema_unavailable")
+    repo = payload["repository"]
+    owner = repo["owner"].get("login") or repo["owner"].get("username")
+    with atomic_store(db):
+        receipt = enqueue_coach_event(db, resolved_id, payload, repository_key=f"{owner}/{repo['name']}".lower(), delivery_id=x_gitea_delivery, commit=False)
+        if receipt["duplicate"]:
+            result = {"id": resolved_id}
+        else:
+            result = apply_gitea_webhook(db, resolved_id, payload, durable=True)
+    return ok({**result, "coachJob": receipt})

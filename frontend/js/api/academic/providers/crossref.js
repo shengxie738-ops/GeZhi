@@ -1,13 +1,15 @@
+import {validateProviderRecords} from '../recordValidation.js';
 /**
  * crossref.js - Crossref 学术数据源前端 Provider
  * 经后端薄代理访问，遵循可验证字段映射与真实性契约
  */
 
-import { request } from '../../../utils/request.js';
+import { requestAcademicGateway } from '../gateway.js';
 import {
     createAcademicPaper,
     normalizeDoi,
-    normalizeArxivId,
+    buildDoiUrl,
+    arxivIdFromDoi,
     normalizeHttpUrl,
     normalizeWorkType
 } from '../paperModel.js';
@@ -23,15 +25,11 @@ export async function searchCrossref(query, options = {}) {
     if (!cleanQuery) return [];
 
     const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 20);
-    const url = `/academic/crossref/search?query=${encodeURIComponent(cleanQuery)}&limit=${limit}`;
-
-    const res = await request(url, {
-        method: 'GET',
-        signal: options.signal
-    });
+    const res = await requestAcademicGateway('crossref', cleanQuery, {...options, limit, label:'Crossref'});
 
     const items = Array.isArray(res?.items) ? res.items : [];
 
+    validateProviderRecords(items, 'crossref');
     return items.map(item => {
         const title = Array.isArray(item.title) ? (item.title[0] || '') : String(item.title || '');
         const authors = (item.author || []).map(a => {
@@ -62,9 +60,9 @@ export async function searchCrossref(query, options = {}) {
         const abstract = item.abstract ? String(item.abstract).replace(/<[^>]+>/g, '').trim() : '';
 
         const doi = normalizeDoi(item.DOI);
-        const arxivId = normalizeArxivId(item.DOI || '');
+        const arxivId = arxivIdFromDoi(doi);
 
-        let officialUrl = doi ? `https://doi.org/${doi}` : '';
+        let officialUrl = doi ? buildDoiUrl(doi) : '';
         if (!officialUrl && item.URL) {
             officialUrl = normalizeHttpUrl(item.URL);
         }

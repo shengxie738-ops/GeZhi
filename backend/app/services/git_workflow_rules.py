@@ -3,25 +3,22 @@ git_workflow_rules.py — 纯函数 Git 工作流规则校验器
 不访问网络，便于单测。
 
 规则码（见指导书 4.3）：
-    PUSH_TO_DEFAULT_BRANCH     push 到 main/master（非 merge 场景）  error
+    PUSH_TO_DEFAULT_BRANCH     push 到配置的默认/保护分支（需核对 PR）  error
     BRANCH_NAME_INVALID        分支名不包含 feature/feat/fix/docs/test/hotfix  warn
     COMMIT_MESSAGE_TOO_SHORT   message 去空白 < 8 字符  warn
     COMMIT_MESSAGE_EMPTY       message 为空  error
     AUTHOR_UNMATCHED           作者未绑定 / unmatched  warn
     PR_BASE_NOT_DEFAULT        PR base 不是 defaultBranch  warn
     PR_HEAD_NAME_INVALID       PR head 分支命名不合规  warn
-    MEMBER_NOT_IN_TEAM         作者不在 memberProgress（新建了匿名成员）  warn
+    MEMBER_NOT_IN_TEAM         作者的规范账号 ID 不在 memberProgress  warn
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 # 合规分支前缀
 _VALID_BRANCH_PREFIXES = ("feature", "feat", "fix", "docs", "test", "hotfix")
-# 默认分支名集合
-_DEFAULT_BRANCHES = {"main", "master"}
 
 # 严重等级对应扣分
 _DEDUCT = {"error": 20, "warn": 10}
@@ -43,18 +40,27 @@ def _commit_message_check(message: str) -> str | None:
     return None
 
 
-def _is_merge_commit(message: str) -> bool:
-    """Merge commit 通常不算「直接 push main」违规。"""
-    return bool(re.match(r"^(merge|Merge)\b", (message or "").strip()))
+def normalize_event_type(event_type: str) -> str:
+    return "pull_request" if event_type.startswith("pull_request") else event_type
+
+
+def branch_from_ref(value: str) -> str:
+    value = str(value or "").strip()
+    return value.removeprefix("refs/heads/")
+
+
+def pr_branch(pr: dict[str, Any], side: str) -> str:
+    data = pr.get(side) or {}
+    value = data.get("ref") or data.get("label") or pr.get(f"{side}_branch") or ""
+    return branch_from_ref(str(value).split(":", 1)[-1])
 
 
 def _member_in_team(author: str, project: dict[str, Any]) -> bool:
-    """检查 author 是否在 memberProgress 已有成员中（含 id/name 比对）。"""
+    """Only stable account identifiers establish membership; display names do not."""
     members = project.get("memberProgress") or []
     for m in members:
-        name = str(m.get("name") or "").strip()
-        mid = str(m.get("id") or "").strip()
-        if author and author.strip() in (name, mid):
+        identifiers = {str(m.get(key) or "").strip() for key in ("id", "campusUserId", "username")}
+        if author and author.strip() in identifiers:
             return True
     return False
 
@@ -88,6 +94,7 @@ def evaluate_git_workflow(
     passed: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
 
+    event_type = normalize_event_type(event_type)
     repo = project.get("repository") or {}
     default_branch = str(repo.get("defaultBranch") or "main")
 
@@ -106,23 +113,18 @@ def evaluate_git_workflow(
     # ── push 事件校验 ────────────────────────────────────────────
     if event_type == "push":
         ref = str(payload.get("ref") or "")
-        branch = ref.replace("refs/heads/", "").strip() if ref.startswith("refs/heads/") else ref.split("/")[-1]
+        branch = branch_from_ref(ref)
         commits = payload.get("commits") or []
 
         # 规则: PUSH_TO_DEFAULT_BRANCH
-        if branch.lower() in _DEFAULT_BRANCHES:
-            # 检查是否全是 merge commit
-            all_merge = commits and all(_is_merge_commit(c.get("message") or "") for c in commits if isinstance(c, dict))
-            if not all_merge:
-                _add_violation(
-                    "PUSH_TO_DEFAULT_BRANCH",
-                    "error",
-                    f"直接向 {branch} 分支推送代码（非 Merge commit），违反协作规范",
-                    f"请先创建 feature/xxx 等功能分支，完成后通过 Pull Request 合并到 {default_branch}",
-                    {"branch": branch},
-                )
-            else:
-                _add_passed("PUSH_TO_DEFAULT_BRANCH", f"Merge commit 推送到 {branch}，符合规范")
+        protected = set(repo.get("protectedBranches") or []) | {default_branch}
+        if branch in protected:
+            _add_violation(
+                "PUSH_TO_DEFAULT_BRANCH", "error",
+                f"检测到向受保护/默认分支 {branch} 的 push；仅凭消息或 parents 无法确认经过 PR 审核",
+                f"请在功能分支开发，通过 Pull Request 合并到 {default_branch}；如为平台合并请核对 PR 记录",
+                {"branch": branch, "defaultBranch": default_branch, "prVerification": "unavailable"},
+            )
         else:
             # 规则: BRANCH_NAME_INVALID
             if _branch_name_valid(branch):
@@ -148,7 +150,7 @@ def evaluate_git_workflow(
                     "COMMIT_MESSAGE_EMPTY",
                     "error",
                     f"commit {sha_short} 提交说明为空",
-                    "每次提交必须有清晰的说明，例如 'fix: 修复哈夫曼树边界条件'",
+                    "每次提交必须有清晰的说明，例如 'fix: 修复空输入边界条件'",
                     {"sha": sha_short, "message": msg},
                 )
             elif code == "COMMIT_MESSAGE_TOO_SHORT":
@@ -160,13 +162,13 @@ def evaluate_git_workflow(
                     {"sha": sha_short, "message": msg, "length": len(msg)},
                 )
             else:
-                _add_passed("COMMIT_HAS_MESSAGE", f"commit {sha_short} 提交说明非空且足够清晰")
+                _add_passed("COMMIT_HAS_MESSAGE", f"commit {sha_short} 提交说明非空且满足长度约定")
 
         # 规则: AUTHOR_UNMATCHED
-        source = author_match_source or (
-            str((matched_member or {}).get("source") or "") if matched_member else "unmatched"
-        )
-        if source in ("unmatched", "") and not matched_member:
+        member = matched_member or {}
+        source = str(member.get("matchSource") or author_match_source or "unmatched")
+        matched = bool(member.get("campusUserId")) and source not in ("unmatched", "")
+        if not matched:
             _add_violation(
                 "AUTHOR_UNMATCHED",
                 "warn",
@@ -179,11 +181,11 @@ def evaluate_git_workflow(
 
         # 规则: MEMBER_NOT_IN_TEAM
         author_name = str((matched_member or {}).get("displayName") or "")
-        if author_name and not _member_in_team(author_name, project):
+        if matched and not _member_in_team(str(member.get("campusUserId") or ""), project):
             _add_violation(
                 "MEMBER_NOT_IN_TEAM",
                 "warn",
-                f"作者 {author_name!r} 不在团队成员列表，已自动创建匿名成员",
+                f"作者 {author_name!r} 不在团队成员列表（未自动添加成员）",
                 "请确认提交者已加入该团队项目，或由队长在团队页面手动添加成员",
                 {"author": author_name},
             )
@@ -191,8 +193,8 @@ def evaluate_git_workflow(
     # ── pull_request 事件校验 ─────────────────────────────────────
     elif event_type == "pull_request":
         pr = payload.get("pull_request") or {}
-        head_branch = str((pr.get("head") or {}).get("label") or pr.get("head_branch") or "")
-        base_branch = str((pr.get("base") or {}).get("label") or pr.get("base_branch") or "")
+        head_branch = pr_branch(pr, "head")
+        base_branch = pr_branch(pr, "base")
 
         # 规则: PR_BASE_NOT_DEFAULT
         base_name = base_branch.split(":")[-1] if ":" in base_branch else base_branch
@@ -228,6 +230,7 @@ def evaluate_git_workflow(
         "eventType": event_type,
         "evaluatedAt": format_chinese_datetime(),
         "score": score,
+        "scoreExplanation": {"baseline": 100, "deductions": [{"code": v["code"], "points": _DEDUCT.get(v["severity"], 0)} for v in violations], "scope": "Git workflow heuristics only; not algorithm correctness, security, CI or learning mastery"},
         "passed": passed,
         "violations": violations,
     }

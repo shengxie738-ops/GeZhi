@@ -1,11 +1,8 @@
-import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue';
 import { examCenterApi } from '../api/examCenter.js';
 
-const deepEqual = (a, b) => {
-    if (a === undefined && b === undefined) return true;
-    if (a === undefined || b === undefined) return false;
-    return JSON.stringify(a) === JSON.stringify(b);
-};
+const copyAnswer = (value) => value === undefined ? null : JSON.parse(JSON.stringify(value));
+const sameAnswer = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 export default {
     name: 'StudentExamCenter',
@@ -37,6 +34,22 @@ export default {
         const securityViolationReason = ref('');
         const answers = ref({});
         const remainingSeconds = ref(0);
+        const saveState = ref('idle');
+        const saveError = ref('');
+        const lastSavedAt = ref(null);
+        const submissionReceipt = ref(null);
+        const executionUnavailable = '安全隔离执行服务尚未就绪，代码运行和自动判题暂不可用';
+        let attemptContext = null;
+        let navigationVersion = 0;
+        let overviewVersion = 0;
+        let deadlineMillis = null;
+        let mounted = true;
+        const attemptKey = ref(null);
+        const saveStatusText = computed(() => ({
+            idle: '尚未作答', pending: '有修改待保存', saving: '正在保存…',
+            saved: '答案已获服务器保存确认', error: '保存失败，答案尚未同步',
+            offline: '离线，答案尚未同步'
+        }[saveState.value]));
         let editor = null;
         let timer = null;
         let watermarkTimer = null;
@@ -72,7 +85,7 @@ export default {
             }
         ];
 
-        const username = computed(() => props.currentUser?.username || 'guest_user');
+        const username = computed(() => props.currentUser?.username || '');
         const apiBase = computed(() => examCenterApi.getApiBase());
 
         const upcomingExams = computed(() => overview.value.exams.filter(item => item.status === 'upcoming'));
@@ -256,60 +269,194 @@ export default {
             isEntryConfirmOpen.value = false;
         };
 
+        const isCurrentAttempt = (context) => Boolean(context) && mounted && attemptContext === context && username.value === context.userId;
+
+        const clearAttempt = () => {
+            if (attemptContext) {
+                attemptContext.cancelled = true;
+                clearTimeout(attemptContext.debounceTimer);
+            }
+            attemptContext = null;
+            attemptKey.value = null;
+            attemptId.value = null;
+            answers.value = {};
+            saveState.value = 'idle';
+            saveError.value = '';
+            lastSavedAt.value = null;
+            submissionReceipt.value = null;
+            deadlineMillis = null;
+            remainingSeconds.value = 0;
+            activeProblemIndex.value = 0;
+            caseResults.value = [];
+            consoleLines.value = [];
+            if (timer) clearInterval(timer);
+            timer = null;
+            destroyEditor();
+        };
+
+        const queueAnswers = () => {
+            const context = attemptContext;
+            if (!context || context.cancelled || context.status !== 'started') return;
+            for (const questionId of new Set([...Object.keys(context.observed), ...Object.keys(answers.value)])) {
+                const value = copyAnswer(answers.value[questionId]);
+                if (sameAnswer(context.observed[questionId], value)) continue;
+                context.observed[questionId] = copyAnswer(value);
+                context.pending.set(questionId, { answer: value, revision: ++context.revision });
+            }
+            if (!context.pending.size) return;
+            saveState.value = navigator.onLine === false ? 'offline' : (context.saving ? 'saving' : 'pending');
+            clearTimeout(context.debounceTimer);
+            context.debounceTimer = setTimeout(() => { flushAnswers(); }, 500);
+        };
+        watch(answers, queueAnswers, { deep: true, flush: 'sync' });
+
+        // Each request uses an immutable answer snapshot and the originating
+        // user/exam/attempt context. A slow acknowledgement cannot erase edits.
+        const flushAnswers = async () => {
+            const context = attemptContext;
+            if (!context || context.cancelled || context.status !== 'started') return true;
+            clearTimeout(context.debounceTimer);
+            if (context.saving) return context.saving;
+            if (!context.pending.size) return true;
+            if (navigator.onLine === false) {
+                saveState.value = 'offline';
+                saveError.value = '网络已断开，请恢复连接后重试';
+                return false;
+            }
+            saveState.value = 'saving';
+            saveError.value = '';
+            const save = async () => {
+                try {
+                    while (context.pending.size && !context.cancelled) {
+                        const [questionId, pending] = context.pending.entries().next().value;
+                        const result = await examCenterApi.saveAnswer(context.attemptId, {
+                            questionId, answer: copyAnswer(pending.answer)
+                        });
+                        if (result?.status !== 'saved' || result.attemptId !== context.attemptId || !result.savedAt) {
+                            throw new Error('服务器未返回有效的答案保存回执');
+                        }
+                        if (context.pending.get(questionId)?.revision === pending.revision) context.pending.delete(questionId);
+                        if (isCurrentAttempt(context)) lastSavedAt.value = result.savedAt;
+                    }
+                    if (isCurrentAttempt(context)) saveState.value = 'saved';
+                    return !context.cancelled;
+                } catch (error) {
+                    if (isCurrentAttempt(context)) {
+                        saveState.value = navigator.onLine === false ? 'offline' : 'error';
+                        saveError.value = error.message || '保存失败，请重试';
+                    }
+                    return false;
+                } finally {
+                    context.saving = null;
+                }
+            };
+            context.saving = Promise.resolve().then(save);
+            return context.saving;
+        };
+
         const loadOverview = async () => {
+            const version = ++overviewVersion;
+            const userId = username.value;
             loading.value = true;
             try {
-                overview.value = await examCenterApi.getStudentOverview(username.value);
+                const result = await examCenterApi.getStudentOverview(userId);
+                if (mounted && version === overviewVersion && userId === username.value) overview.value = result;
             } catch (err) {
-                emit('show-toast', `加载考试数据失败：${err.message}`, 'error');
+                if (mounted && version === overviewVersion) emit('show-toast', `加载考试数据失败：${err.message}`, 'error');
             } finally {
-                loading.value = false;
+                if (mounted && version === overviewVersion) loading.value = false;
             }
+        };
+
+        const secondsFrom = (state, fallback) => {
+            if (state.remainingSeconds !== null && state.remainingSeconds !== undefined && Number.isFinite(Number(state.remainingSeconds))) {
+                return Math.max(0, Number(state.remainingSeconds));
+            }
+            const deadline = Date.parse(state.deadlineAt);
+            return Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : fallback;
         };
 
         const openExamDetail = async (exam) => {
-            selectedExam.value = exam;
+            if (submitting.value || !(await flushAnswers())) return false;
+            const version = ++navigationVersion;
+            const userId = username.value;
             try {
-                examDetail.value = await examCenterApi.getExamDetail(exam.id, username.value);
+                const detail = await examCenterApi.getExamDetail(exam.id, userId);
+                if (!mounted || version !== navigationVersion || userId !== username.value) return false;
+                if (submitting.value || !(await flushAnswers())) return false;
+                if (!mounted || version !== navigationVersion || userId !== username.value) return false;
+                clearAttempt();
+                unbindExamSecurityGuards();
+                selectedExam.value = exam;
+                examDetail.value = detail;
                 roomMode.value = 'detail';
-                remainingSeconds.value = examDetail.value.remainingSeconds || exam.durationMinutes * 60;
+                remainingSeconds.value = secondsFrom(detail, exam.durationMinutes * 60);
+                return true;
             } catch (err) {
-                emit('show-toast', `加载考试详情失败：${err.message}`, 'error');
-            }
-        };
-
-        const ensureAttempt = async (exam) => {
-            if (attemptId.value) return attemptId.value;
-            try {
-                const result = await examCenterApi.startExamAttempt(exam.id, {
-                    userId: username.value,
-                    clientStartedAt: new Date().toISOString()
-                });
-                attemptId.value = result.attemptId;
-                return attemptId.value;
-            } catch (err) {
-                emit('show-toast', `创建考试作答记录失败：${err.message}`, 'error');
-                return null;
+                if (version === navigationVersion) emit('show-toast', `加载考试详情失败：${err.message}`, 'error');
+                return false;
             }
         };
 
         const enterProgrammingRoom = async (exam = programmingExam.value, options = {}) => {
-            if (!exam) return;
+            if (!exam || submitting.value) return false;
             if (!options.confirmed) {
                 requestExamEntry(exam);
-                return;
+                return false;
             }
-            selectedExam.value = exam;
-            examDetail.value = await examCenterApi.getExamDetail(exam.id, username.value);
-            await ensureAttempt(exam);
-            roomMode.value = 'programming';
-            remainingSeconds.value = examDetail.value.remainingSeconds || exam.durationMinutes * 60;
-            activeProblemIndex.value = 0;
-            bindExamSecurityGuards();
-            initTimer();
-            initCaseResults();
-            await nextTick();
-            initEditor();
+            if (!(await flushAnswers())) return false;
+            const version = ++navigationVersion;
+            const userId = username.value;
+            const stillCurrent = () => mounted && version === navigationVersion && userId === username.value;
+            try {
+                if (!userId) throw new Error('请登录后进入考试');
+                const detail = await examCenterApi.getExamDetail(exam.id, userId);
+                if (!stillCurrent()) return false;
+                const result = await examCenterApi.startExamAttempt(exam.id, {
+                    userId, clientStartedAt: new Date().toISOString()
+                });
+                if (!stillCurrent()) return false;
+                if (!result?.attemptId || !['started', 'submitted', 'graded'].includes(result.status)) {
+                    throw new Error('服务器未返回有效的考试作答记录');
+                }
+                if (submitting.value || !(await flushAnswers()) || !stillCurrent()) return false;
+                clearAttempt();
+                selectedExam.value = exam;
+                examDetail.value = detail;
+                attemptId.value = result.attemptId;
+                answers.value = copyAnswer(result.answers && !Array.isArray(result.answers) && typeof result.answers === 'object' ? result.answers : {});
+                remainingSeconds.value = secondsFrom(result, secondsFrom(detail, exam.durationMinutes * 60));
+                deadlineMillis = Date.now() + remainingSeconds.value * 1000;
+                attemptContext = {
+                    key: JSON.stringify([userId, String(exam.id), String(result.attemptId)]),
+                    userId, examId: String(exam.id), attemptId: result.attemptId, status: result.status,
+                    observed: copyAnswer(answers.value), pending: new Map(), revision: 0,
+                    saving: null, debounceTimer: null, cancelled: false
+                };
+                attemptKey.value = attemptContext.key;
+                saveState.value = 'saved';
+                lastSavedAt.value = result.lastSavedAt || null;
+                if (result.status !== 'started') {
+                    unbindExamSecurityGuards();
+                    roomMode.value = 'detail';
+                    submissionReceipt.value = result;
+                    emit('show-toast', '此考试已交卷，不能重新作答', 'info');
+                    return false;
+                }
+                roomMode.value = 'programming';
+                blurViolationCount = 0;
+                lastBlurTime = null;
+                bindExamSecurityGuards();
+                initCaseResults();
+                await nextTick();
+                if (!stillCurrent()) return false;
+                initEditor();
+                initTimer();
+                return true;
+            } catch (err) {
+                if (stillCurrent()) emit('show-toast', `进入考试失败：${err.message}`, 'error');
+                return false;
+            }
         };
 
         const confirmExamEntry = async () => {
@@ -319,7 +466,11 @@ export default {
             try {
                 const fullscreenReady = await requestExamFullscreen();
                 if (!fullscreenReady) return;
-                await enterProgrammingRoom(exam, { confirmed: true });
+                const entered = await enterProgrammingRoom(exam, { confirmed: true });
+                if (!entered) {
+                    if (roomMode.value !== 'programming') await exitFullscreenIfNeeded();
+                    return;
+                }
                 isEntryConfirmOpen.value = false;
                 pendingExam.value = null;
                 emit('show-toast', '已进入全屏考试模式', 'success');
@@ -329,28 +480,32 @@ export default {
         };
 
         const backToOverview = async (options = {}) => {
+            if (!options.submitted && (submitting.value || !(await flushAnswers()))) return false;
+            ++navigationVersion;
             unbindExamSecurityGuards();
+            clearAttempt();
             roomMode.value = 'overview';
             selectedExam.value = null;
             examDetail.value = null;
-            destroyEditor();
-            if (timer) clearInterval(timer);
-            timer = null;
-            if (options.exitFullscreen) {
-                await exitFullscreenIfNeeded();
-            }
+            isExitConfirmOpen.value = false;
+            if (options.exitFullscreen) await exitFullscreenIfNeeded();
+            return true;
         };
 
         const initTimer = () => {
             if (timer) clearInterval(timer);
-            timer = setInterval(() => {
-                remainingSeconds.value = Math.max(0, remainingSeconds.value - 1);
+            const tick = () => {
+                remainingSeconds.value = Math.max(0, Math.ceil((deadlineMillis - Date.now()) / 1000));
                 if (remainingSeconds.value === 0) {
                     clearInterval(timer);
+                    timer = null;
+                    editor?.updateOptions?.({ readOnly: true });
                     emit('show-toast', '考试时间已结束，系统正在自动交卷', 'error');
                     submitAttempt({ reason: '考试时间结束', autoSubmitted: true });
                 }
-            }, 1000);
+            };
+            timer = setInterval(tick, 1000);
+            tick();
         };
 
         const initCaseResults = () => {
@@ -372,10 +527,11 @@ export default {
 
         const getEditorCode = () => {
             if (editor) return editor.getValue();
-            return answers.value[activeProblem.value?.id] || activeProblem.value?.starterCode || '';
+            return answers.value[activeProblem.value?.id] ?? activeProblem.value?.starterCode ?? '';
         };
 
         const setEditorCode = (code) => {
+            if (submitting.value || remainingSeconds.value <= 0 || attemptContext?.status !== 'started') return;
             if (editor) editor.setValue(code);
             if (activeProblem.value) answers.value[activeProblem.value.id] = code;
         };
@@ -384,7 +540,9 @@ export default {
             if (!editorHost.value || !activeProblem.value) return;
             destroyEditor();
             isEditorLoading.value = false;
-            const saved = answers.value[activeProblem.value.id] || activeProblem.value.starterCode;
+            const saved = answers.value[activeProblem.value.id] ?? activeProblem.value.starterCode ?? '';
+            const context = attemptContext;
+            const questionId = activeProblem.value.id;
             if (window.monaco) {
                 usePlainEditor.value = false;
                 editor = window.monaco.editor.create(editorHost.value, {
@@ -392,14 +550,15 @@ export default {
                     language: activeProblem.value.language || 'javascript',
                     theme: 'vs-dark',
                     fontSize: 14,
+                    readOnly: submitting.value || remainingSeconds.value <= 0,
                     minimap: { enabled: false },
                     automaticLayout: true,
                     scrollBeyondLastLine: false,
                     fontFamily: 'Consolas, "Courier New", monospace'
                 });
                 editor.onDidChangeModelContent(() => {
-                    if (activeProblem.value) {
-                        answers.value[activeProblem.value.id] = editor.getValue();
+                    if (isCurrentAttempt(context) && !submitting.value && remainingSeconds.value > 0) {
+                        answers.value[questionId] = editor.getValue();
                     }
                 });
             }
@@ -414,7 +573,13 @@ export default {
             }
             if (window.require) {
                 window.require.config({ paths: { vs: 'https://s4.zstatic.net/ajax/libs/monaco-editor/0.39.0/min/vs' } });
-                window.require(['vs/editor/editor.main'], createEditor);
+                const context = attemptContext;
+                const problemId = activeProblem.value.id;
+                window.require(['vs/editor/editor.main'], () => {
+                    if (isCurrentAttempt(context) && problemId === activeProblem.value?.id) createEditor();
+                }, () => {
+                    if (isCurrentAttempt(context)) { isEditorLoading.value = false; usePlainEditor.value = true; }
+                });
             } else {
                 isEditorLoading.value = false;
                 usePlainEditor.value = true;
@@ -422,102 +587,70 @@ export default {
         };
 
         const switchProblem = async (index) => {
+            if (submitting.value || !examDetail.value?.programmingProblems?.[index]) return false;
+            const context = attemptContext;
             if (activeProblem.value) answers.value[activeProblem.value.id] = getEditorCode();
+            if (!(await flushAnswers()) || !isCurrentAttempt(context)) return false;
+            destroyEditor();
             activeProblemIndex.value = index;
             initCaseResults();
             await nextTick();
-            initEditor();
+            if (isCurrentAttempt(context)) initEditor();
+            return true;
         };
 
         const runCode = async () => {
-            if (!activeProblem.value || isRunning.value) return;
-            isRunning.value = true;
-            activeTab.value = 'cases';
-            consoleLines.value = [];
-            caseResults.value = caseResults.value.map(item => ({ ...item, status: 'running', actual: null, error: '' }));
-            await nextTick();
-
-            const code = getEditorCode();
-            answers.value[activeProblem.value.id] = code;
-            const logs = [];
-            const fakeConsole = {
-                log: (...items) => logs.push(items.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(' '))
-            };
-
-            caseResults.value = caseResults.value.map((item) => {
-                try {
-                    let inputArgs = Array.isArray(item.input) ? item.input : [item.input];
-                    const funcBody = `${code}; if (typeof ${activeProblem.value.funcName} !== 'function') throw new Error("函数 ${activeProblem.value.funcName} 未定义"); return ${activeProblem.value.funcName}(...arguments[1]);`;
-                    const runner = new Function('console', funcBody);
-                    const actual = runner(fakeConsole, inputArgs);
-                    return {
-                        ...item,
-                        actual,
-                        status: deepEqual(actual, item.expected) ? 'passed' : 'failed',
-                        error: deepEqual(actual, item.expected) ? '' : `期望 ${JSON.stringify(item.expected)}`
-                    };
-                } catch (error) {
-                    return { ...item, actual: null, status: 'error', error: error.toString() };
-                }
-            });
-
-            consoleLines.value = logs.length ? logs : ['公开样例运行完成。隐藏用例将在正式提交后由后端判题。'];
-            isRunning.value = false;
-            const passed = caseResults.value.filter(item => item.status === 'passed').length;
-            emit('show-toast', `公开样例通过 ${passed}/${caseResults.value.length}`, passed === caseResults.value.length ? 'success' : 'error');
-            if (attemptId.value) {
-                examCenterApi.saveAnswer(attemptId.value, {
-                    questionId: activeProblem.value.id,
-                    answer: code,
-                    result: caseResults.value
-                }).catch(() => { /* 静默失败，不影响编程题作答流程 */ });
-            }
+            // Student code must never execute in the application origin. Keep
+            // this fail-closed until a separately isolated service is available.
+            consoleLines.value = [executionUnavailable];
+            activeTab.value = 'console';
+            emit('show-toast', executionUnavailable, 'info');
+            return false;
         };
 
         const submitAttempt = async (options = {}) => {
-            if (!selectedExam.value || submitting.value) return;
+            const context = attemptContext;
+            if (!context || context.status !== 'started' || !isCurrentAttempt(context) || submitting.value) return false;
             const reason = options.reason || '手动提交';
             const autoSubmitted = Boolean(options.autoSubmitted);
+            if (activeProblem.value && remainingSeconds.value > 0) answers.value[activeProblem.value.id] = getEditorCode();
             submitting.value = true;
-            if (activeProblem.value) answers.value[activeProblem.value.id] = getEditorCode();
+            editor?.updateOptions?.({ readOnly: true });
             try {
-                const id = await ensureAttempt(selectedExam.value);
-                const result = await examCenterApi.submitAttempt(id, {
-                    userId: username.value,
-                    answers: answers.value,
+                const saved = await flushAnswers();
+                if (!isCurrentAttempt(context)) return false;
+                // After the deadline the server only finalizes previously saved
+                // answers. A rejected late save must not prevent finalization.
+                if (!saved && remainingSeconds.value > 0) throw new Error(saveError.value || '答案未保存，请重试');
+                const result = await examCenterApi.submitAttempt(context.attemptId, {
+                    userId: context.userId,
+                    answers: copyAnswer(answers.value),
                     submittedAt: new Date().toISOString(),
                     submitReason: reason,
                     autoSubmitted
                 });
-                let successMessage = autoSubmitted
-                    ? `检测到${reason}，系统已自动交卷`
-                    : (result.programmingStatus === 'pending_judge' ? '已提交，编程题正在自动判题...' : '考试提交成功');
-                emit('show-toast', successMessage, autoSubmitted ? 'error' : 'success');
-
-                // 如果有编程题待判，自动触发判题并展示结果
-                if (result.programmingStatus === 'pending_judge' && id) {
-                    try {
-                        const judgeResult = await examCenterApi.judgeProgramming(id, {
-                            userId: username.value
-                        });
-                        const progScore = judgeResult?.programmingScore ?? 0;
-                        const totalScore = judgeResult?.totalScore ?? result?.objectiveScore ?? 0;
-                        const passedCount = (judgeResult?.results || []).filter(r => r.status === 'accepted').length;
-                        const totalCount = judgeResult?.results?.length || 0;
-                        const judgeMsg = `判题完成：编程题 ${passedCount}/${totalCount} 通过，编程得分 ${progScore}，总分 ${totalScore}`;
-                        emit('show-toast', judgeMsg, passedCount === totalCount ? 'success' : 'error');
-                    } catch (judgeErr) {
-                        emit('show-toast', `编程题自动判题失败：${judgeErr.message}，请稍后查看成绩`, 'error');
-                    }
+                if (!isCurrentAttempt(context)) return false;
+                if (!['submitted', 'graded'].includes(result?.status) || result.attemptId !== context.attemptId || !result.submittedAt) {
+                    throw new Error('服务器未返回有效的交卷回执，请重试确认');
                 }
-
-                await backToOverview({ exitFullscreen: true });
+                context.status = result.status;
+                submissionReceipt.value = result;
+                let message = autoSubmitted ? `检测到${reason}，服务器已确认交卷` : '服务器已确认交卷';
+                if (result.late) message += '；已超时，仅计入截止前保存的答案';
+                if (result.programmingStatus === 'pending_judge' || result.programmingStatus === 'unavailable') message += '；编程题尚未判分，等待安全判题服务';
+                emit('show-toast', message, result.late ? 'info' : 'success');
+                await backToOverview({ exitFullscreen: true, submitted: true });
                 await loadOverview();
+                return true;
             } catch (error) {
-                emit('show-toast', `提交失败：${error.message}`, 'error');
+                if (isCurrentAttempt(context)) emit('show-toast', `提交失败：${error.message}`, 'error');
+                return false;
             } finally {
-                submitting.value = false;
-                securityAutoSubmitting = false;
+                if (isCurrentAttempt(context) || !attemptContext) {
+                    submitting.value = false;
+                    editor?.updateOptions?.({ readOnly: remainingSeconds.value <= 0 });
+                    securityAutoSubmitting = false;
+                }
             }
         };
 
@@ -528,15 +661,52 @@ export default {
             await submitAttempt({ autoSubmitted: true, reason });
         };
 
+        const handleBeforeUnload = (event) => {
+            if (!attemptContext?.pending.size && !submitting.value) return;
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        const handleOffline = () => {
+            if (attemptContext?.pending.size) saveState.value = 'offline';
+        };
+        const handleOnline = () => { flushAnswers(); };
+        watch(username, () => {
+            ++navigationVersion;
+            ++overviewVersion;
+            unbindExamSecurityGuards();
+            clearAttempt();
+            submitting.value = false;
+            securityAutoSubmitting = false;
+            roomMode.value = 'overview';
+            selectedExam.value = null;
+            examDetail.value = null;
+            overview.value = { summary: {}, exams: [], waitingSubjects: [] };
+            isEntryConfirmOpen.value = false;
+            pendingExam.value = null;
+            loadOverview();
+        }, { flush: 'sync' });
+
         onMounted(() => {
             loadOverview();
+            window.addEventListener('beforeunload', handleBeforeUnload);
+            window.addEventListener('offline', handleOffline);
+            window.addEventListener('online', handleOnline);
             watermarkTimer = setInterval(() => {
                 watermarkTime.value = new Date().toISOString().replace('T', ' ').slice(0, 19);
             }, 1000);
         });
         onBeforeUnmount(() => {
+            // Internal room navigation awaits flushAnswers. A forced component
+            // teardown can only make a best-effort save; unload warns when dirty.
+            flushAnswers();
+            mounted = false;
+            ++navigationVersion;
             unbindExamSecurityGuards();
             destroyEditor();
+            clearTimeout(attemptContext?.debounceTimer);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('offline', handleOffline);
+            window.removeEventListener('online', handleOnline);
             if (timer) clearInterval(timer);
             if (watermarkTimer) clearInterval(watermarkTimer);
         });
@@ -566,6 +736,14 @@ export default {
             securityViolationReason,
             answers,
             remainingSeconds,
+            attemptKey,
+            saveState,
+            saveStatusText,
+            saveError,
+            lastSavedAt,
+            submissionReceipt,
+            executionUnavailable,
+            flushAnswers,
             apiBase,
             upcomingExams,
             activeExams,
@@ -713,6 +891,7 @@ export default {
                         <i class="ph ph-arrow-left"></i> 返回考试中心
                     </button>
                     <h2 class="text-2xl font-bold text-slate-900">{{ selectedExam.title }}</h2>
+                    <p v-if="submissionReceipt" class="mt-3 text-sm text-emerald-700">服务器记录：已交卷 {{ formatDateTime(submissionReceipt.submittedAt) }}，不能重新作答。</p>
                     <p class="text-sm text-slate-500 mt-2">{{ selectedExam.subject }} · {{ formatDateTime(selectedExam.startsAt) }} · {{ selectedExam.durationMinutes }} 分钟</p>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-6">
                         <div v-for="type in selectedExam.questionTypes" :key="type.type" class="bg-white/70 border border-white/80 rounded-2xl p-4">
@@ -770,9 +949,16 @@ export default {
                     </div>
                 </div>
 
+                <div role="status" aria-live="polite" class="rounded-xl border px-4 py-2 text-xs flex flex-wrap items-center gap-2"
+                    :class="saveState === 'error' || saveState === 'offline' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white text-slate-600'">
+                    <span>{{ saveStatusText }}{{ saveError ? '：' + saveError : '' }}</span>
+                    <span v-if="lastSavedAt">上次确认 {{ formatDateTime(lastSavedAt) }}</span>
+                    <button v-if="saveState === 'error' || saveState === 'offline'" @click="flushAnswers" :disabled="submitting" class="underline font-bold">重试保存</button>
+                    <span v-if="remainingSeconds === 0" class="text-rose-700">考试时间已结束，无法继续作答；交卷失败时请重试提交</span>
+                </div>
                 <div v-if="securityViolationReason" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 flex items-center gap-2">
                     <i class="ph ph-warning-circle"></i>
-                    已触发安全规则：{{ securityViolationReason }}，系统正在自动交卷。
+                    已触发安全规则：{{ securityViolationReason }}。{{ submitting ? '正在交卷…' : '以服务器交卷回执为准，失败时请重试提交。' }}
                 </div>
 
                 <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-3">
@@ -786,7 +972,7 @@ export default {
                         </div>
 
                         <div class="grid grid-cols-3 gap-2">
-                            <button v-for="(problem, idx) in examDetail?.programmingProblems" :key="problem.id" @click="switchProblem(idx)"
+                            <button v-for="(problem, idx) in examDetail?.programmingProblems" :key="problem.id" @click="switchProblem(idx)" :disabled="submitting"
                                 class="h-11 rounded-xl text-xs font-bold border flex items-center justify-center transition-colors"
                                 :class="activeProblemIndex === idx ? 'bg-[#1c2b38] text-white border-[#1c2b38]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-100'">
                                 {{ idx + 1 }}
@@ -827,15 +1013,15 @@ export default {
                                     <p class="text-sm font-bold text-slate-900 mt-0.5">{{ activeProblem?.language || 'javascript' }}</p>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button @click="setEditorCode(activeProblem?.starterCode || '')" class="h-9 px-3 text-xs rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900">重置</button>
-                                    <button @click="runCode" :disabled="isRunning" class="h-9 px-4 text-xs rounded-xl bg-[#1c2b38] text-white font-bold flex items-center gap-1.5 disabled:opacity-60">
-                                        <i :class="isRunning ? 'ph ph-spinner animate-spin' : 'ph ph-play-fill'"></i> 运行代码
+                                    <button @click="setEditorCode(activeProblem?.starterCode || '')" :disabled="submitting || remainingSeconds === 0" class="h-9 px-3 text-xs rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900">重置</button>
+                                    <button @click="runCode" disabled :title="executionUnavailable" class="h-9 px-4 text-xs rounded-xl bg-[#1c2b38] text-white font-bold flex items-center gap-1.5 disabled:opacity-60">
+                                        <i :class="isRunning ? 'ph ph-spinner animate-spin' : 'ph ph-play-fill'"></i> 代码运行暂不可用
                                     </button>
                                 </div>
                             </div>
                             <div class="flex-1 min-h-[320px] bg-[#171717] rounded-2xl overflow-hidden border border-slate-900 relative">
                                 <div ref="editorHost" class="absolute inset-0"></div>
-                                <textarea v-if="usePlainEditor" :value="answers[activeProblem?.id] || activeProblem?.starterCode" @input="activeProblem && (answers[activeProblem.id] = $event.target.value)" class="absolute inset-0 w-full h-full bg-[#171717] text-slate-100 font-mono text-sm p-4 outline-none resize-none"></textarea>
+                                <textarea v-if="usePlainEditor" :value="answers[activeProblem?.id] ?? activeProblem?.starterCode" @input="setEditorCode($event.target.value)" :readonly="submitting || remainingSeconds === 0" class="absolute inset-0 w-full h-full bg-[#171717] text-slate-100 font-mono text-sm p-4 outline-none resize-none"></textarea>
                                 <div v-if="isEditorLoading" class="absolute inset-0 flex items-center justify-center text-indigo-200 bg-slate-950/70 text-sm">正在加载 Monaco Editor...</div>
                             </div>
                         </div>
@@ -846,7 +1032,7 @@ export default {
                                     <button @click="activeTab = 'cases'" :class="activeTab === 'cases' ? 'text-[#1c2b38] border-b-2 border-[#1c2b38]' : 'text-slate-500'" class="pb-2">公开样例</button>
                                     <button @click="activeTab = 'console'" :class="activeTab === 'console' ? 'text-[#1c2b38] border-b-2 border-[#1c2b38]' : 'text-slate-500'" class="pb-2">控制台</button>
                                 </div>
-                                <span class="text-[10px] text-slate-400 font-semibold pb-2">隐藏用例提交后判题</span>
+                                <span class="text-[10px] text-slate-400 font-semibold pb-2">安全判题服务暂不可用，提交不代表已判分</span>
                             </div>
                             <div class="flex-1 overflow-y-auto no-scrollbar">
                                 <div v-show="activeTab === 'cases'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -863,7 +1049,7 @@ export default {
                                 </div>
                                 <div v-show="activeTab === 'console'" class="bg-slate-950 text-slate-300 rounded-xl p-3 font-mono text-xs min-h-full">
                                     <p v-for="(line, idx) in consoleLines" :key="idx" class="border-b border-slate-800/70 py-1">{{ line }}</p>
-                                    <p v-if="consoleLines.length === 0" class="text-slate-500">运行代码后，这里会显示 console.log、运行错误和判题提示。</p>
+                                    <p v-if="consoleLines.length === 0" class="text-slate-500">{{ executionUnavailable }}</p>
                                 </div>
                             </div>
                         </div>

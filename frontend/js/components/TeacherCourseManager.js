@@ -27,15 +27,7 @@ export default {
         };
 
         const saveEditCourse = () => {
-            if (!editForm.name.trim()) {
-                emit('show-toast', '课程名不能为空', 'error');
-                return;
-            }
-            editingCourse.value.name = editForm.name.trim();
-            editingCourse.value.code = editForm.code.trim();
-            editingCourse.value.desc = editForm.desc.trim();
-            editingCourse.value = null;
-            emit('show-toast', '课程信息已保存 ✓', 'success');
+            emit('show-toast', '课程持久化服务尚未提供，此操作不可用，未保存任何更改', 'warning');
         };
 
         const cancelEditCourse = () => { editingCourse.value = null; };
@@ -65,22 +57,7 @@ export default {
         };
 
         const saveNewCourse = () => {
-            if (!newCourseForm.name.trim() || !newCourseForm.code.trim()) {
-                emit('show-toast', '课程名和课程编号不能为空', 'error');
-                return;
-            }
-            const newCourse = {
-                id: 'course_' + Date.now(),
-                name:  newCourseForm.name.trim(),
-                code:  newCourseForm.code.trim().toUpperCase(),
-                icon:  newCourseForm.icon,
-                desc:  newCourseForm.desc.trim() || '暂无课程简介。',
-                color: newCourseForm.color,
-                files: []
-            };
-            props.courses.push(newCourse);
-            showNewCourseModal.value = false;
-            emit('show-toast', `课程《${newCourse.name}》已创建 ✓`, 'success');
+            emit('show-toast', '课程持久化服务尚未提供，此操作不可用，未保存任何更改', 'warning');
         };
 
         // ── 进入课程 / 返回 ───────────────────────────────────
@@ -100,13 +77,10 @@ export default {
             deleteConfirmIdx.value = -1;
             renameValue.value = file.name;
         };
-        const confirmRename = (file) => {
-            const v = renameValue.value.trim();
-            if (!v) { emit('show-toast', '文件名不能为空', 'error'); return; }
-            file.name = v;
-            renamingFileIdx.value = -1;
-            emit('show-toast', '文件名已更新 ✓', 'success');
+        const confirmRename = () => {
+            emit('show-toast', '课程持久化服务尚未提供，此操作不可用，未保存任何更改', 'warning');
         };
+
         const cancelRename = () => { renamingFileIdx.value = -1; };
 
         // ── 课件：删除 ────────────────────────────────────────
@@ -116,38 +90,18 @@ export default {
             deleteConfirmIdx.value = idx;
             renamingFileIdx.value = -1;
         };
-        const confirmDelete = (idx) => {
-            const removed = selectedCourse.value.files.splice(idx, 1);
-            deleteConfirmIdx.value = -1;
-            emit('show-toast', `已删除 「${removed[0]?.name}」`, 'success');
+        const confirmDelete = () => {
+            emit('show-toast', '课程持久化服务尚未提供，此操作不可用，未保存任何更改', 'warning');
         };
+
         const cancelDelete = () => { deleteConfirmIdx.value = -1; };
 
         // ── 课件：上传（Mock，读取文件元数据追加列表）────────
         const fileInputRef = ref(null);
-        const triggerUpload = () => { fileInputRef.value?.click(); };
+        const triggerUpload = () => { emit('show-toast', '课件上传服务不可用，未上传文件', 'warning'); };
 
-        const handleUpload = (e) => {
-            const fileList = e.target.files;
-            if (!fileList || !fileList.length || !selectedCourse.value) return;
-            let addedCount = 0;
-            Array.from(fileList).forEach(f => {
-                const ext = f.name.split('.').pop().toLowerCase();
-                const type = ext === 'pdf' ? 'pdf' : 'ppt';
-                const sizeKB = (f.size / 1024).toFixed(0);
-                const sizeStr = f.size > 1024 * 1024
-                    ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
-                    : `${sizeKB} KB`;
-                selectedCourse.value.files.push({
-                    name: f.name,
-                    type,
-                    path: `courses/${selectedCourse.value.id}/${f.name}`,
-                    size: sizeStr
-                });
-                addedCount++;
-            });
-            e.target.value = '';
-            emit('show-toast', `已添加 ${addedCount} 个课件记录 ✓（演示模式，仅记录元数据）`, 'success');
+        const handleUpload = () => {
+            emit('show-toast', '课程持久化服务尚未提供，此操作不可用，未保存任何更改', 'warning');
         };
 
         // ── 预览课件（调用父层 previewFile，通过事件代理）────
@@ -186,6 +140,7 @@ export default {
     },
     template: `
 <section class="absolute inset-0 overflow-y-auto p-8 lg:p-12">
+            <p role="status" class="text-amber-700 p-4">当前为只读课程目录。编辑、新建、删除和上传尚不可用，不会保存更改。</p>
     <div class="max-w-5xl mx-auto flex flex-col gap-6">
 
         <!-- ── 页头 ─────────────────────────────────────────── -->

@@ -89,7 +89,7 @@ class ChatHistoryTest(unittest.TestCase):
                 role="user",
                 content="检索注意力机制",
             )
-            res = asyncio.run(create_chat_history_message(req, db=db))
+            res = asyncio.run(create_chat_history_message(req, db=db, auth={"sub": "alice", "role": "student"}))
             self.assertEqual(res["status"], "success")
             self.assertEqual(res["data"]["content"], "检索注意力机制")
             self.assertEqual(res["data"]["agent_mode"], "paper")
@@ -115,7 +115,7 @@ class ChatHistoryTest(unittest.TestCase):
                     ),
                 ],
             )
-            batch_res = asyncio.run(create_chat_history_batch(batch_req, db=db))
+            batch_res = asyncio.run(create_chat_history_batch(batch_req, db=db, auth={"sub": "alice", "role": "student"}))
             self.assertEqual(batch_res["status"], "success")
             self.assertEqual(len(batch_res["data"]), 2)
 

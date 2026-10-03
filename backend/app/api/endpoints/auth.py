@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client
 from app.core.responses import auth_fail, auth_ok
-from app.core.security import create_access_token, decode_access_token, get_password_hash, verify_password
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.core.username_policy import NUMERIC_ID_RE, has_chinese, is_valid_teacher_username
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
+from app.services.current_identity import resolve_current_account
 from app.services.sms_service import is_valid_phone, send_sms_code, verify_sms_code
 
 router = APIRouter()
@@ -165,6 +166,9 @@ def _register(db: Session, data: RegisterRequest, role: Role):
         return auth_fail("role mismatch")
     if role == "student":
         return _register_student(db, data)
+
+    if role == "teacher":
+        raise HTTPException(status_code=403, detail="教师账号需由学校管理员审核并开通，请联系管理员")
 
     if role == "teacher" and not data.teacher_id:
         return auth_fail("teacher_id is required")
@@ -349,12 +353,8 @@ async def teacher_mobile_login(
 
 @router.get("/auth/me")
 async def get_current_user(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return auth_fail("not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload:
-        return auth_fail("invalid token")
-    account = db.query(UserAccount).filter(UserAccount.username == payload.get("sub")).first()
-    if not account:
-        return auth_fail("user not found")
+    try:
+        account = resolve_current_account(authorization, db)
+    except HTTPException as exc:
+        return auth_fail(str(exc.detail))
     return auth_ok(data=serialize_user(db, account))

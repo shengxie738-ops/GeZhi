@@ -53,7 +53,7 @@ class TestPushLegalFeatureBranch(unittest.TestCase):
 
     def test_all_passed_score_100(self):
         project = _base_project()
-        matched_member = {"displayName": "李明", "source": "matched"}
+        matched_member = {"displayName": "李明", "campusUserId": "liming", "matchSource": "gitea_username"}
         payload = _push_payload("feature/huffman-encode", [
             ("abc1234567890", "feat: 实现哈夫曼树构建算法", "李明", "liming"),
         ])
@@ -84,7 +84,7 @@ class TestPushToMain(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "张华", "source": "matched"},
+            matched_member={"displayName": "张华", "campusUserId": "zhanghua", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         violation_codes = [v["code"] for v in result["violations"]]
@@ -95,8 +95,8 @@ class TestPushToMain(unittest.TestCase):
         v = next(v for v in result["violations"] if v["code"] == "PUSH_TO_DEFAULT_BRANCH")
         self.assertEqual(v["severity"], "error")
 
-    def test_merge_commit_to_main_no_violation(self):
-        """Merge commit push 到 main 不应产生违规。"""
+    def test_merge_message_cannot_prove_reviewed_push(self):
+        """消息以 Merge 开头不能证明已通过 PR 审核。"""
         project = _base_project()
         payload = _push_payload("main", [
             ("abc000000001", "Merge pull request #3 from campus/feature/task", "系统", "system"),
@@ -105,11 +105,11 @@ class TestPushToMain(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "系统", "source": "matched"},
+            matched_member={"displayName": "系统", "campusUserId": "system", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         violation_codes = [v["code"] for v in result["violations"]]
-        self.assertNotIn("PUSH_TO_DEFAULT_BRANCH", violation_codes)
+        self.assertIn("PUSH_TO_DEFAULT_BRANCH", violation_codes)
 
 
 class TestShortCommitMessage(unittest.TestCase):
@@ -124,7 +124,7 @@ class TestShortCommitMessage(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "李明", "source": "matched"},
+            matched_member={"displayName": "李明", "campusUserId": "liming", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         codes = [v["code"] for v in result["violations"]]
@@ -142,7 +142,7 @@ class TestShortCommitMessage(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "李明", "source": "matched"},
+            matched_member={"displayName": "李明", "campusUserId": "liming", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         codes = [v["code"] for v in result["violations"]]
@@ -221,7 +221,7 @@ class TestAuthorUnmatched(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "李明", "source": "matched"},
+            matched_member={"displayName": "李明", "campusUserId": "liming", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         codes = [v["code"] for v in result["violations"]]
@@ -259,7 +259,7 @@ class TestScoreCalculation(unittest.TestCase):
             event_type="push",
             payload=payload,
             project=project,
-            matched_member={"displayName": "李明", "source": "matched"},
+            matched_member={"displayName": "李明", "campusUserId": "liming", "matchSource": "gitea_username"},
             author_match_source="matched",
         )
         self.assertIn("BRANCH_NAME_INVALID", [v["code"] for v in result["violations"]])

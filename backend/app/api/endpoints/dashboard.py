@@ -15,26 +15,19 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_teacher, teacher_student_ids, get_auth_payload, ensure_self_or_teacher, student_can_access_content
 from app.core.database import get_db
 from app.core.responses import ok
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from app.repositories.json_store import JsonStore, make_record_key
 from app.utils.datetime import utc_now_iso
 
 router = APIRouter()
 
 
-def _require_auth_user(authorization: str | None) -> str:
-    """Extract and validate user from JWT token. Returns username."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload:
-        raise HTTPException(status_code=401, detail="invalid token")
-    username = payload.get("sub")
-    if not username:
-        raise HTTPException(status_code=401, detail="invalid token payload")
-    return username
+def _require_auth_user(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    return account.username
 
 CHINA_TZ = timezone(timedelta(hours=8))
 
@@ -122,6 +115,8 @@ def _build_homework_dashboard(user_id: str, store: JsonStore, now: datetime) -> 
     subject_deadline_map: dict[str, dict[str, Any]] = {}  # subjectId -> homework
 
     for hw in homeworks:
+        if not student_can_access_content(hw, user_id):
+            continue
         hw_id = hw.get("id", "")
         submission = by_homework.get(hw_id)
         status = submission.get("status", "submitted") if submission else hw.get("status", "unsubmitted")
@@ -189,6 +184,8 @@ def _build_exam_dashboard(user_id: str, store: JsonStore, now: datetime) -> dict
 
     exam_alerts = []
     for exam in exams:
+        if not student_can_access_content(exam, user_id):
+            continue
         status = exam.get("status", "draft")
         exam_id = exam.get("id", "")
 
@@ -322,7 +319,7 @@ def _build_mistake_dashboard(user_id: str, store: JsonStore) -> dict[str, Any]:
 @router.get("/dashboard/student/{user_id}")
 async def get_student_dashboard(user_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     # Require authentication and validate user_id matches token
-    auth_username = _require_auth_user(authorization)
+    auth_username = _require_auth_user(authorization, db)
     if user_id != auth_username:
         raise HTTPException(status_code=403, detail="forbidden: cannot access other user's dashboard")
     """
@@ -351,8 +348,7 @@ async def get_student_dashboard(user_id: str, authorization: str | None = Header
     # 过滤属于该学生的通知（全班通知 + 针对个人的通知）
     notifications = [
         n for n in all_notifications
-        if not n.get("studentIds")  # 全班通知（无 studentIds 字段）
-        or user_id in (n.get("studentIds") or [])  # 精确匹配个人通知
+        if user_id in (n.get("studentIds") or [])
     ]
 
     return ok({
@@ -370,7 +366,7 @@ async def get_student_dashboard(user_id: str, authorization: str | None = Header
 # ─── 教师干预交互端点 ─────────────────────────────────────────
 
 @router.post("/dashboard/teacher/intervention")
-async def create_teacher_intervention(payload: FreePayload, db: Session = Depends(get_db)):
+async def create_teacher_intervention(payload: FreePayload, db: Session = Depends(get_db), auth: dict = Depends(require_teacher)):
     """
     教师端下发干预任务到学生仪表盘。
     支持类型：homework（补弱作业）、quiz（短测）、mistake（错题订正）、nudge（学情提醒）、ai-guide（AI引导）
@@ -383,10 +379,14 @@ async def create_teacher_intervention(payload: FreePayload, db: Session = Depend
     data = payload.model_dump()
     intervention_type = data.get("type", "nudge")
     target_user_id = data.get("targetUserId") or data.get("userId") or ""
-    teacher_id = data.get("teacherId") or data.get("createdBy") or ""
+    teacher_id = auth["sub"]
+    if target_user_id not in teacher_student_ids(teacher_id):
+        raise HTTPException(status_code=403, detail="student not assigned to teacher")
+    data["teacherId"] = teacher_id
+    data["createdBy"] = teacher_id
     now_iso = utc_now_iso()
 
-    record_id = str(data.get("recordId") or make_record_key("intervention"))
+    record_id = make_record_key("intervention")
     intervention = {
         "id": record_id,
         "type": intervention_type,
@@ -405,7 +405,7 @@ async def create_teacher_intervention(payload: FreePayload, db: Session = Depend
 
     # 如果是作业/短测类型，同步写入 homework 模块让学生作业页可见
     if intervention_type in ("homework", "quiz"):
-        hw_id = data.get("homeworkId") or make_record_key("teacher-hw")
+        hw_id = make_record_key("teacher-hw")
         homework = {
             "id": hw_id,
             "subjectId": data.get("subjectId") or "GENERAL",
@@ -422,6 +422,7 @@ async def create_teacher_intervention(payload: FreePayload, db: Session = Depend
             "submittedAnswers": {},
             "submittedFile": None,
             "teacherId": teacher_id,
+            "studentIds": [target_user_id],
             "fromIntervention": record_id,
             "createdAt": now_iso,
         }
@@ -430,7 +431,7 @@ async def create_teacher_intervention(payload: FreePayload, db: Session = Depend
 
     # 如果是错题订正类型，同步写入 exams.mistake 模块
     if intervention_type == "mistake":
-        mistake_id = data.get("mistakeId") or make_record_key("teacher-mistake")
+        mistake_id = make_record_key("teacher-mistake")
         mistake = {
             "id": mistake_id,
             "studentId": target_user_id,
@@ -463,6 +464,7 @@ async def get_teacher_interventions(
     targetUserId: str = "",
     status: str = "",
     db: Session = Depends(get_db),
+    auth: dict = Depends(require_teacher),
 ):
     """
     查询教师下发的干预任务列表。
@@ -472,8 +474,13 @@ async def get_teacher_interventions(
     interventions = store.list_payloads("dashboard", "intervention",
                                         owner_id=targetUserId if targetUserId else None,
                                         status=status if status else None)
-    if teacherId:
-        interventions = [i for i in interventions if i.get("teacherId") == teacherId]
+    if teacherId and teacherId != auth["sub"]:
+        raise HTTPException(status_code=403, detail="cannot query another teacher")
+    allowed = teacher_student_ids(auth["sub"])
+    if targetUserId and targetUserId not in allowed:
+        raise HTTPException(status_code=403, detail="student not assigned to teacher")
+    interventions = [i for i in interventions if i.get("teacherId") == auth["sub"]
+                     and i.get("targetUserId") in allowed]
 
     return ok({
         "total": len(interventions),
@@ -482,16 +489,17 @@ async def get_teacher_interventions(
 
 
 @router.get("/dashboard/teacher/class-overview")
-async def get_teacher_class_overview(classId: str = "", db: Session = Depends(get_db)):
+async def get_teacher_class_overview(classId: str = "", db: Session = Depends(get_db), auth: dict = Depends(require_teacher)):
     """
     教师端班级学情大屏聚合数据。
     返回：作业提交率、平均分、高危学生、错题热点、考试进度。
     """
     store = JsonStore(db)
-    homeworks = store.list_payloads("homework", "homework")
-    submissions = store.list_payloads("homework", "submission")
-    mistakes = store.list_payloads("exams", "mistake")
-    exams = store.list_payloads("exams", "exam")
+    homeworks = [r for r in store.list_payloads("homework", "homework") if r.get("teacherId") == auth["sub"]]
+    allowed = teacher_student_ids(auth["sub"])
+    submissions = [r for sid in sorted(allowed) for r in store.list_payloads("homework", "submission", owner_id=sid)]
+    mistakes = [r for sid in sorted(allowed) for r in store.list_payloads("exams", "mistake", owner_id=sid)]
+    exams = [r for r in store.list_payloads("exams", "exam") if r.get("teacherId") == auth["sub"]]
 
     if classId:
         submissions = [s for s in submissions if s.get("className") == classId]
@@ -548,8 +556,9 @@ async def get_teacher_class_overview(classId: str = "", db: Session = Depends(ge
 # ─── 学生端交互任务端点 ────────────────────────────────────────
 
 @router.get("/dashboard/student/{user_id}/interactions")
-async def get_student_interactions(user_id: str, db: Session = Depends(get_db)):
+async def get_student_interactions(user_id: str, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
     """获取学生可见的干预任务、nudge 和 interaction"""
+    ensure_self_or_teacher(user_id, auth)
     store = JsonStore(db)
     interventions = store.list_payloads("dashboard", "intervention", owner_id=user_id)
     nudges = store.list_payloads("analytics", "nudge", owner_id=user_id)
@@ -558,8 +567,7 @@ async def get_student_interactions(user_id: str, db: Session = Depends(get_db)):
     # 筛选属于该学生的 interaction：无定向 = 全班，或按 studentIds 精确匹配（username）
     student_interactions = [
         item for item in all_interactions
-        if not item.get("studentIds")
-        or user_id in (item.get("studentIds") or [])
+        if user_id in (item.get("studentIds") or [])
         or str(user_id) in [str(x) for x in (item.get("studentIds") or [])]
     ]
 

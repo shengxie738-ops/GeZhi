@@ -1,4 +1,5 @@
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, getCurrentScope, onScopeDispose } from 'vue';
+import request from '../utils/request.js';
 
 const studentMenus = [
     { id: 'dashboard', name: '仪表盘', icon: 'ph-squares-four', title: '学习数据总览', desc: '您的专属智能学习进度报表' },
@@ -17,7 +18,8 @@ const studentMenus = [
 
 const teacherMenus = [
     { id: 't_dashboard', name: '仪表盘', icon: 'ph-squares-four', title: '教师工作台', desc: '总览今日授课日程、待阅批改任务及 AI 学情预警' },
-    { id: 't_analytics', name: '学情决策台', icon: 'ph-chart-polar', title: '班级学情分析与干预', desc: '宏观查看学情并向学生一键推送补弱干预' },    { id: 't_diagnosis_review', name: '诊断审查', icon: 'ph-clipboard-text', title: '学习诊断审查', desc: '审查、监督、备注与关注学生学习诊断情况' },
+    { id: 't_analytics', name: '学情决策台', icon: 'ph-chart-polar', title: '班级学情分析与干预', desc: '宏观查看学情并向学生一键推送补弱干预' },
+    { id: 't_diagnosis_review', name: '诊断审查', icon: 'ph-clipboard-text', title: '学习诊断审查', desc: '审查、监督、备注与关注学生学习诊断情况' },
     { id: 't_space', name: '空间管理', icon: 'ph-layout', title: '学术空间管理', desc: '统一管理论坛内容、置顶公告与仓库举报审核' },
     { id: 't_exams', name: '考试管理', icon: 'ph-exam', title: '考试管理中心', desc: '创建考试、下达编程题并监控提交状态' },
     { id: 't_homework', name: '作业管理', icon: 'ph-article', title: '作业管理中心', desc: '管理班级作业提交、查看智能诊断与协同评阅' },
@@ -28,8 +30,13 @@ const teacherMenus = [
 ];
 
 export function useAuth(showToast, onLoginSuccess) {
-    const isLoggedIn = ref(localStorage.getItem('isLoggedIn') === 'true');
-    const currentUser = ref(localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')) : null);
+    const isLoggedIn = ref(localStorage.getItem('isLoggedIn') === 'true' && Boolean(localStorage.getItem('token')));
+    let storedUser = null;
+    try { storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch { localStorage.removeItem('currentUser'); }
+    const currentUser = ref(storedUser);
+    const authVerified = ref(false);
+    const authError = ref('');
+    let sessionVersion = 0;
     const isRegistering = ref(false);
     const isTeacherLogin = ref(localStorage.getItem('isTeacherLogin') === 'true');
     const authLoading = ref(false);
@@ -56,35 +63,18 @@ export function useAuth(showToast, onLoginSuccess) {
         return menu;
     });
 
-    const handleAuth = () => {
-        authLoading.value = true;
-        setTimeout(() => {
-            authLoading.value = false;
-            currentUser.value = {
-                username: authForm.username,
-                real_name: '',
-                student_id: '',
-                class_name: '',
-                avatar_url: ''
-            };
-            currentRole.value = isTeacherLogin.value ? 'teacher' : 'student';
-            currentView.value = currentRole.value === 'student' ? 'dashboard' : 't_dashboard';
-            isLoggedIn.value = true;
-            showToast(`系统登录成功 (${currentRole.value === 'teacher' ? '教师端' : '学生端'})`);
-
-            if (onLoginSuccess) {
-                onLoginSuccess(authForm.username, currentRole.value);
-            }
-        }, 800);
-    };
+    const handleAuth = () => { window.location.href = './login/index.html'; };
 
     const toggleAuthMode = () => {
         isRegistering.value = !isRegistering.value;
     };
 
     const handleLogout = (onLogout) => {
+        sessionVersion++;
+        authVerified.value = false;
         isLoggedIn.value = false;
         currentUser.value = null;
+        localStorage.removeItem('token');
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('currentUser');
         localStorage.removeItem('currentRole');
@@ -93,6 +83,48 @@ export function useAuth(showToast, onLoginSuccess) {
         localStorage.removeItem('messages');
         if (onLogout) onLogout();
     };
+
+    const expireSession = () => { handleLogout(); window.location.href = './login/index.html'; };
+    window.addEventListener('auth-expired', expireSession);
+    window.addEventListener('force-logout', expireSession);
+
+    const verifySession = async () => {
+        const version = ++sessionVersion;
+        authVerified.value = false;
+        authError.value = '';
+        if (!localStorage.getItem('token')) { expireSession(); return; }
+        try {
+            const result = await request('/auth/me');
+            if (version !== sessionVersion) return;
+            if (!result?.success || !result.data?.username) throw new Error('无法验证当前登录身份');
+            currentUser.value = result.data;
+            currentRole.value = result.data.role === 'teacher' ? 'teacher' : 'student';
+            authVerified.value = true;
+            isLoggedIn.value = true;
+        } catch (error) {
+            if (version !== sessionVersion) return;
+            authError.value = error.message || '登录验证失败，请重试';
+            if (error.status === 401) expireSession();
+        }
+    };
+    // A login in another tab can replace the token without changing this ref.
+    // Reverify through the server instead of trusting another tab's user payload.
+    let observedToken = localStorage.getItem('token') || '';
+    const synchronizeSession = event => {
+        if (event.key !== null && !['token', 'currentUser'].includes(event.key)) return;
+        const token = localStorage.getItem('token') || '';
+        if (token === observedToken) return;
+        observedToken = token;
+        if (!token) { expireSession(); return; }
+        void verifySession();
+    };
+    window.addEventListener('storage', synchronizeSession);
+    if (getCurrentScope()) onScopeDispose(() => window.removeEventListener?.('storage', synchronizeSession));
+    onMounted(verifySession);
+    onUnmounted(() => {
+        window.removeEventListener('auth-expired', expireSession);
+        window.removeEventListener('force-logout', expireSession);
+    });
 
     // 持久化监视器
     watch(isLoggedIn, (newVal) => {
@@ -120,6 +152,9 @@ export function useAuth(showToast, onLoginSuccess) {
 
     return {
         isLoggedIn,
+        authVerified,
+        authError,
+        verifySession,
         currentUser,
         isRegistering,
         isTeacherLogin,

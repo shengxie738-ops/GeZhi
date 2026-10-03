@@ -15,6 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.domain_record import DomainRecord
+from app.models import git_coach  # Register the additive isolated-test schema.
+from app.models.user_account import UserAccount
 from app.services.team_git_service import (
     find_project_id_by_repo_name,
     resolve_team_project_id,
@@ -28,8 +30,10 @@ SessionLocal = sessionmaker(bind=engine)
 
 def _fresh_db():
     db = SessionLocal()
-    # 清空所有 domain_record
-    db.query(DomainRecord).delete()
+    # Production IDs are permanent; isolate each synthetic test database.
+    DomainRecord.metadata.drop_all(engine)
+    DomainRecord.metadata.create_all(engine)
+    db.add_all([UserAccount(username=name, role="student", password_hash="fixture") for name in ("leader", "alice", "bob")])
     db.commit()
     return db
 
@@ -49,11 +53,11 @@ class TestFindProjectIdByRepoName(unittest.TestCase):
                 "id": project_id,
                 "title": f"Test {project_id}",
                 "teamName": "TestTeam",
-                "leaderId": "teacher",
+                "leaderId": "leader",
                 "members": ["alice"],
                 "repoName": repo_name,
             },
-            actor="teacher",
+            actor={"username": "leader", "role": "student"},
         )
         # 补充 repository.repoName 字段（create 可能不写入 repository 块）
         from app.repositories.json_store import JsonStore
@@ -61,8 +65,8 @@ class TestFindProjectIdByRepoName(unittest.TestCase):
         store = JsonStore(self.db)
         project = store.get_payload(MODULE, PROJECT, project_id)
         if project:
-            project.setdefault("repository", {})["repoName"] = repo_name
-            store.upsert(MODULE, PROJECT, project_id, project, owner_id="teacher", status="active")
+            project.setdefault("repository", {}).update(repoName=repo_name, giteaOwner="campus", giteaRepositoryId=71)
+            store.upsert(MODULE, PROJECT, project_id, project, owner_id="leader", status="active")
 
     def test_find_by_exact_repo_name(self):
         """按精确 repoName 反查应返回对应的 project_id。"""
@@ -109,39 +113,39 @@ class TestResolveTeamProjectId(unittest.TestCase):
                 "id": project_id,
                 "title": f"Test {project_id}",
                 "teamName": "ResolveTeam",
-                "leaderId": "teacher",
+                "leaderId": "leader",
                 "members": ["bob"],
                 "repoName": repo_name,
             },
-            actor="teacher",
+            actor={"username": "leader", "role": "student"},
         )
         from app.repositories.json_store import JsonStore
         from app.services.team_git_service import MODULE, PROJECT
         store = JsonStore(self.db)
         project = store.get_payload(MODULE, PROJECT, project_id)
         if project:
-            project.setdefault("repository", {})["repoName"] = repo_name
-            store.upsert(MODULE, PROJECT, project_id, project, owner_id="teacher", status="active")
+            project.setdefault("repository", {}).update(repoName=repo_name, giteaOwner="campus", giteaRepositoryId=71)
+            store.upsert(MODULE, PROJECT, project_id, project, owner_id="leader", status="active")
 
     def test_valid_project_id_returns_same(self):
         """有效 project_id 直接命中，不走反查。"""
         self._create_project("known-project", "known-repo")
-        result = resolve_team_project_id(self.db, "known-project", {})
+        result = resolve_team_project_id(self.db, "known-project", {"repository": {"id": 71, "name": "known-repo", "owner": {"login": "campus"}}})
         self.assertEqual(result, "known-project")
 
-    def test_invalid_project_id_fallback_by_repo_name(self):
-        """错误 project_id + payload.repository.name 正确 → 反查成功。"""
+    def test_invalid_project_id_rejects_matching_repo_name(self):
+        """错误路径不能被匹配的仓库名绕过。"""
         self._create_project("real-project", "real-repo")
         payload = {"repository": {"name": "real-repo", "full_name": "campus/real-repo"}}
-        result = resolve_team_project_id(self.db, "wrong-id-xyz", payload)
-        self.assertEqual(result, "real-project")
+        with self.assertRaises(FileNotFoundError):
+            resolve_team_project_id(self.db, "wrong-id-xyz", payload)
 
-    def test_invalid_project_id_fallback_by_full_name(self):
-        """错误 project_id + payload.repository.full_name 包含正确 repo → 反查成功。"""
+    def test_invalid_project_id_rejects_matching_full_name(self):
+        """完整仓库名称也不能替换错误路径。"""
         self._create_project("full-name-project", "full-name-repo")
         payload = {"repository": {"name": "other-name", "full_name": "campus/full-name-repo"}}
-        result = resolve_team_project_id(self.db, "bad-id", payload)
-        self.assertEqual(result, "full-name-project")
+        with self.assertRaises(FileNotFoundError):
+            resolve_team_project_id(self.db, "bad-id", payload)
 
     def test_both_fail_raises_file_not_found(self):
         """project_id 无效 + payload 也匹配不上 → FileNotFoundError。"""
@@ -156,6 +160,30 @@ class TestResolveTeamProjectId(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             resolve_team_project_id(self.db, "bad-id", {})
 
+
+    def test_existing_path_requires_complete_bound_repository_identity(self):
+        self._create_project("bound", "bound-repo")
+        valid = {"id": 71, "name": "bound-repo", "full_name": "campus/bound-repo", "owner": {"login": "campus"}}
+        for changed in ({"id": 72}, {"name": "other"}, {"owner": {"login": "outsider"}}, {"full_name": "outsider/bound-repo"}):
+            with self.subTest(changed=changed), self.assertRaises(PermissionError):
+                resolve_team_project_id(self.db, "bound", {"repository": {**valid, **changed}})
+        with self.assertRaises(ValueError):
+            resolve_team_project_id(self.db, "bound", {})
+        self.assertEqual(resolve_team_project_id(self.db, "bound", {"repository": valid}), "bound")
+
+    def test_missing_remote_binding_requires_verification_without_mutation(self):
+        from app.repositories.json_store import JsonStore
+        from app.services.team_git_service import MODULE, PROJECT
+        self._create_project("unverified", "unverified-repo")
+        store = JsonStore(self.db)
+        project = store.get_payload(MODULE, PROJECT, "unverified")
+        project["repository"].pop("giteaRepositoryId")
+        store.upsert(MODULE, PROJECT, "unverified", project, owner_id="leader", status="active")
+        before = store.get_payload(MODULE, PROJECT, "unverified")
+        with self.assertRaisesRegex(FileExistsError, "binding_verification_required"):
+            resolve_team_project_id(self.db, "unverified", {"repository": {
+                "id": 71, "name": "unverified-repo", "owner": {"login": "campus"}}})
+        self.assertEqual(store.get_payload(MODULE, PROJECT, "unverified"), before)
 
     def test_unknown_project_id_is_not_created_by_failed_webhook_resolution(self):
         before = self.db.query(DomainRecord).count()

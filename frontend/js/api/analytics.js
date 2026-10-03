@@ -10,24 +10,11 @@ import { apiRequest } from '../utils/request.js';
 // 或者更直观地，我们在 window 上注册共享变量，在初始化时将 ref 挂上去。
 // 让我们在 API 里支持直接抛出系统事件，同时在 API 响应式地修改共享的对象。
 
-async function requestJson(path, options = {}, mockFn) {
-    const useMockFirst = localStorage.getItem('analyticsMockFirst') === 'true';
-
-    if (useMockFirst && typeof mockFn === 'function') {
-        return await mockFn();
-    }
-
-    try {
-        return await apiRequest(path, {
-            ...options,
-            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
-        });
-    } catch (error) {
-        if (typeof mockFn === 'function') {
-            return await mockFn(error);
-        }
-        throw error;
-    }
+async function requestJson(path, options = {}) {
+    return apiRequest(path, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    });
 }
 
 function buildInteractionRecord(payload) {
@@ -280,9 +267,7 @@ export const analyticsApi = {
 
             return { success: true, record };
         });
-        if (result?.record) {
-            broadcastStudentInteraction(result.record, payload);
-        }
+        if (!result?.record?.id) throw new Error('服务器未确认干预任务，请重试');
         return result;
     },
 

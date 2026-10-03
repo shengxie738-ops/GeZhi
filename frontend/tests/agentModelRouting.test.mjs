@@ -85,7 +85,7 @@ assert.match(agentsHook, /request\(['"]\/ai\/models['"]\)/);
 assert.match(agentsHook, /imageModelOptions\.value/);
 assert.match(agentsHook, /textModelOptions\.value/);
 assert.match(agentsHook, /apiModel:\s*model\.api_model\s*\|\|\s*model\.apiModel\s*\|\|\s*''/);
-assert.match(agentsHook, /showToast\(`Agent \[\$\{agent\.name\}\] 已切换至 \$\{modelId\}`,\s*'success'\)/);
+// Persistence and failure behavior are exercised by repairComponentTruth.test.mjs.
 assert.match(html, /@change="updateAgentModel\(agent,\s*\$event\.target\.value\)"/);
 assert.match(html, /v-for="model in getAgentModelOptions\(agent\)"/);
 assert.match(html, /v-for="model in activeAgentModelOptions"/);

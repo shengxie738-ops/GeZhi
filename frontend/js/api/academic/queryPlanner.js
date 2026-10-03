@@ -1,3 +1,7 @@
+import { normalizeDoi, normalizeArxivIdentifier } from './paperModel.js';
+
+export const MAX_EFFECTIVE_QUERY_LENGTH = 4096;
+
 const ACADEMIC_TERM_TRANSLATIONS = [
     // 1. 金融量化与金融科技核心术语 (长词优先)
     ['金融量化与算法交易', 'quantitative finance algorithmic trading'],
@@ -61,107 +65,155 @@ const ENGLISH_STOP_WORDS = new Set([
     'papers', 'research', 'study', 'the', 'to', 'with', 'about', 'some', 'any'
 ]);
 
-const PAPER_WORK_TYPES = new Set(['journal-article', 'conference-paper', 'preprint', 'thesis']);
+const CONCEPT_ALTERNATIVES = {
+    'graph neural networks':['graph neural network','gnn','gnns'],
+    'graph convolutional networks':['graph convolutional network','gcn','gcns'],
+    'large language models':['large language model','llm','llms'],
+    'retrieval augmented generation':['retrieval-augmented generation','rag'],
+    'natural language processing':['nlp'],
+    'artificial intelligence':['ai'],
+    'deep learning':['dl'],
+    'reinforcement learning':['rl'],
+    'generative adversarial networks':['generative adversarial network','gan','gans'],
+    'machine learning':['ml'],
+    'fintech financial technology':['fintech','financial technology'],
+    'blockchain technology':['blockchain']
+};
+const compareText=(a,b)=>a<b?-1:a>b?1:0;
 
-/**
- * 剥离用户自然语言中的查询前缀和求索尾缀，抽取核心学术主题
- */
+// Only generic request framing is stripped; years, exclusions and modifiers survive.
 export function stripAcademicSearchIntent(query = '') {
-    const original = String(query || '').trim();
-    if (!original) return '';
-
-    let cleaned = original
-        // 剥离句首助动词、礼貌语与动作指令
-        .replace(/^(?:请帮我|帮我|请问|请|麻烦您?|烦请|能否|可以|我想|我要|我想找|我想了解|调研一下|搜索一下|查一下|找一下)\s*/iu, '')
-        .replace(/^(?:查找|搜索|检索|查询|寻找|推荐|汇总|整理|列举|列出|给我找|给我搜)\s*(?:一下|一些|几篇|相关的)?\s*/iu, '')
-        .replace(/^(?:关于|有关|针对|基于|围绕)\s*/iu, '')
-        // 剥离句末文档类型、综述修饰词及标点
-        .replace(/\s*(?:相关|有关)?\s*的?\s*(?:学术|权威|核心|最新|前沿)?\s*(?:论文|文献|文章|专著|资料|研究成果|进展)(?:推荐|列表|综述|总结|报告)?[。.!！?？\s]*$/iu, '')
-        .replace(/\s*(?:有哪些|怎么样|都有什么|的相关文献|的相关论文)[。.!！?？\s]*$/iu, '')
-        .trim();
-
+    const original=String(query || '').trim();
+    let cleaned=original
+        .replace(/^(?:请帮我|帮我|请问|请|麻烦您?|烦请|能否|可以|我想找|我想了解|我想|我要|调研一下|搜索一下|查一下|找一下)\s*/iu,'')
+        .replace(/^(?:查找|搜索|检索|查询|寻找|推荐|汇总|整理|列举|列出|给我找|给我搜|找)\s*(?:一下|一些|几篇|相关的)?\s*/iu,'')
+        .replace(/^(?:关于|有关|针对|围绕)\s*/iu,'')
+        .replace(/\s*(?:相关|有关)?\s*的?\s*(?:论文|文献|文章)[。!！?？\s]*$/iu,'')
+        .replace(/\s*(?:有哪些|都有什么)[。!！?？\s]*$/iu,'').trim();
     return cleaned || original;
 }
 
-/**
- * 遍历匹配术语库，优先匹配长词
- */
-function collectKnownTranslations(cleanedQuery) {
-    const matches = [];
-    let remaining = cleanedQuery;
+function transformUnquoted(query) {
+    const concepts=[]; const untranslatedSpans=[]; const replacements=[]; const exclusions=[];
+    const terms=[...ACADEMIC_TERM_TRANSLATIONS].sort((a,b)=>b[0].length-a[0].length || compareText(a[0],b[0]));
+    const pattern=new RegExp(`-?(?:${terms.map(([c])=>c).join('|')})`,'gu');
+    // Quoted text is explicit literal phrase intent and is not dictionary-translated.
+    const effective=query.split(/(-?"[^"\n]*"|-?'[^'\n]*')/gu).map((part,index)=> {
+        if(index%2) { if(part.startsWith('-'))exclusions.push(part.slice(2,-1));else concepts.push({original:part.slice(1,-1),label:part.slice(1,-1),alternatives:[part.slice(1,-1)],kind:'quoted'});return part; }
+        let remaining=part;
+        const transformed=part.replace(pattern,(match,offset)=> {
+            const negative=match.startsWith('-');
+            const term=negative?match.slice(1):match;
+            const english=terms.find(([c])=>c===term)[1];
+            if(negative)exclusions.push(english);
+            else concepts.push({original:term,label:english,alternatives:[english,...(CONCEPT_ALTERNATIVES[english] || [])],kind:'translated'});
+            replacements.push({original:match,replacement:negative?`-"${english}"`:english});
+            return negative?` -"${english}" `:` ${english} `;
+        });
+        remaining=remaining.replace(pattern,' ').replace(/(?:^|\s)-([^\s]+)/g,(_,term)=>{exclusions.push(term);return ' ';}).trim();
+        if(remaining)untranslatedSpans.push(remaining);
+        return transformed;
+    }).join('').replace(/\s+/g,' ').trim();
+    const signed=[...effective.matchAll(/(?:^|\s)-("[^"]*"|'[^']*'|[^\s]+)/gu)].map(m=>m[1].replace(/^(["'])(.*)\1$/u,'$2'));
+    return {effective,concepts,untranslatedSpans,replacements,exclusions:[...new Set(signed)]};
+}
 
-    for (const [chineseTerm, englishTerm] of ACADEMIC_TERM_TRANSLATIONS) {
-        if (remaining.includes(chineseTerm) && !matches.includes(englishTerm)) {
-            matches.push(englishTerm);
-            remaining = remaining.split(chineseTerm).join(' ');
+function tokens(text) {
+    return String(text || '').toLowerCase().normalize('NFKC').match(/[\p{L}\p{N}]+/gu) || [];
+}
+const stem=token=>token.length>4 && token.endsWith('ies')?token.slice(0,-3)+'y':token.length>3 && token.endsWith('s')&&!token.endsWith('ss')?token.slice(0,-1):token;
+
+const ARXIV_FIELDS=new Set(['ti','au','abs','co','jr','cat','rn','id','all','submittedDate','lastUpdatedDate']);
+export function isValidArxivAdvancedQuery(query) {
+    const input=String(query || '');
+    const parts=input.match(/"[^"]*"|\[.*?\]|[^\s():]+:|\bANDNOT\b|\bAND\b|\bOR\b|[()]|[^\s()]+/gu) || [];
+    if(parts.length>256 || parts.join('').replace(/\s+/g,'')!==input.replace(/\s+/g,''))return false;
+    let position=0;
+    function term(depth) {
+        if(position>=parts.length || depth>32)return false;
+        if(parts[position]==='(') {
+            position++;
+            if(!expression(depth+1) || parts[position]!==')')return false;
+            position++;return true;
         }
+        const field=parts[position++];
+        if(!field.endsWith(':') || !ARXIV_FIELDS.has(field.slice(0,-1)))return false;
+        const value=parts[position++];
+        return Boolean(value) && !['AND','OR','ANDNOT','(',')'].includes(value) && !value.endsWith(':');
     }
-    return matches;
+    function expression(depth) {
+        if(!term(depth))return false;
+        while(['AND','OR','ANDNOT'].includes(parts[position])) {position++;if(!term(depth))return false;}
+        return true;
+    }
+    return expression(0) && position===parts.length;
 }
 
-/**
- * 提取有效的学术英文词元
- */
-function getRelevanceTokens(effectiveQuery) {
-    return String(effectiveQuery || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, ' ')
-        .split(/\s+/)
-        .map(token => token.trim())
-        .filter(token => token.length >= 3 && !ENGLISH_STOP_WORDS.has(token));
-}
-
-/**
- * 规划学术检索词
- */
 export function prepareAcademicSearchQuery(query = '') {
-    const originalQuery = String(query || '').trim();
-    const cleanedQuery = stripAcademicSearchIntent(originalQuery);
-    const translations = collectKnownTranslations(cleanedQuery);
-    const effectiveQuery = translations.length > 0 ? translations.join(' ') : cleanedQuery;
+    const originalQuery=String(query || '').trim();
+    // Literal identifiers/field syntax are recognized before request-framing cleanup.
+    const literal=normalizeDoi(originalQuery) || normalizeArxivIdentifier(originalQuery) || isValidArxivAdvancedQuery(originalQuery);
+    const cleanedQuery=literal?originalQuery:stripAcademicSearchIntent(originalQuery);
+    const doi=normalizeDoi(cleanedQuery);
+    const arxiv=normalizeArxivIdentifier(cleanedQuery);
+    const queryType=doi?'doi':arxiv?'arxiv':'keywords';
+    const explicitDoi=/^doi:/i.test(cleanedQuery)||/^https?:\/\/(?:dx\.)?doi\.org(?::[^/]*)?(?:\/|$)/i.test(cleanedQuery);
+    const explicitArxiv=/^arxiv:/i.test(cleanedQuery)||/^https?:\/\/(?:www\.|export\.)?arxiv\.org(?::[^/]*)?\/(?:abs|pdf)(?:\/|$)/i.test(cleanedQuery);
+    const invalidIdentifier=(explicitDoi&&!doi)||(explicitArxiv&&!arxiv);
+    const advancedSyntax=queryType==='keywords' && !invalidIdentifier && isValidArxivAdvancedQuery(cleanedQuery);
+    const transformed=queryType==='keywords'&&!advancedSyntax?transformUnquoted(cleanedQuery):{effective:doi||arxiv||cleanedQuery,concepts:[],untranslatedSpans:[],replacements:[]};
+    const concepts=[...transformed.concepts];
+    // Recognize English phrases and acronyms as the same concepts as Chinese spans.
+    const definitions=ACADEMIC_TERM_TRANSLATIONS.map(([,label])=>({label,alternatives:[label,...(CONCEPT_ALTERNATIVES[label] || [])]}));
+    const candidates=definitions.flatMap(def=>def.alternatives.map(phrase=>({...def,needle:tokens(phrase).map(stem)}))).sort((a,b)=>b.needle.length-a.needle.length || compareText(a.label,b.label));
+    for(const remaining of transformed.untranslatedSpans) {
+        const hay=tokens(remaining);const used=new Set();
+        for(let i=0;i<hay.length;i++) {
+            if(used.has(i))continue;
+            const candidate=candidates.find(c=>c.needle.length && c.needle.every((part,j)=>!used.has(i+j) && stem(hay[i+j] || '')===part));
+            if(candidate) {
+                concepts.push({original:hay.slice(i,i+candidate.needle.length).join(' '),label:candidate.label,alternatives:candidate.alternatives,kind:'retained-concept'});
+                for(let j=0;j<candidate.needle.length;j++)used.add(i+j);
+            }
+        }
+        for(let i=0;i<hay.length;i++) if(!used.has(i) && !/^\d+$/.test(hay[i]) && !ENGLISH_STOP_WORDS.has(hay[i]) && hay[i].length>=2) concepts.push({original:hay[i],label:hay[i],alternatives:[hay[i]],kind:'retained'});
+    }
 
+    const unique=[...new Map(concepts.map(c=>[c.label,c])).values()];
+    const years=[...new Set(cleanedQuery.match(/\b(?:19|20)\d{2}\b/g) || [])];
     return {
-        originalQuery,
-        cleanedQuery,
-        effectiveQuery,
-        translated: translations.length > 0,
-        strictRelevance: translations.length > 0,
-        relevanceTokens: getRelevanceTokens(effectiveQuery)
+        queryTooLong:[...originalQuery].length>MAX_EFFECTIVE_QUERY_LENGTH || [...transformed.effective].length>MAX_EFFECTIVE_QUERY_LENGTH,
+        originalQuery,cleanedQuery,effectiveQuery:transformed.effective,queryType,identifier:doi||arxiv,invalidIdentifier,advancedSyntax,querySyntax:advancedSyntax?'arxiv-advanced':'plain',
+        translated:transformed.replacements.length>0,translationScope:transformed.replacements.length?'recognized-spans':'none',
+        strictRelevance:false,relevanceTokens:tokens(transformed.effective).filter(t=>t.length>=3&&!ENGLISH_STOP_WORDS.has(t)),
+        concepts:unique,untranslatedSpans:transformed.untranslatedSpans,replacements:transformed.replacements,
+        constraints:{years,exclusions:transformed.exclusions || []},dateFilterApplied:false,exclusionFilterApplied:false,
+        warnings:transformed.replacements.length&&transformed.untranslatedSpans.length?['仅转换已识别术语，未识别限定词按原文保留；年份未作为结构化筛选']:[]
     };
 }
 
-function paperSearchText(paper) {
-    return [paper?.title, paper?.abstract, paper?.venue, paper?.authorsText]
-        .map(value => String(value || '').toLowerCase())
-        .join(' ');
+function alternativeMatches(text,alternative) {
+    if(/[\p{Script=Han}]/u.test(alternative))return String(text || '').toLowerCase().includes(String(alternative).toLowerCase());
+    const hay=tokens(text).map(stem); const needle=tokens(alternative).map(stem);
+    if(!needle.length)return false;
+    // Whole tokens, allowing singular/plural variants; never accidental substrings.
+    return hay.some((_,i)=>needle.every((token,j)=>hay[i+j]===token));
 }
 
-/**
- * 过滤并保留与检索词相关的真实学术文献
- */
-export function filterPapersForQuery(papers = [], queryPlan = {}) {
-    const list = (Array.isArray(papers) ? papers : [])
-        .filter(paper => String(paper?.title || '').trim().length > 0);
-    const tokens = Array.isArray(queryPlan.relevanceTokens) ? queryPlan.relevanceTokens : [];
-    if (!queryPlan.strictRelevance || tokens.length === 0) return list;
-
-    // 1. 严格过滤：所有 token 均需在文献文本中出现（title, abstract, venue, authors）
-    const strictMatches = list.filter(paper => {
-        if (!PAPER_WORK_TYPES.has(paper?.workType)) return false;
-        const searchableText = paperSearchText(paper);
-        return tokens.every(token => searchableText.includes(token));
-    });
-
-    if (strictMatches.length >= 2) {
-        return strictMatches;
+export function scorePaperForQuery(paper,queryPlan={}) {
+    const concepts=Array.isArray(queryPlan.concepts)?queryPlan.concepts:[];
+    if(!concepts.length)return 0;
+    let score=0;
+    for(const c of concepts) {
+        const alternatives=Array.isArray(c.alternatives)?c.alternatives:[c.label];
+        if(alternatives.some(a=>alternativeMatches(paper?.title,a)))score+=1;
+        else if(alternatives.some(a=>alternativeMatches(paper?.abstract,a)))score+=0.75;
+        else if(alternatives.some(a=>alternativeMatches(paper?.venue,a)))score+=0.2;
     }
+    return score/concepts.length;
+}
 
-    // 2. 软匹配回退：若严格匹配数量较少，允许命中核心 token 或满足任一重要词元
-    const softMatches = list.filter(paper => {
-        if (!PAPER_WORK_TYPES.has(paper?.workType)) return false;
-        const searchableText = paperSearchText(paper);
-        return tokens.some(token => searchableText.includes(token));
-    });
-
-    return softMatches.length > 0 ? softMatches : strictMatches;
+// Metadata is incomplete retrieval evidence. Only invalid blank-title rows are rejected.
+export function filterPapersForQuery(papers = [], _queryPlan = {}) {
+    return (Array.isArray(papers)?papers:[]).filter(paper=>typeof paper?.title==='string' && paper.title.trim());
 }

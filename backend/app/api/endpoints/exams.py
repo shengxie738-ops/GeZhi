@@ -4,16 +4,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher
+from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher, ensure_content_teacher, ensure_content_student, student_can_access_content, teacher_student_ids, scoped_student_targets
 from app.core.config import Settings
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client
 from app.core.responses import ok
 from app.repositories.json_store import JsonStore, make_record_key
 from app.services.code_sandbox import CodeSandbox
+from app.services.assessment_policy import student_assessment_view, assert_exam_open, deadline, attempt_receipt, submission_receipt, atomic_exam_mutation, validate_exam_publication
 from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 from app.services.model_registry import build_chat_model, has_model
 from app.utils.datetime import utc_now_iso
@@ -168,7 +169,9 @@ async def get_student_exam_overview(user_id: str, payload: dict = Depends(get_au
     attempt_by_exam = {item.get("examId"): item for item in attempts}
     exam_views = []
     for exam in exams:
-        item = dict(exam)
+        if _exam_status(exam) == "draft" or not student_can_access_content(exam, user_id):
+            continue
+        item = student_assessment_view(exam)
         attempt = attempt_by_exam.get(exam.get("id"))
         if attempt:
             item["attemptId"] = attempt.get("id")
@@ -189,8 +192,8 @@ async def get_student_exam_overview(user_id: str, payload: dict = Depends(get_au
 @router.get("/exams/teacher/dashboard")
 async def get_teacher_exam_dashboard(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
-    exams = store.list_payloads("exams", "exam")
-    attempts = store.list_payloads("exams", "attempt")
+    exams = [item for item in store.list_payloads("exams", "exam") if item.get("teacherId") == payload["sub"]]
+    attempts = [item for item in store.list_payloads("exams", "attempt") if item.get("studentId") in teacher_student_ids(payload["sub"]) and item.get("examId") in {exam["id"] for exam in exams}]
     dashboard_exams = []
     for exam in exams:
         related = [item for item in attempts if item.get("examId") == exam.get("id")]
@@ -234,7 +237,7 @@ async def get_teacher_exam_dashboard(payload: dict = Depends(require_teacher), d
 
 @router.get("/exams/teacher/error-analysis")
 async def get_teacher_error_analysis(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    mistakes = JsonStore(db).list_payloads("exams", "mistake")
+    mistakes = [item for item in JsonStore(db).list_payloads("exams", "mistake") if item.get("studentId") in teacher_student_ids(payload["sub"])]
     tags: dict[str, int] = {}
     for mistake in mistakes:
         for tag in mistake.get("knowledgeTags", []) or []:
@@ -261,7 +264,7 @@ async def get_teacher_error_analysis(payload: dict = Depends(require_teacher), d
 async def get_wrong_students(question_id: str, payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     mistakes = [
         item for item in JsonStore(db).list_payloads("exams", "mistake")
-        if item.get("questionId") == question_id or item.get("id") == question_id
+        if (item.get("questionId") == question_id or item.get("id") == question_id) and item.get("studentId") in teacher_student_ids(payload["sub"])
     ]
     return ok(
         [
@@ -282,7 +285,8 @@ async def get_wrong_students(question_id: str, payload: dict = Depends(require_t
 async def create_review_task(question_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     task_id = make_record_key("review")
-    task = {"id": task_id, "taskId": task_id, "questionId": question_id, "status": "created", "createdAt": utc_now_iso(), **data}
+    targets = scoped_student_targets(data, auth["sub"])
+    task = {**data, "id": task_id, "taskId": task_id, "questionId": question_id, "status": "created", "createdAt": utc_now_iso(), "teacherId": auth["sub"], "studentIds": targets}
     JsonStore(db).upsert("exams", "review_task", task_id, task)
     return ok({"taskId": task_id, "status": "created", "createdAt": task["createdAt"]})
 
@@ -291,9 +295,15 @@ async def create_review_task(question_id: str, payload: FreePayload, auth: dict 
 async def create_exam(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     exam_id = str(data.get("id") or make_record_key("exam"))
+    existing = JsonStore(db).get_payload("exams", "exam", exam_id)
+    if existing:
+        ensure_content_teacher(existing, auth)
+        if existing.get("status") != "draft":
+            raise HTTPException(status_code=409, detail="Published exam questions are immutable")
     exam = {
         **{k: v for k, v in data.items() if k not in ("id", "title", "subject", "status", "startsAt", "durationMinutes", "location", "rules", "questionTypes", "programmingProblems", "objectiveQuestions")},
         "id": exam_id,
+        "teacherId": auth["sub"],
         "title": data.get("title") or "Untitled exam",
         "subject": data.get("subject") or "",
         "status": data.get("status") or "draft",
@@ -305,50 +315,57 @@ async def create_exam(payload: FreePayload, auth: dict = Depends(require_teacher
         "programmingProblems": data.get("programmingProblems") or [],
         "objectiveQuestions": data.get("objectiveQuestions") or [],
     }
+    validate_exam_publication(exam)
     return ok(JsonStore(db).upsert("exams", "exam", exam_id, exam, status=exam["status"]))
 
 
 @router.get("/exams/{exam_id}")
 async def get_exam_detail(exam_id: str, user_id: str = "guest_user", payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    user_id = payload["sub"] if user_id == "guest_user" else user_id
     ensure_self_or_teacher(user_id, payload)
-    exam = JsonStore(db).get_payload("exams", "exam", exam_id) or {
-        "id": exam_id,
-        "title": "Exam not found",
-        "status": "draft",
-        "programmingProblems": [],
-        "objectiveQuestions": [],
-    }
-    attempt = JsonStore(db).get_payload("exams", "attempt", f"{exam_id}:{user_id}", owner_id=user_id)
+    store = JsonStore(db)
+    exam = store.get_payload("exams", "exam", exam_id)
+    if payload.get("role") == "teacher":
+        ensure_content_teacher(exam, payload)
+    else:
+        ensure_content_student(exam, user_id)
+        if _exam_status(exam) == "draft":
+            raise HTTPException(status_code=409, detail="Exam is not published")
+        exam = student_assessment_view(exam)
+    attempt = store.get_payload("exams", "attempt", f"{exam_id}:{user_id}", owner_id=user_id)
     if attempt:
         exam["attemptId"] = attempt.get("id")
         exam["answers"] = attempt.get("answers", {})
+        exam["attemptStatus"] = attempt.get("status")
     return ok(exam)
 
 
 @router.post("/exams/{exam_id}/attempts")
+@atomic_exam_mutation
 async def start_exam_attempt(exam_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     data = payload.model_dump()
-    user_id = str(data.get("userId") or data.get("studentId") or data.get("username") or "guest_user")
+    user_id = str(data.get("userId") or data.get("studentId") or data.get("username") or auth["sub"])
     ensure_self_or_teacher(user_id, auth)
-    exam = JsonStore(db).get_payload("exams", "exam", exam_id) or {}
-    attempt_id = str(data.get("attemptId") or f"{exam_id}:{user_id}")
+    if user_id != auth["sub"]:
+        raise HTTPException(status_code=403, detail="Only the student can start an attempt")
+    store = JsonStore(db)
+    exam = ensure_content_student(store.get_payload("exams", "exam", exam_id), user_id)
+    attempt_id = f"{exam_id}:{user_id}"
+    previous = store.get_payload("exams", "attempt", attempt_id, owner_id=user_id)
+    if previous:
+        return ok(attempt_receipt(exam, previous))
+    assert_exam_open(exam)
     attempt = {
-        "id": attempt_id,
-        "attemptId": attempt_id,
-        "examId": exam_id,
-        "examTitle": exam.get("title", ""),
-        "studentId": user_id,
+        "id": attempt_id, "attemptId": attempt_id, "examId": exam_id,
+        "examTitle": exam.get("title", ""), "studentId": user_id,
         "studentName": data.get("studentName") or user_id,
-        "status": "started",
-        "answers": {},
-        "progress": 0,
-        "startedAt": utc_now_iso(),
+        "status": "started", "answers": {}, "progress": 0, "startedAt": utc_now_iso(),
     }
-    JsonStore(db).upsert("exams", "attempt", attempt_id, attempt, owner_id=user_id, status="started")
-    return ok({"attemptId": attempt_id, "startedAt": attempt["startedAt"], "status": "started"})
-
+    store.upsert("exams", "attempt", attempt_id, attempt, owner_id=user_id, status="started")
+    return ok(attempt_receipt(exam, attempt))
 
 @router.put("/exams/attempts/{attempt_id}/answers")
+@atomic_exam_mutation
 async def save_answer(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
     attempt = store.get_payload("exams", "attempt", attempt_id)
@@ -356,18 +373,16 @@ async def save_answer(attempt_id: str, payload: FreePayload, auth: dict = Depend
         raise HTTPException(status_code=404, detail="Attempt not found")
     ensure_self_or_teacher(str(attempt.get("studentId") or ""), auth)
         
-    exam = store.get_payload("exams", "exam", attempt.get("examId"))
-    if exam and exam.get("startsAt"):
-        try:
-            starts_at = datetime.fromisoformat(exam["startsAt"].replace("Z", "+00:00"))
-            duration = int(exam.get("durationMinutes", 60))
-            ends_at = starts_at + timedelta(minutes=duration, seconds=30)
-            if datetime.now(starts_at.tzinfo) > ends_at:
-                raise HTTPException(status_code=403, detail="考试已结束，无法继续保存答案")
-        except (ValueError, AttributeError, TypeError):
-            pass
+    if attempt.get("studentId") != auth["sub"]:
+        raise HTTPException(status_code=403, detail="Only the student can save answers")
+    if attempt.get("status") != "started":
+        raise HTTPException(status_code=409, detail="Submitted answers are immutable")
+    exam = ensure_content_student(store.get_payload("exams", "exam", attempt.get("examId")), attempt["studentId"])
+    assert_exam_open(exam, attempt)
 
     data = payload.model_dump()
+    if "answers" in data and not isinstance(data["answers"], dict):
+        raise HTTPException(status_code=422, detail="answers must be an object")
     answers = attempt.get("answers") or {}
     question_id = data.get("questionId") or data.get("id")
     if question_id:
@@ -376,10 +391,11 @@ async def save_answer(attempt_id: str, payload: FreePayload, auth: dict = Depend
         answers.update(data.get("answers", {}))
     attempt.update({"answers": answers, "lastSavedAt": utc_now_iso(), "progress": data.get("progress", attempt.get("progress", 0))})
     store.upsert("exams", "attempt", attempt_id, attempt, owner_id=attempt.get("studentId", ""), status=attempt.get("status", "started"))
-    return ok({"status": "saved", "savedAt": attempt["lastSavedAt"]})
+    return ok({"status": "saved", "savedAt": attempt["lastSavedAt"], "attemptId": attempt_id})
 
 
 @router.post("/exams/attempts/{attempt_id}/submit")
+@atomic_exam_mutation
 async def submit_attempt(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
     attempt = store.get_payload("exams", "attempt", attempt_id)
@@ -387,20 +403,25 @@ async def submit_attempt(attempt_id: str, payload: FreePayload, auth: dict = Dep
         raise HTTPException(status_code=404, detail="Attempt not found")
     ensure_self_or_teacher(str(attempt.get("studentId") or ""), auth)
         
-    exam = store.get_payload("exams", "exam", attempt.get("examId"))
-    if exam and exam.get("startsAt"):
-        try:
-            starts_at = datetime.fromisoformat(exam["startsAt"].replace("Z", "+00:00"))
-            duration = int(exam.get("durationMinutes", 60))
-            ends_at = starts_at + timedelta(minutes=duration, seconds=120)
-            if datetime.now(starts_at.tzinfo) > ends_at:
-                attempt["abnormal"] = True
-        except (ValueError, AttributeError, TypeError):
-            pass
+    if attempt.get("studentId") != auth["sub"]:
+        raise HTTPException(status_code=403, detail="Only the student can finalize an attempt")
+    if attempt.get("status") == "submitted":
+        return ok(submission_receipt(attempt))
+    if attempt.get("status") != "started":
+        raise HTTPException(status_code=409, detail="Invalid attempt state")
+    exam = ensure_content_student(store.get_payload("exams", "exam", attempt.get("examId")), attempt["studentId"])
+    end = deadline(exam, attempt)
+    late = bool(end and datetime.now(timezone.utc) >= end) or _exam_status(exam) == "completed"
+    if not late:
+        assert_exam_open(exam, attempt)
+    attempt["late"] = late
+    attempt["abnormal"] = late
 
     data = payload.model_dump()
     # 白名单提取：仅允许客户端更新 answers 字段，保护关键字段不被篡改
-    if "answers" in data:
+    if "answers" in data and not late:
+        if not isinstance(data["answers"], dict):
+            raise HTTPException(status_code=422, detail="answers must be an object")
         attempt["answers"] = data["answers"]
     attempt.update({"status": "submitted", "submittedAt": utc_now_iso(), "progress": 100})
 
@@ -450,6 +471,9 @@ async def submit_attempt(attempt_id: str, payload: FreePayload, auth: dict = Dep
     attempt["objectiveScore"] = objective_score
     attempt["correctCount"] = correct_count
     attempt["wrongCount"] = len(wrong_questions)
+    attempt["programmingStatus"] = "pending_judge" if exam.get("programmingProblems") else "not_required"
+    attempt["totalScore"] = None if exam.get("programmingProblems") else objective_score
+    attempt["score"] = attempt["totalScore"]
 
     store.upsert("exams", "attempt", attempt_id, attempt, owner_id=attempt.get("studentId", ""), status="submitted")
 
@@ -516,23 +540,20 @@ async def submit_attempt(attempt_id: str, payload: FreePayload, auth: dict = Dep
     except Exception:
         pass
 
-    return ok({
-        "status": "submitted",
-        "submittedAt": attempt["submittedAt"],
-        "objectiveScore": objective_score,
-        "correctCount": correct_count,
-        "wrongCount": len(wrong_questions),
-        "programmingStatus": "pending_judge",
-    })
+    return ok(submission_receipt(attempt))
 
 
 @router.post("/exams/{exam_id}/programming-problems")
+@atomic_exam_mutation
 async def create_programming_problem(exam_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     problem_id = str(data.get("id") or make_record_key("prog"))
     problem = {"id": problem_id, "examId": exam_id, **data}
     store = JsonStore(db)
     exam = store.get_payload("exams", "exam", exam_id)
+    ensure_content_teacher(exam, auth)
+    if exam.get("status") != "draft":
+        raise HTTPException(status_code=409, detail="Published exam questions are immutable")
     if exam:
         problems = exam.get("programmingProblems") or []
         problems.append(problem)
@@ -543,11 +564,13 @@ async def create_programming_problem(exam_id: str, payload: FreePayload, auth: d
 
 @router.get("/exams/{exam_id}/submissions")
 async def get_exam_submissions(exam_id: str, payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    attempts = [item for item in JsonStore(db).list_payloads("exams", "attempt") if item.get("examId") == exam_id]
+    ensure_content_teacher(JsonStore(db).get_payload("exams", "exam", exam_id), payload)
+    attempts = [item for item in JsonStore(db).list_payloads("exams", "attempt") if item.get("examId") == exam_id and item.get("studentId") in teacher_student_ids(payload["sub"])]
     return ok(attempts)
 
 
 @router.post("/exams/attempts/{attempt_id}/judge-programming")
+@atomic_exam_mutation
 async def judge_programming(attempt_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     """对提交中的编程题进行自动评测"""
     store = JsonStore(db)
@@ -555,7 +578,16 @@ async def judge_programming(attempt_id: str, payload: FreePayload, auth: dict = 
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
 
+    ensure_self_or_teacher(str(attempt.get("studentId") or ""), auth)
+    if attempt.get("status") != "submitted":
+        raise HTTPException(status_code=409, detail="Finalize the attempt before grading")
+    if attempt.get("programmingStatus") == "graded":
+        return ok({"programmingScore": attempt.get("programmingScore"), "totalScore": attempt.get("totalScore"), "results": attempt.get("programmingResults", [])})
     exam = store.get_payload("exams", "exam", attempt.get("examId"))
+    if auth.get("role") == "teacher":
+        ensure_content_teacher(exam, auth)
+    else:
+        ensure_content_student(exam, attempt["studentId"])
     programming_problems = (exam or {}).get("programmingProblems") or []
     answers = attempt.get("answers") or {}
 
@@ -581,6 +613,8 @@ async def judge_programming(attempt_id: str, payload: FreePayload, auth: dict = 
             continue
 
         result = sandbox.run(student_code, language, test_cases)
+        if result.get("available") is False or result.get("status") == "unavailable":
+            return ok({"status": "unavailable", "available": False, "errorCode": "execution_unavailable", "error": result.get("error"), "programmingScore": None, "totalScore": None, "results": []})
         if result.get("passed", 0) > 0 and result.get("total", 0) > 0:
             score_per_case = (problem.get("score", 20)) / result["total"]
             programming_score += int(result["passed"] * score_per_case)
@@ -590,13 +624,15 @@ async def judge_programming(attempt_id: str, payload: FreePayload, auth: dict = 
             "passed": result.get("passed", 0),
             "total": result.get("total", 0),
             "status": "accepted" if result.get("passed") == result.get("total") else "partial" if result.get("passed", 0) > 0 else "wrong_answer",
-            "details": result.get("results", []),
+            "details": [],  # Hidden tests and expected outputs are never returned to students.
             "error": result.get("error"),
         })
 
+    attempt["programmingStatus"] = "graded"
     attempt["programmingScore"] = programming_score
     attempt["programmingResults"] = programming_results
     attempt["totalScore"] = (attempt.get("objectiveScore") or 0) + programming_score
+    attempt["score"] = attempt["totalScore"]
 
     store.upsert("exams", "attempt", attempt_id, attempt, owner_id=attempt.get("studentId", ""), status=attempt.get("status", "submitted"))
 
@@ -640,9 +676,7 @@ async def get_student_review_tasks(user_id: str, payload: dict = Depends(get_aut
     # 讲评任务通常面向全班，但也可能针对特定学生
     visible_tasks = [
         task for task in all_tasks
-        if not task.get("studentIds")  # 无指定学生 = 全班任务
-        or user_id in (task.get("studentIds") or [])
-        or user_id == task.get("targetStudentId")
+        if student_can_access_content(task, user_id)
     ]
     return ok({"total": len(visible_tasks), "tasks": visible_tasks})
 
@@ -650,12 +684,14 @@ async def get_student_review_tasks(user_id: str, payload: dict = Depends(get_aut
 VALID_STATUS_TRANSITIONS = {
     "draft": ["scheduled"],
     "scheduled": ["running", "draft"],
-    "running": ["completed", "scheduled"],
-    "completed": ["running"],
+    "running": ["completed"],
+    "active": ["completed"],
+    "completed": [],
 }
 
 
 @router.patch("/exams/{exam_id}/status")
+@atomic_exam_mutation
 async def update_exam_status(exam_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """考试状态管理：draft → scheduled → running → completed"""
     store = JsonStore(db)
@@ -663,6 +699,7 @@ async def update_exam_status(exam_id: str, payload: FreePayload, auth: dict = De
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
+    ensure_content_teacher(exam, auth)
     data = payload.model_dump()
     new_status = data.get("status")
     current_status = exam.get("status", "draft")
@@ -674,6 +711,7 @@ async def update_exam_status(exam_id: str, payload: FreePayload, auth: dict = De
             detail=f"不允许的状态转换: {current_status} → {new_status}。允许的转换: {allowed}",
         )
 
+    validate_exam_publication({**exam, "status": new_status})
     exam["status"] = new_status
     if new_status == "completed":
         exam["endsAt"] = utc_now_iso()
@@ -782,16 +820,19 @@ async def update_mistake(
     existing = JsonStore(db).get_payload("exams", "mistake", mistake_id)
     if existing:
         ensure_self_or_teacher(str(existing.get("studentId") or ""), auth)
-    updated = JsonStore(db).patch("exams", "mistake", mistake_id, {**payload.model_dump(), "updatedAt": utc_now_iso()})
+    changes = {key: value for key, value in payload.model_dump().items() if key in {"mastered", "notes", "reviewNote"}}
+    if "mastered" in changes and not isinstance(changes["mastered"], bool):
+        raise HTTPException(status_code=422, detail="mastered must be a boolean")
+    updated = JsonStore(db).patch("exams", "mistake", mistake_id, {**changes, "updatedAt": utc_now_iso()})
     if updated is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
-    if bool(updated.get("mastered")):
+    if bool(updated.get("mastered")) and not bool((existing or {}).get("mastered")):
         try:
             await publish_learning_activity_safely(db, {
                 "student_id": str(updated.get("studentId") or "guest_user"), "source_module": "exams",
                 "content_type": "WRONG_QUESTION", "content_id": str(updated.get("questionId") or mistake_id),
                 "attempt_id": f"correction:{mistake_id}:{updated.get('updatedAt')}",
-                "result_payload": {"passed": True, "score": 100, "mastered": True, "mistake_id": mistake_id},
+                "result_payload": {"mastered": True, "self_reported": True, "mistake_id": mistake_id},
                 "status": "COMPLETED", "occurred_at": updated.get("updatedAt") or utc_now_iso(),
             })
         except Exception:

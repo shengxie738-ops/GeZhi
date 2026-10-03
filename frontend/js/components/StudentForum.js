@@ -1,3 +1,4 @@
+import { renderMarkdown } from '../utils/safeRendering.js';
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { forumApi } from '../api/forum.js';
 import { toBackendAssetUrl } from '../config/env.js';
@@ -326,20 +327,8 @@ export default {
             onBeforeUnmount(() => clearInterval(timer));
         });
 
-        // 格式化详情正文的 Markdown (用于简单渲染，带 marked)
-        const formatMarkdown = (text) => {
-            let parsed = text;
-            if (window.marked && typeof window.marked.parse === 'function') {
-                parsed = window.marked.parse(text);
-            } else {
-                // 换行简单转换
-                parsed = text.replace(/\n/g, '<br>');
-            }
-            if (window.DOMPurify && typeof window.DOMPurify.sanitize === 'function') {
-                return window.DOMPurify.sanitize(parsed);
-            }
-            return parsed;
-        };
+        // All forum content uses the same local fail-closed rendering boundary.
+        const formatMarkdown = renderMarkdown;
 
         // ==================== 头像 URL 处理 ====================
         const getFullAvatarUrl = (path, author) => {

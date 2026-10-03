@@ -41,15 +41,32 @@ export function createWorkspaceMessageSender(deps = {}) {
         searchPapers = async () => false,
         clearInput = () => {},
         recordPaperWork = async () => {},
-        showPaperResults = () => {}
+        showPaperResults = () => {},
+        getRouteGeneration = () => '',
+        getInputRevision = () => getInput(),
+        capturePaperTransaction = () => ({}),
+        getPaperSearchSnapshot = () => null
     } = deps;
 
     let isRouting = false;
+    let routingGeneration = null;
+    let routingToken = null;
 
     return async function sendMessage(overrideText = null, options = {}) {
+        const generation = getRouteGeneration();
         if (isRouting) {
-            return false;
+            if (routingGeneration === generation) return false;
+            // Navigation/account cancellation releases routing without waiting on obsolete transport.
+            isRouting = false;
         }
+        const token = {};
+        routingToken = token;
+        routingGeneration = generation;
+        const submittedInput = String(getInput() || '');
+        const inputRevision = getInputRevision();
+        const transaction = capturePaperTransaction();
+        const isCurrent = () => routingToken === token && getRouteGeneration() === generation;
+        const release = () => { if (routingToken === token) isRouting = false; };
 
         // Vue 的裸事件处理器会把 PointerEvent/KeyboardEvent 作为第一个参数传入。
         // 仅字符串可作为程序化查询覆盖值，其他类型一律回退到输入框真实内容。
@@ -71,7 +88,7 @@ export function createWorkspaceMessageSender(deps = {}) {
                     isRouting = true;
                     return await sendChat(text, options);
                 } finally {
-                    isRouting = false;
+                    release();
                 }
             }
 
@@ -85,25 +102,27 @@ export function createWorkspaceMessageSender(deps = {}) {
                 isRouting = true;
                 const success = await searchPapers(text, options);
                 // 只有成功才沉淀工作记录并清空输入框，失败时保留查询词供用户修正
-                if (success) {
+                if (success && isCurrent()) {
+                    const searchSnapshot = getPaperSearchSnapshot();
                     if (typeof recordPaperWork === 'function') {
                         try {
-                            await recordPaperWork(text, options);
+                            await recordPaperWork(text, { ...options, transaction, searchSnapshot });
                         } catch (e) {
                             console.warn('[Workspace] recordPaperWork failed:', e);
                         }
                     }
+                    if (!isCurrent()) return true;
                     if (typeof showPaperResults === 'function') {
                         showPaperResults();
                     }
-                    if (typeof clearInput === 'function') {
+                    if (typeof clearInput === 'function' && submittedInput.trim() === text && String(getInput() || '') === submittedInput && getInputRevision() === inputRevision) {
                         clearInput();
                     }
                     return true;
                 }
                 return false;
             } finally {
-                isRouting = false;
+                release();
             }
         }
 
@@ -112,7 +131,7 @@ export function createWorkspaceMessageSender(deps = {}) {
             isRouting = true;
             return await sendChat(text, options);
         } finally {
-            isRouting = false;
+            release();
         }
     };
 }

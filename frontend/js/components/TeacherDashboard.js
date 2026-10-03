@@ -1,3 +1,4 @@
+import { analyticsApi } from '../api/analytics.js';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { homeworkApi } from '../api/homework.js';
 import { forumApi } from '../api/forum.js';
@@ -15,18 +16,12 @@ export default {
         const currentDate = ref('');
         
         // 模块 A 考勤状态
-        const attendanceRate = ref(96.5);
+        const attendanceRate = ref(null);
         const isSigning = ref(false);
-        const absentStudents = ref([
-            { name: '张强', status: '缺勤' },
-            { name: '赵六', status: '请假' }
-        ]);
+        const absentStudents = ref([]);
 
         // 模块 B AI 预警干预状态
-        const alertStudents = ref([
-            { name: '黄子墨', reason: '作业连续 3 次未交', type: 'homework', recordId: 'record-1', avatarSeed: 'zimo' },
-            { name: '赵一诺', reason: '考试成绩下滑明显 (↓ 25%)', type: 'exam', recordId: 'record-2', avatarSeed: 'yinuo' }
-        ]);
+        const alertStudents = ref([]);
         const showInterventionModal = ref(false);
         const activeInterventionStudent = ref(null);
         const selectedInterventionType = ref('homework'); // homework, mistake
@@ -35,10 +30,7 @@ export default {
         const latestForumQuestions = ref([]);
 
         // 今日授课日程
-        const todaySchedule = ref([
-            { id: 1, time: '09:00 - 10:35', name: '数据结构与算法', className: '计科 2301班', room: '东302', status: 'pending' },
-            { id: 2, time: '14:00 - 15:35', name: '高级前端程序设计', className: '计科 2302班', room: '西201', status: 'completed' }
-        ]);
+        const todaySchedule = ref([]);
 
         // 待批改作业/阅卷任务
         const pendingHomeworks = ref([]);
@@ -77,43 +69,8 @@ export default {
         };
 
         // 考勤发起签到
-        const startCheckIn = (schedule) => {
-            if (schedule.status === 'completed' || isSigning.value) return;
-            schedule.status = 'signing';
-            isSigning.value = true;
-            emit('show-toast', `已成功发起 ${schedule.name} 的课堂签到`, 'success');
-            
-            let step = 0;
-            const startRate = attendanceRate.value;
-            const targetRate = 100;
-            
-            const interval = setInterval(() => {
-                step++;
-                // 模拟百分比上升至 100%
-                attendanceRate.value = Math.min(targetRate, parseFloat((startRate + (targetRate - startRate) * (step / 10)).toFixed(1)));
-                if (step >= 10) {
-                    clearInterval(interval);
-                    schedule.status = 'completed';
-                    isSigning.value = false;
-                    // 移除一个缺勤的学生，代表其已补签到课
-                    if (absentStudents.value.length > 0) {
-                        const arrived = absentStudents.value.pop();
-                        emit('show-toast', `${arrived.name} 已补签到课`, 'info');
-                    }
-                    emit('show-toast', '签到已结束，本节课出勤率已更新为 100%', 'success');
-                }
-            }, 200);
-        };
-
-        // 考勤催签
-        const nudgeAbsentStudents = () => {
-            if (absentStudents.value.length === 0) {
-                emit('show-toast', '今日全员已出勤，无需催签', 'info');
-                return;
-            }
-            const names = absentStudents.value.map(s => s.name).join('、');
-            emit('show-toast', `已通过智能终端向缺勤学生（${names}）发送一键催签提醒`, 'success');
-        };
+        const startCheckIn = () => emit('show-toast', '考勤服务未启用，无法发起签到', 'warning');
+        const nudgeAbsentStudents = () => emit('show-toast', '考勤提醒服务未启用，未发送提醒', 'warning');
 
         // 触发 AI 干预弹窗
         const openIntervention = (student) => {
@@ -123,34 +80,48 @@ export default {
         };
 
         // 执行 AI 决策干预
-        const executeIntervention = () => {
+        const isDispatching = ref(false);
+        const executeIntervention = async () => {
             const student = activeInterventionStudent.value;
-            const type = selectedInterventionType.value;
-            
-            // 广播自定义干预事件，主应用 main.js 捕获后会注入到学生端的 homeworkList 和 examAlerts 中实现闭环
-            window.dispatchEvent(new CustomEvent('teacher-intervention-broadcast', {
-                detail: {
-                    type: type === 'homework' ? 'homework' : 'mistake',
-                    topic: type === 'homework' ? '【AI协同】Proxy 核心原理专项改错' : '【错题订正】双向循环链表空悬指针改错',
-                    payload: {
-                        title: type === 'homework' ? 'Proxy 核心原理专项改错' : '双向循环链表空悬指针改错',
-                        subject: '数据结构与算法',
-                        deadline: '今天 23:59',
-                        desc: type === 'homework'
-                            ? '根据教师发起的学情干预，请针对 Proxy getter 的 receiver 参数绑定进行详细推导与上机调试。'
-                            : '根据教师发起的学情干预，请完成双向链表删除操作中指针空悬的防范编程题。',
-                        priority: 'high',
-                        recordId: student.recordId
-                    }
-                }
-            }));
-
-            emit('show-toast', `已向学生 ${student.name} 下发${type === 'homework' ? '智能补弱作业' : '错题订正任务'}`, 'success');
-            
-            // 移除该预警学生，以示已干预处理
-            alertStudents.value = alertStudents.value.filter(s => s.name !== student.name);
-            showInterventionModal.value = false;
-            activeInterventionStudent.value = null;
+            if (isDispatching.value) return;
+            const studentIds = student?.targetStudentIds || (student?.studentId ? [student.studentId] : []);
+            if (!studentIds.length) {
+                emit('show-toast', '缺少可验证的学生账号，无法下发任务', 'warning');
+                return;
+            }
+            isDispatching.value = true;
+            try {
+                const result = await analyticsApi.dispatchStudentInteraction({
+                    type: selectedInterventionType.value,
+                    title: student.title || '教师学习干预',
+                    target: { scope: studentIds.length === 1 ? 'student' : 'group', label: student.name, studentIds },
+                    source: { module: 'teacher-dashboard', adviceId: student.recordId },
+                    payload: { desc: student.reason, subject: student.subject || '', priority: 'normal' }
+                });
+                if (!result?.record?.id) throw new Error('服务器未返回任务回执');
+                emit('show-toast', '任务已保存，可在学情决策台查看下发记录', 'success');
+                showInterventionModal.value = false;
+                activeInterventionStudent.value = null;
+            } catch (error) {
+                emit('show-toast', error.message || '任务下发失败', 'error');
+            } finally { isDispatching.value = false; }
+        };
+        const interventionError = ref('');
+        const loadInterventions = async () => {
+            try {
+                const items = await analyticsApi.getActionQueue();
+                alertStudents.value = (Array.isArray(items) ? items : []).map(item => {
+                    const ids = [...new Set((item.studentId ? [item.studentId] : (item.studentIds || []))
+                        .filter(id => typeof id === 'string' && id.trim()))];
+                    return { ...item, targetStudentIds: ids,
+                        name: ids.length > 1 ? `已分配学生组（${ids.length}人）` : (item.studentName || '指定学生'),
+                        recordId: item.id, avatarSeed: item.id };
+                }).filter(item => item.targetStudentIds.length);
+                interventionError.value = '';
+            } catch (error) {
+                alertStudents.value = [];
+                interventionError.value = '无法加载学情预警，请到学情决策台重试';
+            }
         };
 
         // 论坛快捷就地回帖
@@ -233,13 +204,14 @@ export default {
             // 获取当前登录人
             const userStr = localStorage.getItem('currentUser');
             if (userStr) {
-                currentUser.value = JSON.parse(userStr);
+                try { currentUser.value = JSON.parse(userStr); } catch { currentUser.value = null; }
             }
             
             updateDateTime();
             timer = setInterval(updateDateTime, 1000);
             
             await loadOverview();
+            await loadInterventions();
             await loadLatestForumQuestions();
             
             // GSAP Stagger 入场动效
@@ -271,6 +243,9 @@ export default {
 
         return {
             loading,
+            interventionError,
+            isDispatching,
+            loadInterventions,
             currentTime,
             currentDate,
             attendanceRate,
@@ -305,7 +280,7 @@ export default {
                         </h2>
                         <p class="text-sm text-[#b91c1c] font-medium mt-2 leading-relaxed flex items-center gap-1">
                             <span class="inline-block w-2 h-2 rounded-full bg-[#b91c1c] animate-pulse"></span>
-                            今日简报：今日您有 {{ todaySchedule.length }} 场授课安排，有 {{ pendingHomeworks.length }} 门作业急需阅卷，另有 {{ latestForumQuestions.length }} 条论坛求助未回复。
+                            课表与考勤服务尚未接入。有 {{ pendingHomeworks.length }} 门作业急需阅卷，另有 {{ latestForumQuestions.length }} 条论坛求助未回复。
                         </p>
                     </div>
                     <div class="flex flex-col items-start lg:items-end text-slate-500 font-mono text-xs select-none">
@@ -410,7 +385,7 @@ export default {
                                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-1.5">
                                     <i class="ph ph-chart-pie-slice text-base text-[#1c2b38]"></i> 班级到课签到监控
                                 </h3>
-                                <button @click="nudgeAbsentStudents" class="px-4.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-[#b91c1c] font-semibold tracking-wider rounded-full text-xs border border-rose-200 transition-colors flex items-center gap-1 shadow-sm whitespace-nowrap shrink-0">
+                                <button disabled title="考勤服务未启用" @click="nudgeAbsentStudents" class="px-4.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-[#b91c1c] font-semibold tracking-wider rounded-full text-xs border border-rose-200 transition-colors flex items-center gap-1 shadow-sm whitespace-nowrap shrink-0">
                                     <i class="ph ph-bell"></i> 一键催签
                                 </button>
                             </div>
@@ -428,14 +403,14 @@ export default {
                                             class="attendance-circle-path transition-all duration-700 ease-out" />
                                     </svg>
                                     <div class="absolute flex flex-col items-center select-none">
-                                        <span class="text-xl font-extrabold font-mono text-[#1c2b38]" style="font-family: 'Barlow Condensed', sans-serif;">{{ attendanceRate }}%</span>
+                                        <span class="text-xl font-extrabold font-mono text-[#1c2b38]" style="font-family: 'Barlow Condensed', sans-serif;">{{ attendanceRate === null ? '未接入' : attendanceRate + '%' }}</span>
                                         <span class="text-[11px] text-slate-400">当前出勤</span>
                                     </div>
                                 </div>
                                 <div class="flex-1 text-sm">
                                     <p class="font-bold text-slate-700">缺勤/请假学生名单：</p>
                                     <div v-if="absentStudents.length === 0" class="mt-2 text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                                        <i class="ph ph-check-circle"></i> 全班到齐，出勤率 100%
+                                        <i class="ph ph-check-circle"></i> 考勤服务未接入，暂无可验证的出勤数据
                                     </div>
                                     <div v-else class="mt-2 flex flex-wrap gap-1.5">
                                         <span v-for="stu in absentStudents" :key="stu.name" class="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-slate-100 border border-slate-200/60 text-xs text-slate-600 font-medium">
@@ -447,6 +422,7 @@ export default {
                             </div>
                         </div>
 
+                        <p role="status" v-if="interventionError" class="text-amber-700">{{ interventionError }}</p>
                         <!-- 模块 B：AI 学情异常预警与干预 -->
                         <div class="dashboard-card bg-white border border-slate-200 shadow-sm p-8 rounded-2xl">
                             <h3 class="text-base font-bold text-slate-800 flex items-center gap-1.5 mb-4">
@@ -454,10 +430,10 @@ export default {
                             </h3>
                             
                             <div v-if="alertStudents.length === 0" class="py-6 text-center text-xs text-slate-400">
-                                <i class="ph ph-smiley-wink text-base text-emerald-500"></i> 当前暂无触发学情告警的学生
+                                <i class="ph ph-smiley-wink text-base text-emerald-500"></i> {{ interventionError ? '学情预警暂不可用' : '当前没有可下发的学情预警' }}
                             </div>
                             <div v-else class="flex flex-col gap-4">
-                                <div v-for="student in alertStudents" :key="student.name" class="p-4 bg-slate-50/60 rounded-xl flex items-center justify-between gap-4 transition-all hover:bg-slate-100/60">
+                                <div v-for="student in alertStudents" :key="student.recordId" class="p-4 bg-slate-50/60 rounded-xl flex items-center justify-between gap-4 transition-all hover:bg-slate-100/60">
                                     <div class="flex items-center gap-3.5 min-w-0">
                                         <div class="w-9.5 h-9.5 rounded-full bg-[#1c2b38]/10 text-[#1c2b38] flex items-center justify-center font-bold text-sm shrink-0 select-none">
                                             {{ student.name.charAt(0) }}
@@ -560,7 +536,7 @@ export default {
 
                         <div class="flex justify-end gap-2 border-t border-slate-100 pt-4 mt-1">
                             <button @click="showInterventionModal = false" class="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold transition-all">取消</button>
-                            <button @click="executeIntervention" class="px-4 py-2 bg-[#b91c1c] hover:bg-[#991b1b] text-white rounded-xl text-xs font-bold transition-all shadow-sm">下发干预指令</button>
+                            <button @click="executeIntervention" :disabled="isDispatching" class="px-4 py-2 bg-[#b91c1c] hover:bg-[#991b1b] text-white rounded-xl text-xs font-bold transition-all shadow-sm">下发干预指令</button>
                         </div>
                     </div>
                 </div>

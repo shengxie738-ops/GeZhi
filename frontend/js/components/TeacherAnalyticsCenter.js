@@ -74,45 +74,15 @@ export default {
             if (!overviewStats.value) return [];
             const activeData = overviewStats.value.hourlyActiveData || [];
             
-            // 24小时专注力特征
-            const focusData = [
-                45, 30, 20, 0, 0, 15, 50, 75, 80, 85, 90, 85, // 0h - 11h
-                60, 55, 75, 88, 80, 65, 85, 92, 95, 88, 70, 50  // 12h - 23h
-            ];
-            
-            // 24小时学生端活跃倾向特征行为行为 (对应学生端五大组件)
-            const behaviors = [
-                { main: 'mistake', desc: '错题复习', rates: { mistake: 60, forum: 20, sandbox: 20 } }, 
-                { main: 'forum', desc: '论坛闲聊', rates: { forum: 80, mistake: 20 } }, 
-                { main: 'forum', desc: '论坛求助', rates: { forum: 90, mistake: 10 } }, 
-                { main: 'offline', desc: '离线', rates: {} }, 
-                { main: 'offline', desc: '离线', rates: {} }, 
-                { main: 'offline', desc: '离线', rates: {} }, 
-                { main: 'forum', desc: '晨间答疑', rates: { forum: 70, homework: 30 } }, 
-                { main: 'homework', desc: '早读作业', rates: { homework: 80, forum: 20 } }, 
-                { main: 'homework', desc: '随堂作业', rates: { homework: 70, sandbox: 30 } }, 
-                { main: 'homework', desc: '作业诊断', rates: { homework: 60, forum: 20, sandbox: 20 } }, 
-                { main: 'sandbox', desc: '沙箱调试', rates: { sandbox: 50, homework: 40, forum: 10 } }, 
-                { main: 'exam', desc: '期末模拟考', rates: { exam: 80, sandbox: 20 } }, 
-                { main: 'forum', desc: '午休闲聊', rates: { forum: 85, mistake: 15 } }, 
-                { main: 'forum', desc: '学术讨论', rates: { forum: 70, homework: 30 } }, 
-                { main: 'homework', desc: '课后练习', rates: { homework: 75, sandbox: 25 } }, 
-                { main: 'homework', desc: '作业协同诊断', rates: { homework: 60, sandbox: 30, forum: 10 } }, 
-                { main: 'sandbox', desc: '代码探索', rates: { sandbox: 60, homework: 30, forum: 10 } }, 
-                { main: 'forum', desc: '课后求助论坛', rates: { forum: 75, homework: 25 } }, 
-                { main: 'homework', desc: '课后复习', rates: { homework: 70, mistake: 30 } }, 
-                { main: 'exam', desc: '在线编程挑战', rates: { exam: 70, sandbox: 30 } }, 
-                { main: 'exam', desc: '算法高难短测', rates: { exam: 80, homework: 10, sandbox: 10 } }, 
-                { main: 'homework', desc: '知识通关', rates: { homework: 50, mistake: 30, sandbox: 20 } }, 
-                { main: 'mistake', desc: 'AI 错因分析', rates: { mistake: 70, forum: 20, sandbox: 10 } }, 
-                { main: 'mistake', desc: '错题巩固订正', rates: { mistake: 80, forum: 20 } }, 
-            ];
-            
+            // Only measured server data can describe attention or behavior.
+            const focusData = overviewStats.value.hourlyFocusData || [];
+            const behaviors = overviewStats.value.hourlyBehaviors || [];
+
             const records = interactionRecords.value || [];
             
             return activeData.map((activeCount, hour) => {
-                const focus = focusData[hour] || 0;
-                const behavior = behaviors[hour] || { main: 'offline', desc: '离线', rates: {} };
+                const focus = Number.isFinite(focusData[hour]) ? focusData[hour] : null;
+                const behavior = behaviors[hour] || { main: 'unknown', desc: '暂无行为证据', rates: {} };
                 
                 // 查找该小时段下发布的任务
                 const matchedTasks = records.filter(record => {
@@ -125,21 +95,9 @@ export default {
                     return false;
                 });
                 
-                // 判断是否是黄金推荐时段
-                const isGolden = hour === 10 || hour === 19 || hour === 20;
-                
-                // 推荐文本
-                let aiRec = "常规下发窗口：可正常安排各类型教学辅导活动。";
-                if (isGolden) {
-                    aiRec = "黄金发布窗口：专注度与活跃度均达全天顶峰，适合推送【Monaco编程考试】或【高难度课后作业】。";
-                } else if (hour >= 22 || hour <= 1) {
-                    aiRec = "深夜脑力疲劳期：建议减少发布高强度编码任务，适合推送【错题本自主复习】与温和督学。";
-                } else if (hour >= 2 && hour <= 5) {
-                    aiRec = "凌晨休眠期：学生普遍处于睡眠状态，建议合理安排后台调度，不宜推送即时通知。";
-                } else if (hour === 12 || hour === 13 || hour === 17) {
-                    aiRec = "课余放松期：适合下发【论坛置顶大作业讨论】或【轻量级学习温馨提醒】。";
-                }
-                
+                const isGolden = false;
+                const aiRec = '仅展示已记录的活跃与任务数据；未提供专注度或最佳发送时段的测量证据。';
+
                 // 是否排期冲突 (同一个小时里有 2 个及以上正在运行的任务)
                 const isConflict = matchedTasks.filter(t => t.status === 'running').length >= 2;
                 
@@ -497,8 +455,6 @@ export default {
                     }
                 });
                 appendRecord(result.record);
-                activeStudent.value.alert = false;
-                if (activeStudent.value.focus < 60) activeStudent.value.focus = Math.min(100, activeStudent.value.focus + 18);
                 await selectStudent(activeStudent.value);
                 emit('show-toast', `已向 ${activeStudent.value.name} 下发学习提醒`, 'success');
             } catch (err) {
@@ -1023,7 +979,7 @@ export default {
                                                     </div>
                                                     <div class="flex justify-between items-center mt-1 text-[8px] opacity-75">
                                                         <span>专注度</span>
-                                                        <strong>{{ item.focusRate }}%</strong>
+                                                        <strong>{{ item.focusRate === null ? '未测量' : item.focusRate + '%' }}</strong>
                                                     </div>
                                                 </div>
 
@@ -1077,7 +1033,7 @@ export default {
                                                     </div>
                                                     <div class="bg-white/50 border border-slate-100 rounded-xl p-2">
                                                         <p class="text-[9px] text-slate-400">平均专注度</p>
-                                                        <p class="text-lg font-extrabold text-[#1c2b38] mt-0.5" style="font-family: 'Barlow Condensed', sans-serif;">{{ (hoveredHourData || selectedHourData).focusRate }}%</p>
+                                                        <p class="text-lg font-extrabold text-[#1c2b38] mt-0.5" style="font-family: 'Barlow Condensed', sans-serif;">{{ (hoveredHourData || selectedHourData).focusRate === null ? '未测量' : (hoveredHourData || selectedHourData).focusRate + '%' }}</p>
                                                     </div>
                                                 </div>
 

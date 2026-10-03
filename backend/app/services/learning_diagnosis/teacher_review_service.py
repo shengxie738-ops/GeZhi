@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import or_
+from fastapi import HTTPException
+from app.api.deps import teacher_student_ids
 
 from app.models.user_account import UserAccount
 from app.repositories.json_store import JsonStore, make_record_key
@@ -29,7 +30,7 @@ class TeacherLearningDiagnosisReviewService:
         self.store = JsonStore(db)
 
     def list_reviews(self, teacher_id: str, status: str | None = None, risk_level: str | None = None) -> dict[str, Any]:
-        snapshots = self._latest_real_student_snapshots()
+        snapshots = self._latest_real_student_snapshots(teacher_id)
         items = []
         for snapshot in snapshots:
             state = self._review_state(snapshot, teacher_id)
@@ -44,7 +45,7 @@ class TeacherLearningDiagnosisReviewService:
         return TeacherReviewListResponse(teacher_id=teacher_id, reviews=items, summary=summary).model_dump(mode="json")
 
     def get_detail(self, snapshot_id: str, teacher_id: str) -> dict[str, Any]:
-        snapshot = self._student_snapshot(snapshot_id)
+        snapshot = self._authorized_snapshot(snapshot_id, teacher_id)
         if snapshot is None:
             raise KeyError("snapshot not found")
         detail = TeacherReviewDetail(
@@ -56,7 +57,7 @@ class TeacherLearningDiagnosisReviewService:
         return detail.model_dump(mode="json")
 
     def save_review_state(self, snapshot_id: str, teacher_id: str, payload: ReviewStateRequest) -> dict[str, Any]:
-        snapshot = self._student_snapshot(snapshot_id)
+        snapshot = self._authorized_snapshot(snapshot_id, teacher_id)
         if snapshot is None:
             raise KeyError("snapshot not found")
         state = TeacherReviewState(
@@ -80,7 +81,7 @@ class TeacherLearningDiagnosisReviewService:
         return self.get_detail(snapshot_id, teacher_id)
 
     def add_note(self, snapshot_id: str, teacher_id: str, payload: ReviewNoteRequest) -> dict[str, Any]:
-        snapshot = self._student_snapshot(snapshot_id)
+        snapshot = self._authorized_snapshot(snapshot_id, teacher_id)
         if snapshot is None:
             raise KeyError("snapshot not found")
         note = TeacherReviewNote(
@@ -103,6 +104,7 @@ class TeacherLearningDiagnosisReviewService:
         return self.get_detail(snapshot_id, teacher_id)
 
     def upsert_watch_flag(self, student_id: str, teacher_id: str, payload: WatchFlagRequest) -> dict[str, Any]:
+        self._authorize_student(student_id, teacher_id)
         snapshot = self._latest_snapshot_for_student(student_id)
         if snapshot is None:
             raise KeyError("snapshot not found")
@@ -125,15 +127,16 @@ class TeacherLearningDiagnosisReviewService:
         return self.get_detail(snapshot["id"], teacher_id)
 
     def delete_watch_flag(self, student_id: str, teacher_id: str) -> dict[str, Any]:
-        self.store.delete(self.MODULE, "watch_flag", self._watch_flag_key(student_id, teacher_id))
+        self._authorize_student(student_id, teacher_id)
         snapshot = self._latest_snapshot_for_student(student_id)
         if snapshot is None:
             raise KeyError("snapshot not found")
+        self.store.delete(self.MODULE, "watch_flag", self._watch_flag_key(student_id, teacher_id))
         return self.get_detail(snapshot["id"], teacher_id)
 
-    def weak_points(self) -> dict[str, Any]:
+    def weak_points(self, teacher_id: str) -> dict[str, Any]:
         weak_points = []
-        for snapshot in self._student_snapshots():
+        for snapshot in self._latest_real_student_snapshots(teacher_id):
             risk = self._snapshot_risk_level(snapshot)
             if risk in {"medium", "high"}:
                 weak_points.append(
@@ -151,7 +154,7 @@ class TeacherLearningDiagnosisReviewService:
         snapshots = self.store.list_payloads(self.STUDENT_MODULE, "snapshot")
         return sorted(snapshots, key=lambda item: (str(item.get("student_id", "")), int(item.get("version", 0)), str(item.get("id", ""))))
 
-    def _latest_real_student_snapshots(self) -> list[dict[str, Any]]:
+    def _latest_real_student_snapshots(self, teacher_id: str) -> list[dict[str, Any]]:
         latest_by_student: dict[str, dict[str, Any]] = {}
         for snapshot in self._student_snapshots():
             student_id = str(snapshot.get("student_id") or "").strip()
@@ -164,10 +167,22 @@ class TeacherLearningDiagnosisReviewService:
         enriched = []
         for student_id, snapshot in latest_by_student.items():
             account = self._student_account(student_id)
-            if account is None:
+            if account is None or account.username not in teacher_student_ids(teacher_id):
                 continue
             enriched.append(self._enrich_snapshot_with_account(snapshot, account))
         return sorted(enriched, key=lambda item: (str(item.get("class_name", "")), str(item.get("student_name", "")), str(item.get("student_id", ""))))
+
+    def _authorize_student(self, student_id: str, teacher_id: str) -> None:
+        account = self._student_account(student_id)
+        if account is None or account.username not in teacher_student_ids(teacher_id):
+            raise HTTPException(status_code=403, detail="student not assigned to teacher")
+
+    def _authorized_snapshot(self, snapshot_id: str, teacher_id: str) -> dict[str, Any]:
+        snapshot = self._student_snapshot(snapshot_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="snapshot not found")
+        self._authorize_student(str(snapshot.get("student_id") or ""), teacher_id)
+        return snapshot
 
     def _student_snapshot(self, snapshot_id: str) -> dict[str, Any] | None:
         return self.store.get_payload(self.STUDENT_MODULE, "snapshot", snapshot_id)
@@ -190,14 +205,14 @@ class TeacherLearningDiagnosisReviewService:
             self.db.query(UserAccount)
             .filter(
                 UserAccount.role == "student",
-                or_(UserAccount.username == student_id, UserAccount.student_id == student_id),
+                UserAccount.username == student_id,
             )
             .first()
         )
 
     def _enrich_snapshot_with_account(self, snapshot: dict[str, Any], account: UserAccount) -> dict[str, Any]:
         enriched = dict(snapshot)
-        enriched["student_id"] = account.student_id or account.username
+        enriched["student_id"] = account.username
         enriched["username"] = account.username
         enriched["student_name"] = account.real_name or account.username
         enriched["class_name"] = account.class_name or ""

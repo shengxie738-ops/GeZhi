@@ -74,7 +74,7 @@ class GiteaServiceMockModeTest(unittest.TestCase):
             ssh_port=2222,
         )
 
-        repo = service.create_repository(name="Mini Vue Reactive Runtime", private=False, auto_init=True)
+        repo = service.repository_urls(owner="campus", repo="Mini Vue Reactive Runtime")
 
         self.assertEqual(repo["giteaOwner"], "campus")
         self.assertEqual(repo["giteaRepo"], "mini-vue-reactive-runtime")
@@ -82,22 +82,12 @@ class GiteaServiceMockModeTest(unittest.TestCase):
         self.assertEqual(repo["cloneUrl"], "https://gezhisystem.com/gitea/campus/mini-vue-reactive-runtime.git")
         self.assertEqual(repo["sshUrl"], "ssh://git@gezhisystem.com:2222/campus/mini-vue-reactive-runtime.git")
 
-    def test_create_user_returns_mock_payload_when_disabled(self):
+    def test_disabled_user_and_token_provisioning_are_unavailable(self):
         service = GiteaService(enabled=False, token="", org="campus")
-        user = service.create_user(
-            username="stu_20260001",
-            email="20260001@gezhi.local",
-            full_name="张三",
-            password="generated-password",
-        )
-        self.assertEqual(user["login"], "stu_20260001")
-        self.assertEqual(user["email"], "20260001@gezhi.local")
-        self.assertIsNone(user["id"])
-
-    def test_mock_token_is_deterministic_shape(self):
-        service = GiteaService(enabled=False, token="", org="campus")
-        token = service.create_user_token("stu_20260001", "campus-learning-system")
-        self.assertTrue(token.startswith("mock-gitea-token-stu_20260001-"))
+        with self.assertRaises(RuntimeError):
+            service.create_user(username="stu_20260001", email="20260001@gezhi.local", password="synthetic")
+        with self.assertRaises(RuntimeError):
+            service.create_user_token("stu_20260001")
 
     def test_create_user_token_uses_basic_auth_for_target_user(self):
         service = GiteaService(enabled=True, base_url="http://gitea.test", token="admin-token", org="campus")
@@ -154,7 +144,7 @@ class GiteaServiceMockModeTest(unittest.TestCase):
             gitea_module.requests.get = original_get
             gitea_module.requests.patch = original_patch
 
-    def test_create_repository_adopts_existing_org_repo(self):
+    def test_create_repository_rejects_existing_org_repo(self):
         service = GiteaService(
             enabled=True,
             base_url="http://gitea.test",
@@ -204,12 +194,10 @@ class GiteaServiceMockModeTest(unittest.TestCase):
         try:
             gitea_module.requests.post = fake_post
             gitea_module.requests.get = fake_get
-            repo = service.create_repository(name="team-real-loop", private=True, auto_init=True)
-
-            self.assertEqual(repo["giteaOwner"], "campus")
-            self.assertEqual(repo["giteaRepo"], "team-real-loop")
-            self.assertEqual(repo["cloneUrl"], "http://localhost:3000/campus/team-real-loop.git")
-            self.assertIn(("get", "http://gitea.test/api/v1/repos/campus/team-real-loop"), calls)
+            from requests import HTTPError
+            with self.assertRaises(HTTPError):
+                service.create_repository(name="team-real-loop")
+            self.assertNotIn(("get", "http://gitea.test/api/v1/repos/campus/team-real-loop"), calls)
         finally:
             gitea_module.requests.post = original_post
             gitea_module.requests.get = original_get
@@ -329,7 +317,7 @@ class GiteaAccountServiceTest(unittest.TestCase):
             db.add(account)
             db.commit()
             ensure_gitea_account_for_user(db, account, gitea=gitea)
-            match = match_campus_user_from_gitea_event(db, sender_username="stu_20260001", commit_author={})
+            match = match_campus_user_from_gitea_event(db, sender_username="stu_20260001")
             self.assertEqual(match["campusUserId"], "20260001")
             self.assertEqual(match["displayName"], "张三")
             self.assertEqual(match["matchSource"], "gitea_username")
@@ -391,8 +379,8 @@ class GiteaAccountServiceTest(unittest.TestCase):
                 sender_username="",
                 commit_author={"email": "teacher_T2026@gezhi.local", "name": "陈老师"},
             )
-            self.assertEqual(match["campusUserId"], "teacher_chen")
-            self.assertEqual(match["matchSource"], "teacher_email")
+            self.assertEqual(match["campusUserId"], "")
+            self.assertEqual(match["matchSource"], "unmatched")
         finally:
             db.close()
 

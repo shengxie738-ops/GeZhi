@@ -1,4 +1,5 @@
-import { computed, ref, watch, nextTick } from 'vue';
+import { renderMarkdown } from '../utils/safeRendering.js';
+import { computed, ref, watch, nextTick, getCurrentScope, onScopeDispose } from 'vue';
 import { sendStreamingMessage, parsedHtmlCache } from '../api/streamChat.js';
 import { buildVisualGuideSvg, createLocalVisualGuide, getVisualGuideSourceLabel, requestVisualGuideImage, resolveVisualGuideState } from '../api/visualGuide.js';
 import { knowledgeApi } from '../api/knowledgeApi.js';
@@ -6,7 +7,7 @@ import { userApi } from '../api/userApi.js';
 import { getUserCustomModels } from '../api/userModelApi.js';
 import request from '../utils/request.js';
 import { formatChatTimestamp, getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
-import { CHAT_TASK_MODES, createModeMessageBuckets, createTaskConversationId, findConversationForMessage, flattenModeMessageBuckets, getSystemProjectIdForMode, groupMessagesIntoConversations, groupConversationsByProjects, reconcileModeHistory, resolveConversationIdForSend, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
+import { CHAT_TASK_MODES, sortConversationsByRecency, createModeMessageBuckets, createTaskConversationId, findConversationForMessage, flattenModeMessageBuckets, getSystemProjectIdForMode, groupMessagesIntoConversations, groupConversationsByProjects, reconcileModeHistory, resolveConversationIdForSend, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 
@@ -18,9 +19,63 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const agentMode = ref('tutor');
     const historyLoading = ref(false);
     const historyError = ref('');
+    const historyMutating = ref(false);
+    const blockedWriteModes = new Set();
+    const mutationEpochs = new Map();
+    const advanceMutation = mode => { mutationEpochs.set(mode, (mutationEpochs.get(mode) || 0) + 1); invalidateHistoryLoads(mode); };
     const activeConversationId = ref(null);
     const draftConversationId = ref('');
-    let pendingHistoryLoads = 0;
+    let sessionGeneration = 0;
+    let navigationGeneration = 0;
+    let inputRevision = 0;
+    let cancelWorkspaceSearch = () => {};
+    let chatSendController = null;
+    const historyLoads = new Map();
+    const paperSyncTasks = new Map();
+    const ownerId = () => currentUser.value?.username || 'guest_user';
+    const isSessionCurrent = (owner, generation) => owner === ownerId() && generation === sessionGeneration;
+    const getWorkspaceGeneration = () => `${sessionGeneration}:${navigationGeneration}`;
+    const setWorkspaceCancellationHandler = handler => { cancelWorkspaceSearch = typeof handler === 'function' ? handler : () => {}; };
+    const invalidateWorkspaceNavigation = ({ resetSearch = true } = {}) => {
+        navigationGeneration += 1;
+        cancelWorkspaceSearch({ reset: resetSearch });
+        chatSendController?.abort();
+        chatSendController = null;
+        thinkingAgent.value = null;
+    };
+    const capturePaperSearchTransaction = () => Object.freeze({
+        sessionId: ownerId(), sessionGeneration, navigationGeneration,
+        conversationId: draftConversationId.value || createTaskConversationId('paper')
+    });
+    watch(inputText, () => { inputRevision += 1; }, { flush: 'sync' });
+    const getInputRevision = () => inputRevision;
+    const invalidateHistoryLoads = (mode = null) => {
+        for (const [key, load] of historyLoads) {
+            if (!mode || key === mode) { load.controller.abort(); historyLoads.delete(key); }
+        }
+        historyLoading.value = historyLoads.size > 0;
+    };
+    let observedToken = localStorage.getItem('token') || '';
+    const handleSessionStorage = event => {
+        if (event.key !== null && !['token', 'currentUser'].includes(event.key)) return;
+        const token = localStorage.getItem('token') || '';
+        if (token === observedToken) return;
+        observedToken = token;
+        sessionGeneration += 1;
+        invalidateWorkspaceNavigation();
+        invalidateHistoryLoads();
+        for (const task of paperSyncTasks.values()) task.controller?.abort();
+        paperSyncTasks.clear();
+        blockedWriteModes.clear();
+        historyMutating.value = false;
+    };
+    window.addEventListener('storage', handleSessionStorage);
+    if (getCurrentScope()) onScopeDispose(() => {
+        window.removeEventListener?.('storage', handleSessionStorage);
+        invalidateHistoryLoads();
+        chatSendController?.abort();
+        for (const task of paperSyncTasks.values()) task.controller?.abort();
+    });
 
     const safeSetLocalStorage = (key, value) => {
         try {
@@ -122,8 +177,10 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     loadChatModelOptions();
 
     const loadUserCustomModels = async () => {
+        const owner = ownerId(), generation = sessionGeneration;
         try {
             const res = await getUserCustomModels();
+            if (!isSessionCurrent(owner, generation)) return;
             if (res && res.status === 'success' && Array.isArray(res.data)) {
                 userCustomConfigs.value = res.data.filter(c => c.is_active);
                 rebuildMergedModelOptions();
@@ -164,6 +221,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const paperActiveTab = ref('results');
 
     const switchWorkMode = (mode) => {
+        invalidateWorkspaceNavigation();
         activeConversationId.value = null;
         draftConversationId.value = '';
         showModelDropdown.value = false;
@@ -199,19 +257,22 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const recordPaperSearchWork = async (query, meta = {}) => {
         const cleanQuery = String(query || '').trim();
-        if (!cleanQuery) return;
+        if (!cleanQuery || blockedWriteModes.has('paper')) return false;
+        const transaction = meta.transaction || capturePaperSearchTransaction();
+        if (!isSessionCurrent(transaction.sessionId, transaction.sessionGeneration)) return false;
+        const mayActivate = () => transaction.navigationGeneration === navigationGeneration && agentMode.value === 'paper';
         // 论文模式下的学术检索代表独立的研究主题。
         // 若处于新建草稿态（draftConversationId 存在），使用该草稿 ID；
         // 否则每次学术检索都必须创建独立的 conversationId，防止历史任务被追加污染，并确保左侧任务树即时呈现新检索任务。
-        let conversationId = draftConversationId.value;
+        let conversationId = transaction.conversationId;
         if (!conversationId) {
             conversationId = createTaskConversationId('paper');
         }
-        if (agentMode.value === 'paper') {
+        if (mayActivate()) {
             activeConversationId.value = conversationId;
             draftConversationId.value = '';
         }
-        const sessionId = getSessionId();
+        const sessionId = transaction.sessionId;
         const results = Array.isArray(meta.results) ? meta.results : [];
         const summary = meta.summary || {};
         const statuses = Array.isArray(meta.statuses) ? meta.statuses : [];
@@ -219,14 +280,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const paperSearchSnapshot = {
             query: cleanQuery,
             status: searchStatus,
-            results: results.slice(0, 20),
-            summary,
+            results: results.slice(0, 50).map((paper, index) => ({ ...paper, ordinal: paper.ordinal || index + 1, abstract: String(paper.abstract || '').slice(0, 4000) })),
+            summary: { ...summary, snapshotCount: Math.min(results.length, 50), snapshotComplete: Math.min(results.length, 50) >= Number(summary.totalAfterMerge ?? results.length) },
             statuses
         };
 
-        const countBefore = summary.totalBeforeMerge || results.length;
-        const countAfter = summary.totalAfterMerge || results.length;
-        const countFetched = summary.totalFetched || countBefore;
+        const countBefore = summary.totalBeforeMerge ?? results.length;
+        const countAfter = summary.totalAfterMerge ?? results.length;
+        const countFetched = summary.totalFetched ?? countBefore;
         const countRejected = summary.totalRejected || 0;
         const effectiveQuery = String(summary.effectiveQuery || '').trim();
         const activeSources = statuses
@@ -241,16 +302,16 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             const safeUrl = sanitizePaperUrl(p.officialUrl || p.openAccessUrl || '');
             const titleDisplay = safeUrl ? `[《${safeTitle}》](${safeUrl})` : `《${safeTitle}》`;
             const doiDisplay = p.doi ? ` · DOI: ${escapeHtmlAndMarkdown(p.doi)}` : '';
-            return `${idx + 1}. **${titleDisplay}** (${escapeHtmlAndMarkdown(p.year || '近期')})
+            return `${idx + 1}. **${titleDisplay}** (${escapeHtmlAndMarkdown(p.year || '年份未知')})
    - 👥 作者: ${safeAuthors}
    - 🏛️ 来源: ${safeSource}${doiDisplay}`;
         }).join('\n\n');
 
         const effectiveQueryLine = summary.queryTranslated && effectiveQuery
-            ? `- **实际检索词**：\`${escapeHtmlAndMarkdown(effectiveQuery)}\`（由中文主题确定性转换）\n`
+            ? `- **实际检索词**：\`${escapeHtmlAndMarkdown(effectiveQuery)}\`（保留未匹配条件的术语规范化）\n`
             : '';
         const filterLine = countRejected > 0
-            ? `- **相关性过滤**：来源返回 ${countFetched} 条，剔除 ${countRejected} 条主题不匹配记录。\n`
+            ? `- **记录有效性检查**：来源返回 ${countFetched} 条，剔除 ${countRejected} 条缺少有效标题的无效记录。\n`
             : '';
 
         const reportContent = `📚 **学术文献多源检索工作记录**\n\n` +
@@ -260,14 +321,17 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             filterLine +
             `- **文献汇总**：相关候选 ${countBefore} 篇，去重后 **${countAfter} 篇来源可核验文献记录**。\n\n` +
             `**核心检索文献代表**：\n\n${topPapers || '已完成多源去重检索，详情见主视图文献卡片。'}\n\n` +
-            `> 💡 *该工作记录已自动同步至云端数据库与任务列表，可随时在「论文查询」任务树中回顾。*`;
+            `> 阅读范围：本次仅保存来源元数据及摘要，未读取全文。云端同步状态请查看任务提示。`;
 
         const timestamp = typeof formatChatTimestamp === 'function' ? formatChatTimestamp() : new Date().toLocaleString('zh-CN');
-        const userMsgId = `paper-user-${Date.now()}`;
-        const agentMsgId = `paper-agent-${Date.now()}`;
+        const userMsgId = `paper-user-${conversationId}`;
+        const agentMsgId = `paper-agent-${conversationId}`;
+        const clientRequestId = `paper-search:${conversationId}`;
 
         const userMsg = {
             id: userMsgId,
+            syncState: 'pending',
+            clientRequestId,
             senderType: 'user',
             content: cleanQuery,
             time: timestamp,
@@ -279,6 +343,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
         const agentMsg = {
             id: agentMsgId,
+            syncState: 'pending',
+            clientRequestId,
             senderType: 'agent',
             senderId: 'agent_paper',
             content: reportContent,
@@ -291,73 +357,73 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             projectId: PROJECT_PAPER_ID
         };
 
-        const isCurrentlyInPaperMode = agentMode.value === 'paper';
-        const storageKey = getChatStorageKey(sessionId, 'paper');
-
-        // 1. 同步到前端响应式状态与本地存储（模式隔离保护）
-        if (isCurrentlyInPaperMode) {
+        const bucket = modeMessageBuckets.value.paper || [];
+        bucket.push(userMsg, agentMsg);
+        modeMessageBuckets.value.paper = bucket;
+        if (mayActivate()) {
             paperActiveTab.value = 'results';
-            messages.value.push(userMsg, agentMsg);
             activeConversationId.value = conversationId;
             draftConversationId.value = '';
-            hydrateParsedMessages();
-            safeSetLocalStorage(storageKey, messages.value);
-        } else {
-            // 若在其他模式下触发，仅增量安全更新 paper 专属的本地缓存，严禁污染当前活动会话
-            const existing = modeMessageBuckets.value.paper || readStoredMessages('paper');
-            existing.push(userMsg, agentMsg);
-            modeMessageBuckets.value.paper = existing;
-            hydrateParsedMessages();
-            safeSetLocalStorage(storageKey, existing);
         }
+        hydrateParsedMessages();
+        safeSetLocalStorage(getChatStorageKey(sessionId, 'paper'), bucket);
+        return retryPaperWorkSync(conversationId);
+    };
 
-        // 2. 真实同步持久化到后端数据库
-        try {
-            const res = await request('/chat/history/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: sessionId,
-                    agent_mode: 'paper',
-                    conversation_id: conversationId,
-                    project_id: PROJECT_PAPER_ID,
-                    messages: [
-                        { role: 'user', content: cleanQuery, agent_mode: 'paper', sender_id: null, conversation_id: conversationId, project_id: PROJECT_PAPER_ID },
-                        {
-                            role: 'assistant',
-                            content: reportContent,
-                            agent_mode: 'paper',
-                            sender_id: 'agent_paper',
-                            conversation_id: conversationId,
-                            project_id: PROJECT_PAPER_ID,
-                            payload: { kind: 'paper_search', ...paperSearchSnapshot }
-                        }
-                    ]
-                })
-            });
-            if (res?.status === 'success' && Array.isArray(res.data) && res.data.length >= 2) {
-                if (isCurrentlyInPaperMode) {
-                    userMsg.id = `db-${res.data[0].id}`;
-                    agentMsg.id = `db-${res.data[1].id}`;
-                    safeSetLocalStorage(storageKey, messages.value);
-                } else {
-                    const existing = modeMessageBuckets.value.paper || readStoredMessages('paper');
-                    const targetUser = existing.find(m => m.id === userMsgId);
-                    const targetAgent = existing.find(m => m.id === agentMsgId);
-                    if (targetUser) targetUser.id = `db-${res.data[0].id}`;
-                    if (targetAgent) targetAgent.id = `db-${res.data[1].id}`;
-                    modeMessageBuckets.value.paper = existing;
-                    safeSetLocalStorage(storageKey, existing);
-                }
-            } else if (res?.status === 'error') {
-                console.warn('[Chat] Backend rejected paper history save:', res.message);
+    const buildPaperSyncBody = (owner, userMessage, agentMessage) => JSON.stringify({
+        user_id: owner, agent_mode: 'paper', conversation_id: agentMessage.conversationId,
+        project_id: PROJECT_PAPER_ID,
+        client_request_id: agentMessage.clientRequestId,
+        messages: [
+            { role: 'user', content: userMessage.content, agent_mode: 'paper', sender_id: null, conversation_id: agentMessage.conversationId, project_id: PROJECT_PAPER_ID },
+            { role: 'assistant', content: agentMessage.content, agent_mode: 'paper', sender_id: 'agent_paper', conversation_id: agentMessage.conversationId, project_id: PROJECT_PAPER_ID, payload: { kind: 'paper_search', ...agentMessage.paperSearchSnapshot } }
+        ]
+    });
+
+    const retryPaperWorkSync = async (conversationId) => {
+        if (blockedWriteModes.has('paper')) return false;
+        const rows = (modeMessageBuckets.value.paper || []).filter(message => message.conversationId === conversationId);
+        const agentMessage = rows.find(message => message.paperSearchSnapshot && message.syncState !== 'saved' && !/^db-/.test(String(message.id)));
+        const userMessage = rows.find(message => message.senderType === 'user');
+        if (!agentMessage || !userMessage) return false;
+        const existingTask = paperSyncTasks.get(conversationId);
+        if (existingTask?.promise) return existingTask.promise;
+        const owner = getSessionId();
+        const generation = sessionGeneration;
+        if (owner === 'guest_user') { rows.forEach(row => { row.syncState = 'failed'; }); historyError.value = '请登录后重试云端同步'; return false; }
+        const task = existingTask || { owner, generation, body: buildPaperSyncBody(owner, userMessage, agentMessage) };
+        task.controller = new AbortController();
+        paperSyncTasks.set(conversationId, task);
+        rows.forEach(row => { row.syncState = 'pending'; row.syncError = ''; });
+        task.promise = (async () => {
+            try {
+                const res = await request('/chat/history/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: task.body, signal: task.controller.signal });
+                if (!isSessionCurrent(owner, generation)) return false;
+                if (res?.status !== 'success' || !Array.isArray(res.data) || res.data.length !== 2 || !res.data.every(row => Number.isInteger(Number(row.id)) && Number(row.id) > 0)) throw new Error(res?.message || '云端未返回完整保存回执');
+                const currentRows = modeMessageBuckets.value.paper || [];
+                [userMessage, agentMessage].forEach((row, index) => {
+                    const target = currentRows.find(item => item.id === row.id || (item.clientRequestId === agentMessage.clientRequestId && item.senderType === row.senderType));
+                    if (target) { target.id = `db-${res.data[index].id}`; target.syncState = 'saved'; target.syncError = ''; }
+                });
+                historyError.value = '';
+                hydrateParsedMessages();
+                paperSyncTasks.delete(conversationId);
+                return true;
+            } catch (error) {
+                if (!isSessionCurrent(owner, generation)) return false;
+                rows.forEach(row => { row.syncState = 'failed'; row.syncError = error.message || '云端同步失败'; });
+                historyError.value = `工作记录仅保存在本地，云端同步失败：${error.message || '请重试'}`;
+                return false;
+            } finally {
+                task.promise = null;
+                if (isSessionCurrent(owner, generation)) safeSetLocalStorage(getChatStorageKey(owner, 'paper'), modeMessageBuckets.value.paper || []);
             }
-        } catch (err) {
-            console.warn('[Chat] Failed to sync paper history to backend DB:', err);
-        }
+        })();
+        return task.promise;
     };
 
     const returnToChatDialog = () => {
+        invalidateWorkspaceNavigation({ resetSearch: false });
         if (agentMode.value === 'paper') {
             paperActiveTab.value = 'dialog';
             if (typeof window !== 'undefined') {
@@ -429,7 +495,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const readStoredMessages = (mode = agentMode.value) => {
         const normalizedMode = normalizeAgentMode(mode);
         const storageKey = getChatStorageKey(getSessionId(), normalizedMode);
-        const stored = localStorage.getItem(storageKey) || (normalizedMode === 'tutor' ? localStorage.getItem('messages') : null);
+        // Unscoped legacy caches have no verifiable owner and must never cross account boundaries.
+        const stored = localStorage.getItem(storageKey);
         if (!stored) return [];
         try {
             return sanitizeStoredMessagesForMode(JSON.parse(stored), normalizedMode);
@@ -469,7 +536,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         } catch (e) {
             console.warn('[useChat] Failed to parse stored projects:', e);
         }
-        return [...INITIAL_SYSTEM_PROJECTS];
+        return INITIAL_SYSTEM_PROJECTS.map(project => ({ ...project }));
     };
 
     const projectList = ref(readStoredProjects());
@@ -481,7 +548,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         } catch (e) {
             console.warn('[useChat] Failed to save projects to localStorage:', e);
         }
-    }, { deep: true });
+    }, { deep: true, flush: 'sync' });
 
     // 大项目与小任务两级聚合树
     const projectTaskTree = computed(() => {
@@ -573,6 +640,18 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         startNewConversation(projectId);
     };
 
+    const setPaperActiveTab = tab => {
+        if (!['results', 'dialog'].includes(tab) || tab === paperActiveTab.value) return;
+        invalidateWorkspaceNavigation({ resetSearch: false });
+        paperActiveTab.value = tab;
+    };
+    const paperWorkSyncStatus = computed(() => {
+        if (activeConversationId.value === 'new') return null;
+        const source = activeConversation.value?.messages || modeMessageBuckets.value.paper || [];
+        const message = source.slice().reverse().find(message => message.paperSearchSnapshot);
+        return message ? { state: message.syncState || (/^db-/.test(String(message.id)) ? 'saved' : 'failed'), error: message.syncError || '', conversationId: message.conversationId } : null;
+    });
+
     const showPaperSearchResults = () => {
         if (agentMode.value !== 'paper') return;
         paperActiveTab.value = 'results';
@@ -584,12 +663,12 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     // activeConversationId: null = 当前最新对话；'new' = 新增对话的空白态；'conv-xxx' = 查看历史对话
     const conversationList = computed(() => {
         const conversations = groupMessagesIntoConversations(messages.value);
-        return conversations.slice().reverse();
+        return sortConversationsByRecency(conversations, messages.value);
     });
 
     const allConversationList = computed(() => {
         const conversations = groupMessagesIntoConversations(allTaskMessages.value);
-        return conversations.slice().reverse();
+        return sortConversationsByRecency(conversations, allTaskMessages.value);
     });
 
     const activeConversation = computed(() => {
@@ -615,8 +694,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             // 论文模式遵循 Claude 桌面端单任务隔离原则：未明确激活会话时绝不跨会话倾倒历史消息
             return [];
         }
-        const conversations = groupMessagesIntoConversations(messages.value);
-        return conversations.length ? conversations[conversations.length - 1].messages : [];
+        return conversationList.value[0]?.messages || [];
     });
 
     const openPaperTaskDialog = async (conversationId) => {
@@ -626,7 +704,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             forceRAG.value = false;
         }
         activeProjectId.value = PROJECT_PAPER_ID;
-        await selectConversation(conversationId);
+        if (await selectConversation(conversationId) === false) return false;
         paperActiveTab.value = 'dialog';
         if (typeof window !== 'undefined') {
             setTimeout(() => {
@@ -656,7 +734,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const isCurrentMode = normalizedMode === normalizeAgentMode(agentMode.value);
         const targetConversations = isCurrentMode
             ? conversationList.value
-            : groupMessagesIntoConversations(modeMessageBuckets.value[normalizedMode] || []).slice().reverse();
+            : sortConversationsByRecency(groupMessagesIntoConversations(modeMessageBuckets.value[normalizedMode] || []));
         let conversationId = resolveConversationIdForSend({
             activeConversationId: isCurrentMode ? activeConversationId.value : null,
             draftConversationId: isCurrentMode ? draftConversationId.value : '',
@@ -673,6 +751,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const selectConversation = async (conversationId) => {
+        invalidateWorkspaceNavigation();
+        const selectionGeneration = getWorkspaceGeneration();
         const nextId = conversationId || null;
 
         // 智能联动切换工作模式
@@ -692,17 +772,23 @@ export function useChat(currentUser, showToast, agentResolver = null) {
                 forceRAG.value = false;
             }
             activeProjectId.value = conv.projectId || getSystemProjectIdForMode(conv.mode);
-            await loadChatHistory(conv.mode);
+            const epoch = mutationEpochs.get(conv.mode) || 0;
+            await loadChatHistory(conv.mode, { conversationId });
+            if (selectionGeneration !== getWorkspaceGeneration() || epoch !== (mutationEpochs.get(conv.mode) || 0)) return false;
         }
 
-        if (activeConversationId.value === nextId) return;
+        if (selectionGeneration !== getWorkspaceGeneration()) return false;
+        if (activeConversationId.value === nextId) return true;
         activeConversationId.value = nextId;
         await nextTick();
         if (chatContainer.value) chatContainer.value.scrollTop = 0;
+        return true;
     };
 
     const backToCurrentConversation = async () => {
-        activeConversationId.value = null;
+        const latestId = conversationList.value[0]?.id;
+        invalidateWorkspaceNavigation();
+        activeConversationId.value = latestId || null;
         await scrollChatToBottom();
     };
 
@@ -715,6 +801,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     };
 
     const startNewConversation = async (projectId = '') => {
+        invalidateWorkspaceNavigation();
         const normalizedMode = normalizeAgentMode(agentMode.value);
         const requestedProjectId = typeof projectId === 'string' ? projectId : '';
         draftConversationId.value = createTaskConversationId(normalizedMode);
@@ -735,45 +822,70 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
         allTaskMessages.value.forEach(msg => {
             if (msg.senderType === 'agent') {
-                parsedHtmlCache[msg.id] = (window.marked && window.marked.parse) ? window.marked.parse(msg.content) : msg.content;
+                parsedHtmlCache[msg.id] = renderMarkdown(msg.content);
             }
         });
     };
 
-    const loadChatHistory = async (mode = agentMode.value) => {
+    const loadChatHistory = async (mode = agentMode.value, { conversationId = '' } = {}) => {
         const normalizedMode = normalizeAgentMode(mode);
         const sessionId = getSessionId();
-
-        const inMemoryMessages = modeMessageBuckets.value[normalizedMode] || [];
-        const localMessages = inMemoryMessages.length > 0 ? inMemoryMessages : readStoredMessages(normalizedMode);
-        modeMessageBuckets.value[normalizedMode] = localMessages;
-        hydrateParsedMessages();
-        await nextTick();
-        if (agentMode.value === normalizedMode && chatContainer.value) {
-            chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
-        }
-
-        pendingHistoryLoads += 1;
+        const generation = sessionGeneration;
+        if (sessionId === 'guest_user') return false;
+        historyLoads.get(normalizedMode)?.controller.abort();
+        const mutationEpoch = mutationEpochs.get(normalizedMode) || 0;
+        const load = { controller: new AbortController(), initialIds: new Set((modeMessageBuckets.value[normalizedMode] || []).map(message => message.id)) };
+        historyLoads.set(normalizedMode, load);
+        const isCurrent = () => isSessionCurrent(sessionId, generation) && historyLoads.get(normalizedMode) === load && mutationEpoch === (mutationEpochs.get(normalizedMode) || 0) && !load.controller.signal.aborted;
         historyLoading.value = true;
         historyError.value = '';
         try {
-            const resJson = await request(`/chat/history?session_id=${encodeURIComponent(sessionId)}&agent_mode=${encodeURIComponent(normalizedMode)}&limit=200`);
-            if (resJson?.status === 'success' && Array.isArray(resJson.data)) {
-                const remoteMessages = resJson.data.map(mapHistoryRecordToMessage);
-                modeMessageBuckets.value[normalizedMode] = reconcileModeHistory(localMessages, remoteMessages);
-                hydrateParsedMessages();
-                safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), modeMessageBuckets.value[normalizedMode]);
-                await nextTick();
-                if (agentMode.value === normalizedMode && chatContainer.value) {
-                    chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
-                }
+            const remoteMessages = [];
+            let before = '', complete = false, snapshotMaxId = null;
+            const seenCursors = new Set();
+            for (let page = 0; page < 50; page += 1) {
+                const url = `/chat/history?session_id=${encodeURIComponent(sessionId)}&agent_mode=${encodeURIComponent(normalizedMode)}&limit=200${conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : ''}${before ? `&before=${encodeURIComponent(before)}` : ''}`;
+                const result = await request(url, { signal: load.controller.signal });
+                if (!isCurrent()) return false;
+                if (result?.status !== 'success' || !Array.isArray(result.data)) throw new Error(result?.message || '历史记录响应无效');
+                remoteMessages.unshift(...result.data.map(mapHistoryRecordToMessage));
+                const pagination = result.pagination;
+                if (Number.isInteger(pagination?.snapshot_max_id)) snapshotMaxId = pagination.snapshot_max_id;
+                if (!pagination?.has_more) { complete = pagination?.complete === true; break; }
+                if (!pagination.next_cursor || seenCursors.has(pagination.next_cursor)) throw new Error('历史记录分页游标无效');
+                before = pagination.next_cursor;
+                seenCursors.add(before);
             }
+            if (!isCurrent()) return false;
+            const current = modeMessageBuckets.value[normalizedMode] || [];
+            const local = conversationId ? current.filter(message => message.conversationId === conversationId) : current;
+            const deduped = Array.from(new Map(remoteMessages.map(message => [message.id, message])).values());
+            const reconciled = reconcileModeHistory(local, deduped, { complete, preserveIds: local.filter(message => !load.initialIds.has(message.id) || (snapshotMaxId != null && Number(String(message.id).replace(/^db-/, '')) > snapshotMaxId)).map(message => message.id) });
+            // Keep the task's original position; inspecting history is not new activity.
+            if (conversationId) {
+                const pending = new Map(reconciled.map(message => [message.id, message]));
+                const merged = [];
+                for (const message of current) {
+                    if (message.conversationId !== conversationId) merged.push(message);
+                    else if (pending.has(message.id)) {
+                        merged.push(pending.get(message.id));
+                        pending.delete(message.id);
+                    }
+                }
+                modeMessageBuckets.value[normalizedMode] = [...merged, ...pending.values()];
+            } else modeMessageBuckets.value[normalizedMode] = reconciled;
+            if (before && !complete) historyError.value = '已加载最近的历史窗口；较早任务尚未全部同步。';
+            hydrateParsedMessages();
+            safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), modeMessageBuckets.value[normalizedMode]);
+            await nextTick();
+            if (isCurrent() && agentMode.value === normalizedMode && chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+            return true;
         } catch (error) {
-            historyError.value = '历史记录暂时无法同步，当前显示本地缓存。';
-            console.info('[Chat] Backend history unavailable, using local cache.', error);
+            if (isCurrent() && error?.name !== 'AbortError') historyError.value = '历史记录暂时无法同步，当前显示本地缓存。';
+            return false;
         } finally {
-            pendingHistoryLoads = Math.max(0, pendingHistoryLoads - 1);
-            historyLoading.value = pendingHistoryLoads > 0;
+            if (historyLoads.get(normalizedMode) === load) historyLoads.delete(normalizedMode);
+            if (isSessionCurrent(sessionId, generation)) historyLoading.value = historyLoads.size > 0;
         }
     };
 
@@ -789,82 +901,111 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             const parsed = Number(raw.slice(3));
             return Number.isFinite(parsed) ? parsed : null;
         }
-        const parsed = Number(raw);
-        return Number.isFinite(parsed) ? parsed : null;
+        return null;
     };
 
-    // 单条消息的删除：云端尽力同步，后端不可用时仍清理本地缓存
+    // Remove confirmed server records only after an actual deletion receipt.
     const removeHistoryMessageRecord = async (message) => {
+        const mode = normalizeAgentMode(message.mode);
+        const owner = getSessionId(), generation = sessionGeneration;
+        invalidateHistoryLoads(mode);
+        const task = paperSyncTasks.get(message.conversationId);
+        if (task?.promise) await task.promise;
+        if (!isSessionCurrent(owner, generation)) return false;
         const dbId = resolveHistoryMessageDbId(message.id);
-        const sessionId = getSessionId();
         try {
             if (dbId != null) {
-                const resJson = await request(
-                    `/chat/history/${dbId}?session_id=${encodeURIComponent(sessionId)}`,
-                    { method: 'DELETE' }
-                );
-                if (resJson?.status === 'error') {
-                    throw new Error(resJson.message || '删除失败');
-                }
+                const result = await request(`/chat/history/${dbId}?session_id=${encodeURIComponent(owner)}`, { method: 'DELETE' });
+                if (!isSessionCurrent(owner, generation)) return false;
+                if (result?.status !== 'success') throw new Error(result?.message || '删除失败');
             }
+            advanceMutation(mode);
+            modeMessageBuckets.value[mode] = (modeMessageBuckets.value[mode] || []).filter(item => item.id !== message.id);
+            delete parsedHtmlCache[message.id];
+            paperSyncTasks.delete(message.conversationId);
+            return true;
         } catch (error) {
-            historyError.value = '历史记录已从本地移除，云端同步可能未完成。';
-            console.info('[Chat] Delete history fallback to local cache.', error);
-        } finally {
-            const messageMode = normalizeAgentMode(message.mode);
-            modeMessageBuckets.value[messageMode] = (modeMessageBuckets.value[messageMode] || [])
-                .filter(item => item.id !== message.id);
-            if (parsedHtmlCache[message.id]) delete parsedHtmlCache[message.id];
+            if (isSessionCurrent(owner, generation)) historyError.value = `云端删除未完成，记录仍保留：${error.message || '请重试'}`;
+            return false;
         }
     };
 
     const deleteConversation = async (conversation) => {
-        if (!conversation?.id || !conversation.messages?.length) return;
-        const preview = conversation.title || '未命名对话';
-        const confirmed = window.confirm(`确认删除这段对话？\n「${preview}」共 ${conversation.messages.length} 条消息，删除后不可恢复。`);
-        if (!confirmed) return;
-
-        for (const message of conversation.messages) {
-            await removeHistoryMessageRecord(message);
+        if (!conversation?.id || !conversation.messages?.length || blockedWriteModes.has(normalizeAgentMode(conversation.mode || conversation.messages[0]?.mode))) return false;
+        if (!window.confirm(`确认删除这段对话？\n「${conversation.title || '未命名对话'}」共 ${conversation.messages.length} 条消息，删除后不可恢复。`)) return false;
+        const owner = getSessionId(), generation = sessionGeneration;
+        invalidateWorkspaceNavigation();
+        const mode = normalizeAgentMode(conversation.mode || conversation.messages[0]?.mode);
+        blockedWriteModes.add(mode);
+        historyMutating.value = true;
+        advanceMutation(mode);
+        try {
+            const task = paperSyncTasks.get(conversation.id);
+            if (task?.promise) await task.promise;
+            if (!isSessionCurrent(owner, generation)) return false;
+            if (!await loadChatHistory(mode, { conversationId: conversation.id })) {
+                if (isSessionCurrent(owner, generation)) historyError.value = '删除未完成：无法确认云端任务记录，请重试';
+                return false;
+            }
+            const currentRows = (modeMessageBuckets.value[mode] || []).filter(message => message.conversationId === conversation.id);
+            let completed = true;
+            for (const message of currentRows) {
+                if (!isSessionCurrent(owner, generation)) return false;
+                if (!await removeHistoryMessageRecord(message)) completed = false;
+            }
+            if (!isSessionCurrent(owner, generation)) return false;
+            if (completed && activeConversationId.value === conversation.id) activeConversationId.value = null;
+            showToast(completed ? '对话已删除' : '部分记录未能删除，请重试', completed ? 'success' : 'warning');
+            return completed;
+        } finally {
+            if (isSessionCurrent(owner, generation)) {
+                advanceMutation(mode);
+                blockedWriteModes.delete(mode);
+                historyMutating.value = blockedWriteModes.size > 0;
+            }
         }
-        if (activeConversationId.value === conversation.id) {
-            activeConversationId.value = null;
-        }
-        showToast('对话已删除', 'success');
     };
 
     const clearChatHistory = async (mode = agentMode.value) => {
         const normalizedMode = normalizeAgentMode(mode);
-        if ((modeMessageBuckets.value[normalizedMode] || []).length === 0) {
-            showToast('当前没有可清空的历史记录', 'info');
-            return;
-        }
-        const label = normalizedMode === 'paper' ? '论文查询' : (normalizedMode === 'rag' ? '知识库检索' : (normalizedMode === 'chat' ? 'AI 对话' : '引导式学习'));
-        const confirmed = window.confirm(`确认清空全部「${label}」历史对话？此操作不可恢复。`);
-        if (!confirmed) return;
-
-        const sessionId = getSessionId();
+        if (blockedWriteModes.has(normalizedMode) || (modeMessageBuckets.value[normalizedMode] || []).length === 0) return false;
+        const label = normalizedMode === 'paper' ? '论文查询' : normalizedMode === 'rag' ? '知识库检索' : normalizedMode === 'chat' ? 'AI 对话' : '引导式学习';
+        if (!window.confirm(`确认清空全部「${label}」历史对话？此操作不可恢复。`)) return false;
+        const owner = getSessionId(), generation = sessionGeneration;
+        invalidateWorkspaceNavigation();
+        advanceMutation(normalizedMode);
+        const clearNavigationGeneration = navigationGeneration;
+        blockedWriteModes.add(normalizedMode);
+        historyMutating.value = true;
+        // Resolve in-flight saves before clearing so their late receipts cannot resurrect work.
+        await Promise.all([...paperSyncTasks.values()].filter(task => task.promise).map(task => task.promise));
+        if (!isSessionCurrent(owner, generation)) return false;
         try {
-            const resJson = await request(
-                `/chat/history?session_id=${encodeURIComponent(sessionId)}&agent_mode=${encodeURIComponent(normalizedMode)}`,
-                { method: 'DELETE' }
-            );
-            if (resJson?.status === 'error') {
-                throw new Error(resJson.message || '清空失败');
+            const result = await request(`/chat/history?session_id=${encodeURIComponent(owner)}&agent_mode=${encodeURIComponent(normalizedMode)}`, { method: 'DELETE' });
+            if (!isSessionCurrent(owner, generation)) return false;
+            if (result?.status !== 'success') throw new Error(result?.message || '清空失败');
+            advanceMutation(normalizedMode);
+            modeMessageBuckets.value[normalizedMode] = [];
+            if (normalizedMode === 'paper') paperSyncTasks.clear();
+            hydrateParsedMessages();
+            if (clearNavigationGeneration === navigationGeneration && normalizeAgentMode(agentMode.value) === normalizedMode) {
+                activeConversationId.value = null;
+                draftConversationId.value = '';
+                historyError.value = '';
             }
-            modeMessageBuckets.value[normalizedMode] = [];
-            Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
-            safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), '[]');
             showToast('历史记录已清空', 'success');
+            return true;
         } catch (error) {
-            modeMessageBuckets.value[normalizedMode] = [];
-            Object.keys(parsedHtmlCache).forEach(key => delete parsedHtmlCache[key]);
-            safeSetLocalStorage(getChatStorageKey(sessionId, normalizedMode), '[]');
-            historyError.value = '历史记录已从本地清空，云端同步可能未完成。';
-            showToast(error.message || '已从本地清空', 'warning');
-            console.info('[Chat] Clear history fallback to local cache.', error);
+            if (isSessionCurrent(owner, generation)) {
+                historyError.value = `云端清空未完成，历史记录仍保留：${error.message || '请重试'}`;
+                showToast(historyError.value, 'warning');
+            }
+            return false;
         } finally {
-            activeConversationId.value = null;
+            if (isSessionCurrent(owner, generation)) {
+                blockedWriteModes.delete(normalizedMode);
+                historyMutating.value = blockedWriteModes.size > 0;
+            }
         }
     };
 
@@ -919,8 +1060,10 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     const files = computed(() => selectedRepository.value?.documents || []);
 
     const loadCourseKnowledgeBases = async () => {
+        const owner = getSessionId(), generation = sessionGeneration;
         try {
             const resJson = await knowledgeApi.getCourseKnowledgeBases();
+            if (!isSessionCurrent(owner, generation)) return;
             const list = Array.isArray(resJson?.data) ? resJson.data : [];
             courseKnowledgeBases.value = list;
             if (selectedCourseDatasetIds.value.length === 0 && list.length > 0) {
@@ -942,10 +1085,12 @@ export function useChat(currentUser, showToast, agentResolver = null) {
 
     const loadKnowledgeRepositories = async () => {
         const userId = getSessionId();
+        const generation = sessionGeneration;
         if (!userId || userId === 'guest_user') return;
         knowledgeLoading.value = true;
         try {
             const resJson = await knowledgeApi.list(userId);
+            if (!isSessionCurrent(userId, generation)) return;
             const data = resJson?.data || {};
             knowledgeDatasetId.value = data.dataset_id || '';
             knowledgeRepositories.value = Array.isArray(data.repositories) ? data.repositories.map(normalizeRepository) : [];
@@ -959,9 +1104,9 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             }
         } catch (error) {
             console.info('[Knowledge] Backend unavailable.', error);
-            showToast('知识库暂时无法同步', 'error');
+            if (isSessionCurrent(userId, generation)) showToast('知识库暂时无法同步', 'error');
         } finally {
-            knowledgeLoading.value = false;
+            if (isSessionCurrent(userId, generation)) knowledgeLoading.value = false;
         }
     };
 
@@ -1331,10 +1476,11 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     loadKnowledgeRepositories();
     loadCourseKnowledgeBases();
 
-    const sendMessage = () => {
+    const sendMessage = async (overrideText = null) => {
+        handleSessionStorage({ key: 'token' });
         const sessionId = getSessionId();
-        const prompt = inputText.value;
-        if (!prompt.trim() || thinkingAgent.value) return;
+        const prompt = typeof overrideText === 'string' ? overrideText : inputText.value;
+        if (!prompt.trim() || thinkingAgent.value || blockedWriteModes.has(normalizeAgentMode(agentMode.value))) return false;
         const conversationId = getConversationIdForSend();
         const projectId = activeProjectId.value || getSystemProjectIdForMode(agentMode.value);
         if (agentMode.value === 'tutor') {
@@ -1343,9 +1489,19 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         }
         const repositoryId = agentMode.value === 'rag' ? selectedRepositoryId.value : '';
         const courseDatasetIds = agentMode.value === 'rag' ? [...selectedCourseDatasetIds.value] : null;
-        sendStreamingMessage(
+        const mode = normalizeAgentMode(agentMode.value);
+        const generation = sessionGeneration;
+        const navigation = navigationGeneration;
+        const controller = new AbortController();
+        chatSendController = controller;
+        const detachedMessages = modeMessageBuckets.value[mode];
+        // Bind to the captured mode, but follow its live array across history reconciliation.
+        const capturedMessages = computed(() => isSessionCurrent(sessionId, generation) ? modeMessageBuckets.value[mode] : detachedMessages);
+        const isCurrent = () => isSessionCurrent(sessionId, generation) && navigation === navigationGeneration && chatSendController === controller && !controller.signal.aborted;
+        try {
+            return await sendStreamingMessage(
             prompt,
-            messages,
+            capturedMessages,
             thinkingAgent,
             inputText,
             chatContainer,
@@ -1360,26 +1516,54 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             },
             currentModel.value,
             conversationId,
-            projectId
-        );
+            projectId,
+            { signal: controller.signal, isCurrent, onHistoryInvalidated: () => { if (isCurrent()) historyError.value = '任务上下文已变更，本次未保存模型回复；请刷新历史记录后重试'; } }
+            );
+        } finally {
+            // Only this request may release its busy lease, even when its token changed.
+            if (chatSendController === controller) { chatSendController = null; thinkingAgent.value = null; }
+        }
     };
 
     watch(modeMessageBuckets, (newBuckets) => {
         CHAT_TASK_MODES.forEach(mode => {
             safeSetLocalStorage(getChatStorageKey(getSessionId(), mode), newBuckets[mode] || []);
         });
-    }, { deep: true });
+    }, { deep: true, flush: 'sync' });
 
     watch(() => currentUser.value?.username, () => {
+        sessionGeneration += 1;
+        invalidateWorkspaceNavigation();
+        invalidateHistoryLoads();
+        for (const task of paperSyncTasks.values()) task.controller?.abort();
+        paperSyncTasks.clear();
+        inputText.value = '';
+        historyError.value = '';
+        blockedWriteModes.clear();
+        historyMutating.value = false;
         modeMessageBuckets.value = createModeMessageBuckets(readStoredMessages);
         activeConversationId.value = null;
         draftConversationId.value = '';
+        paperActiveTab.value = 'results';
+        projectList.value = readStoredProjects();
+        activeProjectId.value = getSystemProjectIdForMode(agentMode.value);
+        userCustomConfigs.value = [];
+        visualGuideRequestId += 1;
+        resetVisualGuideForNewConversation();
+        visualGuideCache.value = {};
+        visualGuideHistory.value = [];
+        knowledgeRepositories.value = [];
+        knowledgeLoading.value = false;
+        knowledgeDatasetId.value = '';
+        newRepositoryName.value = '';
+        courseKnowledgeBases.value = [];
+        selectedCourseDatasetIds.value = [];
         loadAllChatHistories();
         selectedRepositoryId.value = localStorage.getItem(`knowledge_repo:${getSessionId()}`) || '';
         loadKnowledgeRepositories();
         // 用户登入或账号切换时，即刻刷新专属自定义模型列表
         loadUserCustomModels();
-    });
+    }, { flush: 'sync' });
 
     return {
         inputText,
@@ -1389,6 +1573,14 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         agentMode,
         historyLoading,
         historyError,
+        historyMutating,
+        setPaperActiveTab,
+        paperWorkSyncStatus,
+        retryPaperWorkSync,
+        capturePaperSearchTransaction,
+        getWorkspaceGeneration,
+        getInputRevision,
+        setWorkspaceCancellationHandler,
         activeConversationId,
         draftConversationId,
         modeMessageBuckets,

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.responses import ok
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from app.schemas.teacher_lesson_prep import (
     LessonPlanExportRequest,
     LessonPlanGenerateRequest,
@@ -55,20 +55,16 @@ class LimitedBodyRoute(APIRoute):
 router = APIRouter(route_class=LimitedBodyRoute)
 
 
-def _teacher(authorization: str | None) -> str:
-    if not isinstance(authorization, str) or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload:
-        raise HTTPException(status_code=401, detail="invalid access token")
-    if payload.get("role") != "teacher":
+def _teacher(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    if account.role != "teacher":
         raise HTTPException(status_code=403, detail="teacher role required")
-    return str(payload["sub"])
+    return account.username
 
 
 @router.get("/teacher/lesson-prep/config")
-async def get_lesson_prep_config(authorization: str | None = Header(default=None)):
-    _teacher(authorization)
+async def get_lesson_prep_config(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _teacher(authorization, db)
     return ok(lesson_prep_service.public_config())
 
 
@@ -78,33 +74,34 @@ async def list_lesson_prep_resources(
     course: str | None = Query(default=None),
     file_type: str | None = Query(default=None),
     query: str | None = Query(default=None),
+    db: Session = Depends(get_db),
 ):
-    _teacher(authorization)
+    _teacher(authorization, db)
     data = await asyncio.to_thread(lesson_prep_service.list_resources, course=course, file_type=file_type, query=query)
     return ok(data)
 
 
 @router.post("/teacher/lesson-prep/search")
-async def search_lesson_prep_resources(payload: LessonPrepSearchRequest, authorization: str | None = Header(default=None)):
-    _teacher(authorization)
+async def search_lesson_prep_resources(payload: LessonPrepSearchRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _teacher(authorization, db)
     return ok(await asyncio.to_thread(lesson_prep_service.search, payload))
 
 
 @router.post("/teacher/lesson-prep/summarize")
-async def summarize_lesson_prep_resources(payload: LessonPrepSummaryRequest, authorization: str | None = Header(default=None)):
-    _teacher(authorization)
+async def summarize_lesson_prep_resources(payload: LessonPrepSummaryRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _teacher(authorization, db)
     return ok(await lesson_prep_service.summarize(payload))
 
 
 @router.post("/teacher/lesson-prep/generate")
-async def generate_lesson_plan(payload: LessonPlanGenerateRequest, authorization: str | None = Header(default=None)):
-    _teacher(authorization)
+async def generate_lesson_plan(payload: LessonPlanGenerateRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _teacher(authorization, db)
     return ok(await lesson_prep_service.generate_plan(payload))
 
 
 @router.post("/teacher/lesson-prep/export-docx")
-def export_lesson_plan_docx(payload: LessonPlanExportRequest, authorization: str | None = Header(default=None)):
-    _teacher(authorization)
+def export_lesson_plan_docx(payload: LessonPlanExportRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    _teacher(authorization, db)
     document_bytes, filename = lesson_prep_service.export_docx(payload)
     encoded = quote(filename)
     headers = {
@@ -124,13 +121,13 @@ def save_lesson_prep_draft(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(lesson_prep_service.save_draft(db, teacher, payload))
 
 
 @router.get("/teacher/lesson-prep/drafts")
 def list_lesson_prep_drafts(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(lesson_prep_service.list_drafts(db, teacher))
 
 
@@ -140,5 +137,5 @@ def get_lesson_prep_draft(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(lesson_prep_service.get_draft(db, teacher, draft_id))

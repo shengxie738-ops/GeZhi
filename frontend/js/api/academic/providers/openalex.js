@@ -1,12 +1,17 @@
+import {validateProviderRecords} from '../recordValidation.js';
 /**
  * openalex.js - OpenAlex 学术数据源前端 Provider
  * 经后端薄代理访问，遵循可验证字段映射与真实性契约
  */
 
-import { request } from '../../../utils/request.js';
+import { requestAcademicGateway } from '../gateway.js';
 import {
     createAcademicPaper,
     normalizeDoi,
+    buildDoiUrl,
+    arxivIdFromDoi,
+    normalizePmid,
+    normalizeArxivIdentifier,
     normalizeArxivId,
     normalizeHttpUrl,
     normalizeWorkType
@@ -42,15 +47,11 @@ export async function searchOpenAlex(query, options = {}) {
     if (!cleanQuery) return [];
 
     const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 20);
-    const url = `/academic/openalex/search?query=${encodeURIComponent(cleanQuery)}&limit=${limit}`;
-
-    const res = await request(url, {
-        method: 'GET',
-        signal: options.signal
-    });
+    const res = await requestAcademicGateway('openalex', cleanQuery, {...options, limit, label:'OpenAlex'});
 
     const items = Array.isArray(res?.items) ? res.items : (Array.isArray(res?.results) ? res.results : []);
 
+    validateProviderRecords(items, 'openalex');
     return items.map(item => {
         const title = item.title || item.display_name || '';
         const authors = (item.authorships || [])
@@ -69,12 +70,12 @@ export async function searchOpenAlex(query, options = {}) {
         }
 
         const doi = normalizeDoi(item.doi);
-        const arxivId = normalizeArxivId(item.ids?.arxiv || item.doi || '');
-        const pmid = item.ids?.pmid
-            ? String(item.ids.pmid).replace(/^https?:\/\/pubmed\.ncbi\.nlm\.nih\.gov\//i, '').replace(/^pmid:\s*/i, '').trim()
-            : '';
+        const arxivCandidates = [item.ids?.arxiv, item.primary_location?.landing_page_url, item.best_oa_location?.landing_page_url, ...(Array.isArray(item.locations) ? item.locations.flatMap(l=>[l.landing_page_url,l.pdf_url]) : [])];
+        const arxivIdentifier = arxivCandidates.map(normalizeArxivIdentifier).find(Boolean) || arxivIdFromDoi(doi);
+        const arxivId = normalizeArxivId(arxivIdentifier);
+        const pmid = normalizePmid(item.ids?.pmid);
 
-        let officialUrl = doi ? `https://doi.org/${doi}` : '';
+        let officialUrl = doi ? buildDoiUrl(doi) : '';
         if (!officialUrl && item.primary_location?.landing_page_url) {
             officialUrl = normalizeHttpUrl(item.primary_location.landing_page_url);
         }
@@ -84,10 +85,13 @@ export async function searchOpenAlex(query, options = {}) {
 
         const isOa = Boolean(item.open_access?.is_oa);
         let openAccessUrl = '';
+        let license = '';
+        let openAccessVersion = '';
         if (isOa) {
-            openAccessUrl = normalizeHttpUrl(item.best_oa_location?.pdf_url) ||
-                normalizeHttpUrl(item.best_oa_location?.landing_page_url) ||
-                normalizeHttpUrl(item.open_access?.oa_url);
+            const location = item.best_oa_location;
+            openAccessUrl = normalizeHttpUrl(location?.pdf_url) || normalizeHttpUrl(location?.landing_page_url);
+            if (openAccessUrl) { license = location?.license || ''; openAccessVersion = location?.version || ''; }
+            else openAccessUrl = normalizeHttpUrl(item.open_access?.oa_url);
         }
 
         const citationCount = (item.cited_by_count !== undefined && item.cited_by_count !== null)
@@ -103,10 +107,13 @@ export async function searchOpenAlex(query, options = {}) {
             abstract,
             doi,
             arxivId,
+            arxivIdentifier,
             pmid,
             officialUrl,
             openAccessUrl,
             isOpenAccess: isOa,
+            license,
+            openAccessVersion,
             citationCount,
             citationCountSource: citationCount !== null ? 'openalex' : ''
         }, {

@@ -87,7 +87,7 @@ assert.equal(projects.length, 1);
 assert.equal(projects[0].repositoryCard.subjectCategory, '编程团队实训');
 assert.equal(projects[0].repositoryCard.repoName, 'oj-review');
 assert.equal(projects[0].repositoryCard.repositoryStatus, '协作中');
-assert.equal(projects[0].repositoryCard.leader, '23001020119');
+assert.equal(projects[0].repositoryCard.leader, '谢渝');
 assert.ok(projects[0].repositoryCard.members.includes('谢渝'));
 assert.equal(projects[0].repositoryCard.updatedAt, '2026年7月5日12点00分');
 assert.equal(projects[0].repository.lastSyncedAt, '2026年7月5日12点00分');

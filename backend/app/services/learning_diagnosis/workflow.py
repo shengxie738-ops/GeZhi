@@ -270,6 +270,17 @@ class DiagnosisWorkflow:
         if not test_cases:
             test_cases = [{"input": ["normal"], "expected": "normal"}]
         raw = self.code_sandbox.run(code, language, test_cases)
+        if raw.get("available") is False or raw.get("errorCode") == "execution_unavailable":
+            # Infrastructure unavailability is not a student's failed attempt.
+            # Leave evidence, mastery, task progress and path unchanged.
+            return {
+                "task_id": task_id,
+                "status": "EXECUTION_UNAVAILABLE",
+                "available": False,
+                "errorCode": "execution_unavailable",
+                "message": raw.get("error"),
+                "execution": raw,
+            }
         status = "PASSED" if raw.get("total") and raw.get("passed") == raw.get("total") else "TEST_FAILED"
         if raw.get("error"):
             status = "SECURITY_VIOLATION" if "涓嶅厑璁" in str(raw["error"]) else "RUNTIME_ERROR"
@@ -351,6 +362,16 @@ class DiagnosisWorkflow:
         if not test_cases:
             test_cases = [{"input": ["normal"], "expected": "normal"}]
         raw = self.code_sandbox.run(code, language, test_cases)
+        if raw.get("available") is False or raw.get("errorCode") == "execution_unavailable":
+            return {
+                "status": "EXECUTION_UNAVAILABLE",
+                "available": False,
+                "errorCode": "execution_unavailable",
+                "language": language,
+                "test_summary": {"total": len(test_cases), "passed": 0, "failed": 0, "unrun": len(test_cases)},
+                "test_cases": [],
+                "stderr": raw.get("error"),
+            }
         status = "PASSED" if raw.get("total") and raw.get("passed") == raw.get("total") else "TEST_FAILED"
         if raw.get("error"):
             status = "SECURITY_VIOLATION" if "不允许" in str(raw["error"]) else "RUNTIME_ERROR"

@@ -1,92 +1,23 @@
+import test from 'node:test';
 import assert from 'node:assert/strict';
-
-globalThis.window = {};
-globalThis.localStorage = {
-  store: new Map([['teamGitMockFirst', 'true']]),
-  getItem(key) {
-    return this.store.get(key) || null;
-  },
-  setItem(key, value) {
-    this.store.set(key, value);
-  },
-  removeItem(key) {
-    this.store.delete(key);
-  },
-};
-globalThis.fetch = async () => {
-  throw new Error('network disabled for team git API tests');
-};
-
-const { teamGitApi } = await import('../js/api/teamGit.js');
-
-const detail = await teamGitApi.getProjectDetail('huffman-coding-team', { viewer: '李明' });
-assert.equal(detail.project.title, '哈夫曼压缩与解压引擎');
-assert.equal(detail.repository.repoName, 'huffman-coding-team');
-assert.equal(detail.repositoryCard.subjectCategory, '数据结构与算法');
-assert.equal(detail.repositoryCard.repoName, 'huffman-coding-team');
-assert.equal(detail.repositoryCard.leader, '张华');
-assert.ok(detail.repositoryCard.members.includes('李明'));
-assert.equal(detail.repositoryCard.repositoryStatus, '协作中');
-assert.match(detail.repositoryCard.prStatus, /待审核|待创建/);
-assert.equal(detail.workflowSteps.length, 6);
-assert.ok(detail.workflowSteps.every((step) => step.command.includes('git ') || step.command.includes('/pulls/new')));
-assert.ok(detail.memberProgress.some((member) => member.name === '王磊' && member.mergeStatus === 'merged'));
-
-const home = await teamGitApi.getRepositoryHome('huffman-coding-team');
-assert.equal(home.repoName, 'huffman-coding-team');
-assert.equal(home.visibility, 'private');
-assert.equal(home.cloneUrlMockOnly, true);
-assert.ok(home.files.some((file) => file.name === 'README.md'));
-assert.ok(home.classDiagram.includes('Controller'));
-
-const tree = await teamGitApi.getRepositoryTree('huffman-coding-team');
-assert.equal(tree.ref, 'main');
-assert.ok(tree.entries.some((entry) => entry.name === 'README.md'));
-
-const blob = await teamGitApi.getRepositoryBlob('huffman-coding-team', { path: 'README.md' });
-assert.equal(blob.path, 'README.md');
-assert.ok(blob.previewable);
-
-const languages = await teamGitApi.getRepositoryLanguages('huffman-coding-team');
-assert.ok(languages.some((lang) => lang.name === 'Python'));
-
-const feedback = await teamGitApi.updateRepositoryFeedback('huffman-coding-team', {
-  teacherComment: '结构清晰。',
-  revisionSuggestions: '补充单元测试。',
-  actor: 'teacher-a'
+globalThis.window={dispatchEvent(){}};globalThis.localStorage={getItem(){return null;}};
+const {teamGitApi:api}=await import('../js/api/teamGit.js');
+const p={id:'p',project:{id:'p',title:'Project',leaderId:'u'},repository:{repoName:'p',status:'created',defaultBranch:'main',taskBranch:'feature/u',cloneUrl:'https://example.invalid/team/p.git',externalVerified:true},memberProgress:[{id:'u',username:'u',name:'Displayed Student',branch:'feature/u'}],pullRequests:[],gitEvents:[]};
+let data,seen;globalThis.fetch=async(url,options)=>{seen={url,options};return {ok:true,status:200,text:async()=>JSON.stringify({code:200,data})};};
+test('real backend-shaped successful reads and write receipts flow through authenticated adapter',async()=>{
+ for(const name of ['createProject','updateProject','createRepository','bindRepository','assignMemberTask','remindMembers','confirmClone','refreshStatus','evaluateContribution']) {
+  data=structuredClone(p);const result=await (name==='createProject'?api[name]({title:'Project',members:['u']}):api[name]('p',{actor:'u'}));assert.equal(result.id,'p');assert.equal(result.memberProgress[0].name,'Displayed Student');assert.ok(['POST','PATCH'].includes(seen.options.method));
+ }
+ data=p;assert.equal((await api.reviewPullRequest('p',7,{action:'teacher_merge'})).id,'p');assert.match(seen.url,/pull-requests\/7\/review/);
+ data=[p];assert.equal((await api.listProjects({viewer:'u'})).length,1);
+ data={id:'p',deleted:true,remoteDeleted:false,scope:'local_project'};assert.equal((await api.deleteProject('p')).remoteDeleted,false);
+ data={project:p.project,repository:p.repository,files:[]};assert.deepEqual((await api.getRepositoryHome('p')).files,[]);
+ data={path:'',entries:[]};assert.deepEqual((await api.getRepositoryTree('p')).entries,[]);
+ data={path:'README.md',content:'saved'};assert.equal((await api.getRepositoryBlob('p',{path:'README.md'})).content,'saved');
+ data=[{name:'main'}];assert.equal((await api.getBranches('p'))[0].name,'main');
+ data=[];assert.deepEqual(await api.getRepositoryLanguages('p'),[]);
+ data=[{username:'u',name:'Displayed Student'}];assert.equal((await api.searchMembers({keyword:'u'}))[0].username,'u');
+ data={teacherComment:'Saved',revisionSuggestions:'Tests',teacherFeedbackUpdatedAt:'2026-10-02T08:00:00Z'};assert.equal((await api.updateRepositoryFeedback('p',data)).teacherComment,'Saved');
+ data={projectId:'p',feedback:[{id:'1',status:'rules_only'}],jobs:[],worker:{available:false},nextCursor:null};assert.equal((await api.getCoachFeedback('p')).feedback[0].status,'rules_only');
+ data={projectId:'p',jobId:'j',status:'queued',attempts:1};assert.equal((await api.retryCoachJob('p','j')).status,'queued');
 });
-assert.equal(feedback.teacherComment, '结构清晰。');
-assert.equal(feedback.revisionSuggestions, '补充单元测试。');
-assert.equal(feedback.teacherFeedbackUpdatedBy, 'teacher-a');
-assert.ok(feedback.teacherFeedbackUpdatedAt);
-
-const members = await teamGitApi.searchMembers({ keyword: '20230004', className: '计科 2301' });
-assert.ok(members.some((member) => member.studentId === '20230004' && member.source === 'mock'));
-
-const cloneResult = await teamGitApi.confirmClone('huffman-coding-team', { userId: '赵雷' });
-const zhaoleiAfterClone = cloneResult.memberProgress.find((member) => member.name === '赵雷');
-assert.equal(zhaoleiAfterClone.cloneStatus, 'done');
-assert.match(cloneResult.currentUserProgress.nextHint, /等待系统检测 push/);
-
-const created = await teamGitApi.createRepository('huffman-coding-team', { actor: 'teacher-a' });
-assert.equal(created.repository.status, 'created');
-assert.match(created.repository.cloneUrl, /huffman-coding-team\.git$/);
-
-const deletableProject = await teamGitApi.createProject({
-  id: 'delete-me-team-repo',
-  title: 'Delete Me Team Repo',
-  repoName: 'delete-me-team-repo',
-  members: ['delete-leader', 'delete-member'],
-  actor: 'delete-leader',
-});
-assert.equal(deletableProject.id, 'delete-me-team-repo');
-const deleteResult = await teamGitApi.deleteProject('delete-me-team-repo', { actor: 'delete-leader' });
-assert.equal(deleteResult.deleted, true);
-const projectsAfterDelete = await teamGitApi.listProjects({ viewer: 'delete-leader', scope: 'my' });
-assert.ok(!projectsAfterDelete.some((project) => project.id === 'delete-me-team-repo'));
-
-const refreshed = await teamGitApi.refreshStatus('huffman-coding-team', { actor: 'teacher-a' });
-assert.ok(refreshed.repository.lastSyncedAt);
-assert.ok(refreshed.gitEvents.some((event) => event.type === 'gitea_synced' || event.type === 'status_refreshed'));
-
-console.log('teamGitApi tests passed');

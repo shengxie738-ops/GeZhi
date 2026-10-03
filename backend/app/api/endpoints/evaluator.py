@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.api.deps import get_auth_payload, ensure_self_or_teacher
 from app.core.miniprogram_response import api_response, page_items
 from app.repositories.json_store import JsonStore, make_record_key
 from app.utils.datetime import utc_now_iso
@@ -47,7 +48,7 @@ DEFAULT_QUIZ = {
 
 class AttemptCreate(BaseModel):
     quizId: str
-    userId: str = "guest_user"
+    userId: str | None = None
 
 
 class AttemptSubmit(BaseModel):
@@ -102,7 +103,10 @@ async def list_quizzes(
 
 
 @router.post("/evaluator/attempts")
-async def create_attempt(payload: AttemptCreate, db: Session = Depends(get_db)):
+async def create_attempt(payload: AttemptCreate, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
+    if payload.userId is not None and payload.userId != auth["sub"]:
+        raise HTTPException(status_code=403, detail="only the account owner may create an attempt")
+    payload.userId = auth["sub"]
     store = JsonStore(db)
     quiz = _get_quiz(store, payload.quizId)
     if not quiz:
@@ -128,11 +132,12 @@ async def create_attempt(payload: AttemptCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/evaluator/attempts/{attempt_id}")
-async def get_attempt(attempt_id: str, db: Session = Depends(get_db)):
+async def get_attempt(attempt_id: str, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
     store = JsonStore(db)
     attempt = store.get_payload("evaluator", "attempt", attempt_id)
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    ensure_self_or_teacher(attempt.get("userId"), auth)
     quiz = _get_quiz(store, str(attempt.get("quizId")))
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -150,11 +155,26 @@ async def get_attempt(attempt_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/evaluator/attempts/{attempt_id}/submit")
-async def submit_attempt(attempt_id: str, payload: AttemptSubmit, db: Session = Depends(get_db)):
+async def submit_attempt(attempt_id: str, payload: AttemptSubmit, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
     store = JsonStore(db)
     attempt = store.get_payload("evaluator", "attempt", attempt_id)
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
+    if attempt.get("userId") != auth["sub"]:
+        raise HTTPException(status_code=403, detail="only the account owner may submit an attempt")
+    if attempt.get("status") == "submitted":
+        if attempt.get("answers") != payload.answers:
+            raise HTTPException(status_code=409, detail="Submitted attempt is immutable")
+        result = attempt.get("result") or {}
+        return api_response({
+            "attemptId": attempt_id,
+            "quizId": attempt["quizId"],
+            "status": "submitted",
+            "score": result.get("score"),
+            "correctCount": result.get("correctCount"),
+            "totalQuestions": result.get("totalQuestions"),
+            "submittedAt": attempt.get("submittedAt"),
+        })
     quiz = _get_quiz(store, str(attempt.get("quizId")))
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -217,8 +237,9 @@ async def submit_attempt(attempt_id: str, payload: AttemptSubmit, db: Session = 
 
 
 @router.get("/evaluator/attempts/{attempt_id}/result")
-async def get_attempt_result(attempt_id: str, db: Session = Depends(get_db)):
+async def get_attempt_result(attempt_id: str, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
     attempt = JsonStore(db).get_payload("evaluator", "attempt", attempt_id)
     if not attempt or not attempt.get("result"):
         raise HTTPException(status_code=404, detail="Result not found")
+    ensure_self_or_teacher(attempt.get("userId"), auth)
     return api_response(attempt["result"])

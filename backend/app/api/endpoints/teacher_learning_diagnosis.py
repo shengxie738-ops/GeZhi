@@ -3,20 +3,18 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.responses import ok
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from app.schemas.teacher_learning_diagnosis import ReviewNoteRequest, ReviewStateRequest, WatchFlagRequest
 from app.services.learning_diagnosis.teacher_review_service import TeacherLearningDiagnosisReviewService
 
 router = APIRouter()
 
 
-def _teacher(authorization: str | None) -> str:
-    if not isinstance(authorization, str) or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload or payload.get("role") != "teacher":
+def _teacher(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    if account.role != "teacher":
         raise HTTPException(status_code=403, detail="teacher role required")
-    return str(payload["sub"])
+    return account.username
 
 
 @router.get("/teacher/learning-diagnosis/reviews")
@@ -26,14 +24,14 @@ async def list_diagnosis_reviews(
     status: str | None = Query(default=None),
     risk_level: str | None = Query(default=None),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     data = TeacherLearningDiagnosisReviewService(db).list_reviews(teacher, status=status, risk_level=risk_level)
     return ok({"reviewer": teacher, **data})
 
 
 @router.get("/teacher/learning-diagnosis/reviews/{snapshot_id}")
 async def get_review_detail(snapshot_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).get_detail(snapshot_id, teacher))
 
 
@@ -44,7 +42,7 @@ async def review_diagnosis_snapshot(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).save_review_state(snapshot_id, teacher, payload))
 
 
@@ -55,7 +53,7 @@ async def update_review_state(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).save_review_state(snapshot_id, teacher, payload))
 
 
@@ -66,7 +64,7 @@ async def add_review_note(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).add_note(snapshot_id, teacher, payload))
 
 
@@ -77,7 +75,7 @@ async def upsert_watch_flag(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).upsert_watch_flag(student_id, teacher, payload))
 
 
@@ -87,11 +85,11 @@ async def delete_watch_flag(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    teacher = _teacher(authorization)
+    teacher = _teacher(authorization, db)
     return ok(TeacherLearningDiagnosisReviewService(db).delete_watch_flag(student_id, teacher))
 
 
 @router.get("/teacher/learning-diagnosis/weak-points")
 async def list_weak_points(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    _teacher(authorization)
-    return ok(TeacherLearningDiagnosisReviewService(db).weak_points())
+    teacher = _teacher(authorization, db)
+    return ok(TeacherLearningDiagnosisReviewService(db).weak_points(teacher))
