@@ -305,7 +305,8 @@ def _policy(context, inputs):
 
 def authorize_action(session: Session, actor_id: str, action: TeachingAction, scope: ScopeRef, object_ref: ObjectRef | None = None, *, lock: bool = False) -> AuthorizationSnapshot:
     if lock:
-        _deny(503, "lock_orchestration_required")
+        from app.services.teaching.writes import locked_authorization
+        return locked_authorization(session, actor_id, action, scope, object_ref)
     action = _action(action)
     actor, initial = _begin_read(session, actor_id)
     if not isinstance(scope, ScopeRef) or scope.institution_id != initial.institution_id:

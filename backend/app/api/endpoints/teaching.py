@@ -1,0 +1,148 @@
+"""Dedicated B1 adapter, intentionally not mounted in the aggregate application.
+
+Only recovery routes and the reusable commit-before-response helper are released.
+Future mutation endpoints must use strict DTOs, this dependency and commit_write.
+"""
+import logging
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.models.user_account import UserAccount
+from app.schemas.teaching import ReceiptQuery, WriteResultDTO
+from app.services.current_identity import resolve_current_account
+from app.services.teaching import access
+from app.services.teaching.sessions import open_teaching_session
+from app.services.teaching.types import ScopeRef, TeachingAction
+from app.services.teaching.writes import execute_write, find_receipt, get_receipt, require_clean_transaction
+
+logger = logging.getLogger(__name__)
+
+
+def _response(status, message, data=None):
+    return JSONResponse(status_code=status, content={"code": status, "message": message, "data": data},
+                        headers={"Cache-Control": "no-store"})
+
+
+def _domain_error(exc, data=None):
+    # Only narrow machine-code reasons are public, never arbitrary exception text.
+    reason = exc.detail if isinstance(exc.detail, str) and exc.detail.replace("_", "").isalnum() else "unauthenticated" if exc.status_code == 401 else "request_failed"
+    return _response(exc.status_code, reason, data)
+
+
+def _private_error():
+    correlation = str(uuid4())
+    logger.exception("B1 private error correlation=%s", correlation)
+    return _response(500, "internal_error", {"correlation_id": correlation})
+
+
+class TeachingRoute(APIRoute):
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        async def handle(request):
+            try:
+                response = await original(request)
+                response.headers["Cache-Control"] = "no-store"
+                return response
+            except HTTPException as exc:
+                return _domain_error(exc)
+            except (RequestValidationError, ValidationError):
+                return _response(422, "validation_error")
+            except (OperationalError, IntegrityError):
+                return _response(503, "database_unavailable")
+            except Exception:
+                return _private_error()
+        return handle
+
+
+router = APIRouter(prefix="/teaching", tags=["teaching"], route_class=TeachingRoute)
+
+
+def get_teaching_db():
+    # No import-time connection/startup and no legacy get_db/SessionLocal reuse.
+    from app.core.database import engine
+    with open_teaching_session(engine) as db:
+        yield db
+
+
+def get_teaching_account(
+    authorization: str | None = Header(default=None), db: Session = Depends(get_teaching_db),
+) -> UserAccount:
+    if not isinstance(db, Session):
+        raise TypeError("explicit dedicated Session required")
+    return resolve_current_account(authorization, db)
+
+
+def _write_data(result):
+    return WriteResultDTO(receipt=result.receipt, result=result.result, replayed=result.replayed).model_dump(mode="json")
+
+
+def _recovery_data(intent):
+    # Only the original receipt lookup tuple is disclosed. No request body,
+    # actor/profile, credentials, raw exception text or client/server hash.
+    query = ReceiptQuery(action=intent.action.value, scope_type=intent.scope.kind,
+                         scope_id=intent.scope.id, key=intent.idempotency_key)
+    return {"recovery": query.model_dump(mode="json")}
+
+
+def commit_write(db: Session, intent, authorization_scope, mutation):
+    """Serialize provisionally, then commit once, then construct the success HTTP.
+
+    A failed/ambiguous commit never warrants a new idempotency key. Recovery uses
+    the same actor/action/scope/key and remains subject to current authorization.
+    """
+    recovery = None
+    try:
+        recovery = _recovery_data(intent)
+        result = execute_write(db, intent, authorization_scope, mutation)
+        data = _write_data(result)
+        require_clean_transaction(db)
+    except HTTPException as exc:
+        db.rollback()
+        return _domain_error(exc, recovery if exc.status_code == 503 else None)
+    except Exception:
+        db.rollback()
+        return _private_error()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        try:
+            db.rollback()
+        finally:
+            return _response(503, "write_outcome_unknown", recovery)
+    except Exception:
+        db.rollback()
+        return _private_error()
+    return _response(200 if result.replayed else result.receipt.http_status, "ok", data)
+
+
+@router.get("/receipts")
+async def recover_by_key(request: Request, account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    pairs = list(request.query_params.multi_items())
+    if len(pairs) != len({key for key, value in pairs}):
+        raise HTTPException(422, "validation_error")
+    query = ReceiptQuery.model_validate(dict(pairs))
+    inputs = access._inputs(db)
+    reason = access._availability(inputs)
+    if reason:
+        raise HTTPException(503, reason)
+    try:
+        scope = ScopeRef(inputs.institution_id, query.scope_type, query.scope_id)
+    except ValueError:
+        raise HTTPException(422, "validation_error")
+    result = find_receipt(db, account.username, TeachingAction(query.action), scope, query.key)
+    return _response(200, "ok", _write_data(result))
+
+
+@router.get("/receipts/{receipt_id}")
+async def recover_by_id(receipt_id: str, account: UserAccount = Depends(get_teaching_account), db: Session = Depends(get_teaching_db)):
+    if not 1 <= len(receipt_id) <= 36:
+        raise HTTPException(404, "not_found")
+    result = get_receipt(db, account.username, receipt_id)
+    return _response(200, "ok", _write_data(result))

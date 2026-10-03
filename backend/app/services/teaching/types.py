@@ -3,10 +3,10 @@
 The process owner supplies/replaces one complete immutable policy generation.
 Default construction is disabled; this module never reads mutable Settings.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Mapping, Protocol
 import unicodedata
 
 if TYPE_CHECKING:
@@ -140,13 +140,17 @@ class AuthorizationContext:
 
 @dataclass(frozen=True)
 class LockedContext(AuthorizationContext):
-    """Task3 orchestrator's refreshed locked footprint, with no permission flag.
-
-    Construction alone proves no locks. The internal caller must finish all
-    root/account/relationship/preview/receipt locks before capturing policy and
-    final clock. The evaluator recomputes authority from these rows. Task2 does
-    not implement, execute or claim that orchestration.
-    """
+    """Complete refreshed footprint; construction alone is never lock proof."""
+    accounts: Mapping[str, Any] = field(default_factory=dict)
+    roles: Mapping[str, Any] = field(default_factory=dict)
+    enrollments: Mapping[str, Any] = field(default_factory=dict)
+    preview: Any = None
+    preview_footprint: "PreviewFootprint | None" = None
+    lock_plan: "LockPlan | None" = None
+    pre_mutation: Mapping[str, Any] = field(default_factory=dict)
+    session: Any = field(default=None, repr=False, compare=False)
+    authorization: "AuthorizationSnapshot | None" = None
+    policy: Any = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -167,3 +171,86 @@ class AuthorizationSnapshot:
     policy_digest: str
     policy_generation: str
     checked_at: datetime
+
+
+@dataclass(frozen=True)
+class WriteIntent:
+    actor_id: str
+    action: TeachingAction
+    scope: ScopeRef
+    target_id: str | None
+    idempotency_key: str
+    canonical_payload: Mapping[str, Any]
+    canonicalization_version: int
+    request_hash: str
+
+
+@dataclass(frozen=True)
+class ReceiptLookup:
+    actor_id: str
+    action: TeachingAction
+    scope: ScopeRef
+    idempotency_key: str
+
+    @classmethod
+    def from_intent(cls, intent: WriteIntent):
+        return cls(intent.actor_id, intent.action, intent.scope, intent.idempotency_key)
+
+
+@dataclass(frozen=True)
+class LockPlan:
+    root_course_id: str | None = None
+    root_offering_id: str | None = None
+    account_ids: tuple[str, ...] = ()
+    role_subject_ids: tuple[str, ...] = ()
+    enrollment_subject_ids: tuple[str, ...] = ()
+    preview_id: str | None = None
+    receipt_lookup: ReceiptLookup | None = None
+    target_subject_id: str | None = None
+
+
+@dataclass(frozen=True)
+class PreviewFootprint:
+    preview_id: str
+    institution_id: str
+    offering_id: str
+    actor_id: str
+    content_fingerprint: str
+    target_ids: tuple[str, ...]
+    relationship_subject_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MutationResult:
+    result_type: str
+    result_id: str
+    original_result: Mapping[str, Any]
+    revision_kind: str
+    before_revision: int
+    after_revision: int
+    effect_metadata: Mapping[str, Any]
+    http_status: int
+
+
+@dataclass(frozen=True)
+class WriteResult:
+    """Provisional until the owning HTTP adapter commits successfully.
+
+    Both projections are detached copies, never live mutable ORM state.
+    """
+    receipt: Any
+    result: dict[str, Any]
+    replayed: bool
+
+
+class WriteOperation(Protocol):
+    """Server-owned implementation, never selected or supplied by a client.
+
+    Collect only the complete declared footprint. validate_new/apply_new use
+    loaded rows and context.session.add, never queries, external calls, commits,
+    another scope, or extra locks. New mutation bodies belong to later tasks.
+    """
+    def collect_locks(self, session, intent: WriteIntent, locked_roots: LockedContext,
+                      preview_footprint: PreviewFootprint | None = None) -> LockPlan: ...
+    def validate_new(self, context: LockedContext, command: Mapping[str, Any], at: datetime) -> None: ...
+    def apply_new(self, context: LockedContext, command: Mapping[str, Any], at: datetime) -> MutationResult: ...
