@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 const storage = new Map();
 globalThis.window = {
+  __API_ORIGIN__: 'http://localhost:8516',
   localStorage: {
     getItem(key) {
       return storage.get(key) || null;

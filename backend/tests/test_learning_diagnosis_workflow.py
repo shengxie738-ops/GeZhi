@@ -85,7 +85,7 @@ class LearningDiagnosisWorkflowTest(unittest.TestCase):
         stored = workflow.store.get_session(session_id, "student-1")
         self.assertEqual(stored["current_hint_level"], 1)
 
-    def test_submit_task_records_sandbox_evidence(self):
+    def test_unavailable_coding_submit_does_not_record_sandbox_evidence(self):
         workflow = DiagnosisWorkflow(self.db, retriever_mode="mock", goal_orchestrator=StaticGoalOrchestrator())
         created = asyncio.run(workflow.create_session("student-1", {"course": "鏁版嵁缁撴瀯"}))
         task_id = created["path"]["tasks"][2]["task_id"]
@@ -97,9 +97,11 @@ class LearningDiagnosisWorkflowTest(unittest.TestCase):
             hint_level=0,
             assessment_mode=False,
         ))
-        self.assertEqual(result["status"], "RECORDED")
-        self.assertTrue(result["execution_id"])
-        self.assertTrue(any(item["source_type"] == "SANDBOX" for item in workflow.store.list_evidence("student-1")))
+        self.assertEqual(result["status"], "EXECUTION_UNAVAILABLE")
+        self.assertFalse(result["available"])
+        self.assertNotIn("evidence_id", result)
+        self.assertEqual(workflow.store.list_evidence("student-1"), [])
+        self.assertEqual(workflow.store.list_snapshots("student-1")[0]["version"], created["snapshot"]["version"])
 
     def test_path_uses_matched_existing_homework_programming_content(self):
         JsonStore(self.db).upsert("homework", "homework", "hw-tree-1", {

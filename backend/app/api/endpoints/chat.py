@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile, File
+from fastapi import Request, APIRouter, Depends, Form, Header, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 import json
 import asyncio
@@ -10,6 +10,7 @@ import uuid
 import re
 import logging
 import openai
+import httpx
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client, page_items
-from app.core.security import decode_access_token
+from app.api.deps import get_auth_payload, ensure_self_or_teacher
 from app.models.user_rag import UserRagMapping
 from app.models.code_diagnosis import CodeDiagnosis
 from app.models.user_custom_ai_model import UserCustomAIModel
@@ -30,20 +31,43 @@ from app.services.rag_service import (
 from app.services.user_knowledge_service import upload_document_to_default_repository
 from app.services.chat_history import (
     build_agent_thread_id,
+    admit_chat_request,
+    admission_invalidated,
+    chat_client_disconnected,
+    discard_invalidated_origin,
     clear_chat_history,
     delete_chat_message,
     list_chat_history,
+    list_chat_history_page,
+    save_chat_reply_if_current,
+    chat_request_receipt,
+    with_context_receipt,
+    chat_history_receipt,
     normalize_agent_mode,
     normalize_user_id,
     save_chat_message,
     save_chat_messages_batch,
 )
-from app.services.agent_workflow import agent_graph, resolve_runtime_model_id
+from app.services.agent_workflow import agent_graph, resolve_runtime_model_id, build_system_prompt
+from app.services.chat_context import build_task_messages, task_request_lock, SOURCE_CONTEXT_POLICY
 from app.services.default_agents import get_default_agent_prompt
 from app.services.model_registry import build_chat_model, has_model, list_public_models
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
 router = APIRouter()
+
+
+def _ensure_self(user_id: str, auth: dict) -> None:
+    """Client identity selectors never grant write or model-credential access."""
+    if user_id != auth.get("sub"):
+        raise HTTPException(status_code=403, detail="only the account owner may perform this action")
+
+
+def _validate_task_identity(request: ChatRequest) -> None:
+    if not clean_message_content(request.message).strip():
+        raise HTTPException(status_code=422, detail='message must contain non-whitespace text')
+    if request.conversation_id is not None and len(request.conversation_id.strip()) > 64:
+        raise HTTPException(status_code=422, detail='conversation_id must be at most 64 characters')
 
 
 def resolve_agent_mode(request: ChatRequest) -> str:
@@ -289,8 +313,10 @@ def save_dataset_mapping(db: Session, user_id: str, dataset_id: str):
 async def upload_user_doc(
     user_id: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth: dict = Depends(get_auth_payload),
 ):
+    _ensure_self(user_id, auth)
     try:
         file_bytes = await file.read()
         document = upload_document_to_default_repository(
@@ -311,16 +337,54 @@ async def upload_user_doc(
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def _invalidated_reply(reason):
+    return {'reply': '', 'history': [], 'history_saved': False,
+            'history_receipt': {'user_message_id': None, 'assistant_message_id': None},
+            'history_invalidated': True, 'history_invalidation_reason': reason,
+            'retry_allowed': False}
+
+
+async def _chat_admitted(request, auth, db, connection=None, admission=None):
+    from contextlib import nullcontext
+    with (nullcontext(admission) if admission else admit_chat_request(auth['sub'], resolve_agent_mode(request), request.conversation_id)) as ticket:
+        ticket.connection = connection
+        async with task_request_lock(auth['sub'], resolve_agent_mode(request), request.conversation_id):
+            if ticket.reason or await chat_client_disconnected():
+                return _invalidated_reply(ticket.reason)
+            return await _chat_sql(request, auth, db)
+
+
 @router.post("/chat")
-async def chat(request: ChatRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    # 鉴权防盗用：若携带 Token，强制以 Token 签发者身份执行
-    if authorization and authorization.lower().startswith("bearer "):
-        token_payload = decode_access_token(authorization.split(" ", 1)[1])
-        if token_payload and token_payload.get("sub"):
-            request.sessionId = token_payload.get("sub")
-    elif request.agent_model and not has_model(request.agent_model, category="text"):
-        # 若试图调用非内置模型（自定义模型），强制要求有效鉴权
-        raise HTTPException(status_code=401, detail="使用自定义模型需要有效的认证令牌")
+async def chat(request: ChatRequest, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db),
+               http_request: Request = None):
+    _validate_task_identity(request)
+    request.sessionId = auth["sub"]
+    request.thread_id = auth["sub"]
+    with admit_chat_request(auth['sub'], resolve_agent_mode(request), request.conversation_id) as ticket:
+        if http_request is None:
+            return await _chat_admitted(request, auth, db, admission=ticket)
+        # Nonstream ASGI handlers otherwise never consume http.disconnect. Cancel
+        # the entire admitted operation, including lock waits and async inference.
+        if await http_request.is_disconnected():
+            return _invalidated_reply('client_disconnected')
+        operation = asyncio.create_task(_chat_admitted(request, auth, db, http_request, admission=ticket))
+        try:
+            while not operation.done():
+                await asyncio.wait({operation}, timeout=0.01)
+                if await http_request.is_disconnected():
+                    operation.cancel()
+                    await asyncio.gather(operation, return_exceptions=True)
+                    return _invalidated_reply('client_disconnected')
+            return await operation
+        finally:
+            if not operation.done():
+                operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+
+
+async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
+    request.sessionId = auth["sub"]
+    request.thread_id = auth["sub"]
 
     agent_mode = resolve_agent_mode(request)
     user_id = resolve_user_id(request)
@@ -330,7 +394,7 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
-    save_chat_message(
+    current_record = save_chat_message(
         db,
         user_id=user_id,
         agent_mode=agent_mode,
@@ -338,7 +402,12 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
         content=cleaned_msg,
         conversation_id=request.conversation_id,
         project_id=request.project_id,
+        payload={"_request_token": uuid.uuid4().hex},
     )
+    current_record = chat_request_receipt(current_record)
+    if admission_invalidated():
+        discard_invalidated_origin(db, current_record)
+        return _invalidated_reply(admission_invalidated())
     
     # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
     should_search_knowledge = (
@@ -386,12 +455,27 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
     if is_configured_model_unavailable(request, config=config):
         model_unavailable_notice = build_model_unavailable_notice(request.agent_model) + "\n\n"
 
+    task_messages = build_task_messages(db, user_id=user_id, agent_mode=agent_mode,
+                                        conversation_id=request.conversation_id, current_content=user_content,
+                                        current_message_id=current_record.id)
+    current_record = with_context_receipt(current_record, task_messages)
+    initial_state = {"messages": task_messages}
+    # End the read transaction before waiting on a model; the immutable receipt
+    # and a later locking current-read protect clear/delete across workers.
+    db.rollback()
+
     if agent_mode == "rag":
         try:
             if not combined_context:
                 rag_result = "知识库中未找到相关内容，请尝试换一种问法。"
             else:
-                response = get_request_chat_model(config, temperature=0.1).invoke(user_content)
+                response = get_request_chat_model(config, temperature=0.1).invoke([
+                    build_system_prompt(config['configurable'].get('agent_prompt'), agent_id='agent_researcher', agent_mode='rag'),
+                    SystemMessage(content=SOURCE_CONTEXT_POLICY), *task_messages,
+                ])
+                if not strip_reference_source_block(response.content).strip():
+                    return {"reply":"", "history":[], "error":"empty_response", "delivery_status":"empty",
+                            "retry_allowed":False, **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
                 rag_result = build_verified_reference_reply(response.content, ref_docs, agent_mode)
             final_reply = f"【✨ 强制开启专属知识库检索 (RAG模式)】\n\n{rag_result}"
         except Exception as e:
@@ -400,26 +484,23 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
                 final_reply = build_model_unavailable_notice(config["configurable"]["agent_model"]) + "\n\n" + final_reply
         
         from app.services.profile_extractor import extract_and_update_profile
-        save_chat_message(
-            db,
-            user_id=user_id,
-            agent_mode=agent_mode,
-            role="assistant",
-            content=final_reply,
-            sender_id="agent_researcher",
-            conversation_id=request.conversation_id,
-            project_id=request.project_id,
-        )
-        asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, final_reply))
-        return {"reply": final_reply, "history": []}
+        if await chat_client_disconnected():
+            return _invalidated_reply('client_disconnected')
+        saved_reply = save_chat_reply_if_current(db, current_record=current_record, content=final_reply, sender_id="agent_researcher")
+        if saved_reply is not None:
+            asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, final_reply))
+        return {"reply": final_reply, "history": [],
+                **chat_history_receipt(db, current_record=current_record, saved_reply=saved_reply)}
 
-    initial_state = {"messages": [HumanMessage(content=user_content)]}
     
     try:
         result = await agent_graph.ainvoke(initial_state, config=config)
         final_reply = result["messages"][-1].content
         final_reply = strip_reference_source_block(final_reply)
-            
+        if not final_reply.strip():
+            return {"reply":"", "history":[], "error":"empty_response", "delivery_status":"empty",
+                    "retry_allowed":False, **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
+
         history_list = []
         for msg in result["messages"]:
             if isinstance(msg, HumanMessage):
@@ -437,6 +518,9 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
         final_reply = strip_reference_source_block(final_reply)
         history_list = []
     
+    if await chat_client_disconnected():
+        return _invalidated_reply('client_disconnected')
+
     if request.is_diagnosis:
         try:
             diagnosis_record = CodeDiagnosis(
@@ -452,25 +536,19 @@ async def chat(request: ChatRequest, authorization: str | None = Header(default=
             print(f"[DB Error] Failed to save code diagnosis: {db_err}")
 
     from app.services.profile_extractor import extract_and_update_profile
-    save_chat_message(
-        db,
-        user_id=user_id,
-        agent_mode=agent_mode,
-        role="assistant",
-        content=final_reply,
-        sender_id=get_runtime_agent_id(config),
-        conversation_id=request.conversation_id,
-        project_id=request.project_id,
-    )
-    asyncio.create_task(extract_and_update_profile(user_id, request.message, final_reply))
+    saved_reply = save_chat_reply_if_current(db, current_record=current_record, content=final_reply, sender_id=get_runtime_agent_id(config))
+    if saved_reply is not None:
+        asyncio.create_task(extract_and_update_profile(user_id, request.message, final_reply))
     return {
         "reply": model_unavailable_notice + final_reply,
-        "history": history_list
+        "history": history_list,
+        **chat_history_receipt(db, current_record=current_record, saved_reply=saved_reply),
     }
 
 
 @router.get("/diagnosis/history")
-async def get_diagnosis_history(user_id: str, db: Session = Depends(get_db)):
+async def get_diagnosis_history(user_id: str, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
+    ensure_self_or_teacher(user_id, auth)
     try:
         records = db.query(CodeDiagnosis)\
             .filter(CodeDiagnosis.user_id == user_id)\
@@ -517,6 +595,7 @@ class ChatHistoryItem(BaseModel):
 
 
 class SaveChatHistoryBatchRequest(BaseModel):
+    client_request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     user_id: str = Field(..., min_length=1, max_length=255)
     agent_mode: Literal["tutor", "rag", "chat", "paper"] = "paper"
     conversation_id: Optional[str] = Field(default=None, max_length=64)
@@ -528,7 +607,9 @@ class SaveChatHistoryBatchRequest(BaseModel):
 async def create_chat_history_message(
     payload: SaveChatHistoryRequest,
     db: Session = Depends(get_db),
+    auth: dict = Depends(get_auth_payload),
 ):
+    _ensure_self(payload.user_id, auth)
     try:
         record = save_chat_message(
             db,
@@ -566,13 +647,16 @@ async def create_chat_history_message(
 async def create_chat_history_batch(
     payload: SaveChatHistoryBatchRequest,
     db: Session = Depends(get_db),
+    auth: dict = Depends(get_auth_payload),
 ):
+    _ensure_self(payload.user_id, auth)
     try:
         records = save_chat_messages_batch(
             db,
             user_id=payload.user_id,
             agent_mode=payload.agent_mode,
             items=payload.messages,
+            client_request_id=payload.client_request_id,
             conversation_id=payload.conversation_id,
             project_id=payload.project_id,
         )
@@ -596,6 +680,8 @@ async def create_chat_history_batch(
             "message": f"成功保存 {len(saved_records)} 条历史工作记录",
             "data": saved_records,
         }
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
         logger.error(f"[Chat History] Batch save error: {e}", exc_info=True)
         return {"status": "error", "message": "保存历史工作记录失败，请稍后重试"}
@@ -606,22 +692,23 @@ async def get_chat_history(
     session_id: str,
     agent_mode: str = "tutor",
     limit: int = 200,
+    before: str | None = None,
+    conversation_id: str | None = None,
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
+    auth: dict = Depends(get_auth_payload),
 ):
+    ensure_self_or_teacher(session_id, auth)
     try:
-        history = list_chat_history(
-            db,
-            user_id=session_id,
-            agent_mode=agent_mode,
-            limit=limit,
-        )
+        page = list_chat_history_page(db, user_id=session_id, agent_mode=agent_mode,
+                                      limit=limit, before=before, conversation_id=conversation_id)
         if is_miniprogram_client(x_gezhi_client):
-            return api_response(page_items(history, limit=limit))
-        return {
-            "status": "success",
-            "data": history,
-        }
+            result = api_response(page_items(page['data'], limit=limit))
+            result['pagination'] = page['pagination']
+            return result
+        return {"status": "success", **page}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -631,7 +718,9 @@ async def remove_chat_history_message(
     message_id: int,
     session_id: str,
     db: Session = Depends(get_db),
+    auth: dict = Depends(get_auth_payload),
 ):
+    _ensure_self(session_id, auth)
     try:
         deleted = delete_chat_message(db, user_id=session_id, message_id=message_id)
         if not deleted:
@@ -646,7 +735,9 @@ async def clear_chat_history_endpoint(
     session_id: str,
     agent_mode: str = "tutor",
     db: Session = Depends(get_db),
+    auth: dict = Depends(get_auth_payload),
 ):
+    _ensure_self(session_id, auth)
     try:
         deleted_count = clear_chat_history(db, user_id=session_id, agent_mode=agent_mode)
         return {
@@ -658,7 +749,28 @@ async def clear_chat_history_endpoint(
         return {"status": "error", "message": str(e)}
 
 
-async def stream_chat_events(request: ChatRequest, db: Session):
+def _stream_complete(db, current_record, saved_reply, content, *, status='complete'):
+    receipt = chat_history_receipt(db, current_record=current_record, saved_reply=saved_reply)
+    if receipt['history_invalidated']:
+        status, content = 'failed', ''
+    response_status = ('invalidated' if receipt['history_invalidated'] else
+                       {'complete': 'ok', 'empty': 'empty', 'failed': 'error'}[status])
+    return f"data: {json.dumps({'type':'complete', **receipt, 'content':content, 'final_content':content, 'delivery_status':status, 'response_status':response_status, 'retry_allowed':False})}\n\n"
+
+
+async def stream_chat_events(request: ChatRequest, db: Session, admission=None):
+    _validate_task_identity(request)
+    from contextlib import nullcontext
+    with (nullcontext(admission) if admission else admit_chat_request(resolve_user_id(request), resolve_agent_mode(request), request.conversation_id)) as ticket:
+        async with task_request_lock(resolve_user_id(request), resolve_agent_mode(request), request.conversation_id):
+            if ticket.reason:
+                yield f"data: {json.dumps({'type':'complete', **_invalidated_reply(ticket.reason), 'content':'', 'final_content':'', 'delivery_status':'failed', 'response_status':'invalidated'})}\n\n"
+                return
+            async for event in _stream_chat_events_sql(request, db):
+                yield event
+
+
+async def _stream_chat_events_sql(request: ChatRequest, db: Session):
     agent_mode = resolve_agent_mode(request)
     user_id = resolve_user_id(request)
     thread_id = resolve_thread_id(request, user_id, agent_mode)
@@ -667,7 +779,7 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
-    save_chat_message(
+    current_record = save_chat_message(
         db,
         user_id=user_id,
         agent_mode=agent_mode,
@@ -675,7 +787,13 @@ async def stream_chat_events(request: ChatRequest, db: Session):
         content=cleaned_msg,
         conversation_id=request.conversation_id,
         project_id=request.project_id,
+        payload={"_request_token": uuid.uuid4().hex},
     )
+    current_record = chat_request_receipt(current_record)
+    if admission_invalidated():
+        discard_invalidated_origin(db, current_record)
+        yield _stream_complete(db, current_record, None, '', status='failed')
+        return
     
     # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
     should_search_knowledge = (
@@ -717,6 +835,7 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     ref_list = build_reference_source_block(ref_docs, agent_mode)
 
     full_reply = ""
+    saved_reply = None
     config = build_agent_runtime_config(
         request,
         thread_id=thread_id,
@@ -727,6 +846,15 @@ async def stream_chat_events(request: ChatRequest, db: Session):
     )
     if is_configured_model_unavailable(request, config=config):
         yield build_model_unavailable_event(request.agent_model)
+
+    task_messages = build_task_messages(db, user_id=user_id, agent_mode=agent_mode,
+                                        conversation_id=request.conversation_id, current_content=user_content,
+                                        current_message_id=current_record.id)
+    current_record = with_context_receipt(current_record, task_messages)
+    initial_state = {"messages": task_messages}
+    # End the read transaction before waiting on a model; the immutable receipt
+    # and a later locking current-read protect clear/delete across workers.
+    db.rollback()
 
     if agent_mode == "rag":
         try:
@@ -739,9 +867,16 @@ async def stream_chat_events(request: ChatRequest, db: Session):
                 full_reply += prefix
                 yield f"data: {json.dumps({'type': 'token', 'content': prefix})}\n\n"
                 model_answer = ""
-                async for chunk in get_request_chat_model(config, temperature=0.1).astream(user_content):
+                async for chunk in get_request_chat_model(config, temperature=0.1).astream([
+                    build_system_prompt(config['configurable'].get('agent_prompt'), agent_id='agent_researcher', agent_mode='rag'),
+                    SystemMessage(content=SOURCE_CONTEXT_POLICY), *task_messages,
+                ]):
                     if chunk.content:
                         model_answer += chunk.content
+                if not strip_reference_source_block(model_answer).strip():
+                    yield f"data: {json.dumps({'type':'error','code':'empty_response','message':'模型未返回有效回答，请重试。'})}\n\n"
+                    yield _stream_complete(db, current_record, None, '', status='empty')
+                    return
                 verified_answer = build_verified_reference_reply(model_answer, ref_docs, agent_mode)
                 full_reply += verified_answer
                 if verified_answer:
@@ -754,29 +889,20 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             yield f"data: {json.dumps({'type': 'error', 'message': err_msg})}\n\n"
         
         from app.services.profile_extractor import extract_and_update_profile
-        save_chat_message(
-            db,
-            user_id=user_id,
-            agent_mode=agent_mode,
-            role="assistant",
-            content=full_reply,
-            sender_id="agent_researcher",
-            conversation_id=request.conversation_id,
-            project_id=request.project_id,
-        )
-        asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, full_reply))
-        yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        saved_reply = save_chat_reply_if_current(db, current_record=current_record, content=full_reply, sender_id="agent_researcher")
+        if saved_reply is not None:
+            asyncio.create_task(extract_and_update_profile(user_id, cleaned_msg, full_reply))
+        yield _stream_complete(db, current_record, saved_reply, full_reply)
         return
 
     # Normal Agent flow: LangGraph
     if agent_mode == "paper":
-        yield f"data: {json.dumps({'type': 'progress', 'agent': 'PaperBot', 'status': 'PaperBot 正在检索学术文献与研读分析...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'progress', 'agent': 'PaperBot', 'status': 'PaperBot 正在分析当前论文任务与可用资料...'})}\n\n"
     elif agent_mode == "chat":
         yield f"data: {json.dumps({'type': 'progress', 'agent': 'AI助手', 'status': 'AI 助手正在组织回答...'})}\n\n"
     else:
         yield f"data: {json.dumps({'type': 'progress', 'agent': 'Alina', 'status': 'Alina 正在规划您的学习路径并协同导师...'})}\n\n"
     await asyncio.sleep(0.05)
-    initial_state = {"messages": [HumanMessage(content=user_content)]}
     
     # Track whether any tokens were streamed
     tokens_streamed = False
@@ -808,6 +934,11 @@ async def stream_chat_events(request: ChatRequest, db: Session):
                     agent_name = "CodeNinja"
                 yield f"data: {json.dumps({'type': 'progress_end', 'agent': agent_name, 'status': f'{tool_name} 执行完毕'})}\n\n"
         
+        if not strip_reference_source_block(full_reply).strip():
+            yield f"data: {json.dumps({'type':'error','code':'empty_response','message':'模型未返回有效回答，请重试。'})}\n\n"
+            yield _stream_complete(db, current_record, None, '', status='empty')
+            return
+
         if ref_list:
             full_reply += ref_list
             yield f"data: {json.dumps({'type': 'token', 'content': ref_list})}\n\n"
@@ -818,17 +949,9 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             
         from app.services.profile_extractor import extract_and_update_profile
         full_reply = strip_reference_source_block(full_reply)
-        save_chat_message(
-            db,
-            user_id=user_id,
-            agent_mode=agent_mode,
-            role="assistant",
-            content=full_reply,
-            sender_id=get_runtime_agent_id(config),
-            conversation_id=request.conversation_id,
-            project_id=request.project_id,
-        )
-        asyncio.create_task(extract_and_update_profile(user_id, request.message, full_reply))
+        saved_reply = save_chat_reply_if_current(db, current_record=current_record, content=full_reply, sender_id=get_runtime_agent_id(config))
+        if saved_reply is not None:
+            asyncio.create_task(extract_and_update_profile(user_id, request.message, full_reply))
             
     except Exception as e:
         print(f"[Agent Stream] Error: {e}")
@@ -840,39 +963,42 @@ async def stream_chat_events(request: ChatRequest, db: Session):
             rag_result = query_data_structure_knowledge.invoke({"query": request.message})
             fallback_reply = f"【系统提示：大模型连接失败 ({type(e).__name__})，已直接为您调用本地 RAGFlow 检索】\n\n" + rag_result
             fallback_reply = strip_reference_source_block(fallback_reply)
-            yield f"data: {json.dumps({'type': 'token', 'content': fallback_reply})}\n\n"
+            full_reply = fallback_reply
+            yield f"data: {json.dumps({'type': 'reset', 'content': fallback_reply})}\n\n"
             from app.services.profile_extractor import extract_and_update_profile
-            save_chat_message(
-                db,
-                user_id=user_id,
-                agent_mode=agent_mode,
-                role="assistant",
-                content=fallback_reply,
-                sender_id=get_runtime_agent_id(config),
-                conversation_id=request.conversation_id,
-                project_id=request.project_id,
-            )
-            asyncio.create_task(extract_and_update_profile(user_id, request.message, fallback_reply))
+            saved_reply = save_chat_reply_if_current(db, current_record=current_record, content=fallback_reply, sender_id=get_runtime_agent_id(config))
+            if saved_reply is not None:
+                asyncio.create_task(extract_and_update_profile(user_id, request.message, fallback_reply))
         except Exception as ex:
             yield f"data: {json.dumps({'type': 'error', 'message': f'系统出错: {str(ex)}'})}\n\n"
+            yield _stream_complete(db, current_record, None, '', status='failed')
+            return
 
-    yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+    yield _stream_complete(db, current_record, saved_reply, full_reply)
+
+
+class AdmittedChatStreamingResponse(StreamingResponse):
+    """Register before response headers can suspend; release even if body never starts."""
+    def __init__(self, request, db):
+        self.chat_request, self.chat_db = request, db
+        super().__init__(iter(()), media_type="text/event-stream")
+
+    async def __call__(self, scope, receive, send):
+        request = self.chat_request
+        with admit_chat_request(resolve_user_id(request), resolve_agent_mode(request), request.conversation_id) as ticket:
+            self.body_iterator = stream_chat_events(request, self.chat_db, admission=ticket)
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                await self.body_iterator.aclose()
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    # Require authentication
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    token_payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not token_payload:
-        raise HTTPException(status_code=401, detail="invalid token")
-    auth_username = token_payload.get("sub")
-    if not auth_username:
-        raise HTTPException(status_code=401, detail="invalid token payload")
-    # Use authenticated user's ID instead of client-provided one
-    request.sessionId = auth_username
-    return StreamingResponse(stream_chat_events(request, db), media_type="text/event-stream")
+async def chat_stream(request: ChatRequest, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
+    _validate_task_identity(request)
+    request.sessionId = auth["sub"]
+    request.thread_id = auth["sub"]
+    return AdmittedChatStreamingResponse(request, db)
 
 
 # ==================== OpenAI 兼容接口 ====================
@@ -913,7 +1039,7 @@ async def list_openai_models():
         ]
     }
 
-async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
+async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session, *, user_id: str):
     chat_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
     model_name = request.model
@@ -921,7 +1047,7 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
     last_msg = request.messages[-1].content if request.messages else ""
     print(f"=== [OpenAI API Request last_msg] ===\n{last_msg}\n====================================")
     cleaned_last_msg = clean_message_content(last_msg)
-    thread_id = f"openai-{uuid.uuid4()}"
+    thread_id = f"{user_id}:openai:{uuid.uuid4()}"
     
     combined_context = ""
     ref_docs = set()
@@ -946,7 +1072,7 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
 
             all_chunks = retrieve_chunks_for_user(
                 db,
-                user_id="default-thread",
+                user_id=user_id,
                 query=cleaned_last_msg,
                 top_k_per_dataset=4,
             )
@@ -1050,7 +1176,7 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
             yield f"data: {json.dumps(payload)}\n\n"
             
         from app.services.profile_extractor import extract_and_update_profile
-        asyncio.create_task(extract_and_update_profile(thread_id, last_msg, full_reply))
+        asyncio.create_task(extract_and_update_profile(user_id, last_msg, full_reply))
             
     except Exception as e:
         print(f"[OpenAI Agent Stream] Error: {e}")
@@ -1070,7 +1196,7 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
             }
             yield f"data: {json.dumps(payload)}\n\n"
             from app.services.profile_extractor import extract_and_update_profile
-            asyncio.create_task(extract_and_update_profile(thread_id, last_msg, fallback_reply))
+            asyncio.create_task(extract_and_update_profile(user_id, last_msg, fallback_reply))
         except Exception as ex:
             error_payload = {
                 "id": chat_id,
@@ -1101,14 +1227,17 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session):
 
 @router.post("/v1/chat/completions")
 @router.post("/chat/completions")
-async def openai_chat_completions(request: OpenAIChatRequest, db: Session = Depends(get_db)):
+async def openai_chat_completions(request: OpenAIChatRequest, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
+    user_id = auth["sub"]
+    if not request.messages or not clean_message_content(request.messages[-1].content).strip():
+        raise HTTPException(status_code=422, detail='message must contain non-whitespace text')
     if request.stream:
-        return StreamingResponse(stream_openai_chat_events(request, db), media_type="text/event-stream")
+        return StreamingResponse(stream_openai_chat_events(request, db, user_id=auth["sub"]), media_type="text/event-stream")
         
     last_msg = request.messages[-1].content if request.messages else ""
     print(f"=== [OpenAI API Request last_msg] ===\n{last_msg}\n====================================")
     cleaned_last_msg = clean_message_content(last_msg)
-    thread_id = f"openai-{uuid.uuid4()}"
+    thread_id = f"{user_id}:openai:{uuid.uuid4()}"
     
     combined_context = ""
     ref_docs = set()
@@ -1117,7 +1246,7 @@ async def openai_chat_completions(request: OpenAIChatRequest, db: Session = Depe
         try:
             all_chunks = retrieve_chunks_for_user(
                 db,
-                user_id="default-thread",
+                user_id=user_id,
                 query=cleaned_last_msg,
                 top_k_per_dataset=4,
             )
@@ -1168,7 +1297,7 @@ async def openai_chat_completions(request: OpenAIChatRequest, db: Session = Depe
             final_reply = f"【系统错误：{str(ex)}】"
             
     from app.services.profile_extractor import extract_and_update_profile
-    asyncio.create_task(extract_and_update_profile(thread_id, last_msg, final_reply))
+    asyncio.create_task(extract_and_update_profile(user_id, last_msg, final_reply))
     
     chat_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())

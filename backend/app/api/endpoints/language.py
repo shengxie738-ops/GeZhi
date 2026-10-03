@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from app.repositories.json_store import JsonStore
 from app.services.default_agents import get_default_agents
 from app.services.language_service import (
@@ -39,14 +39,9 @@ USER_ARTICLE_TYPE = "user_article"
 CATEGORY_LABEL = {"text": "文本", "omni": "全模态"}
 
 
-def require_user(authorization: str | None) -> str:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    token_payload = decode_access_token(authorization.split(" ", 1)[1])
-    username = token_payload.get("sub") if token_payload else None
-    if not username:
-        raise HTTPException(status_code=401, detail="invalid token")
-    return username
+def require_user(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    return account.username
 
 
 def resolve_language_model(
@@ -165,7 +160,7 @@ async def reading_analyze(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     model_id = resolve_language_model(db, FOREIGN_AGENT_ID, request.model, category="text")
     try:
         data = await analyze_reading(model_id, request.text, request.language)
@@ -184,7 +179,7 @@ async def vocabulary_explain(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    require_user(authorization)
+    require_user(authorization, db)
     model_id = resolve_language_model(db, FOREIGN_AGENT_ID, request.model, category="text")
     try:
         data = await explain_vocabulary(model_id, request.word.strip(), request.sentence)
@@ -197,7 +192,7 @@ async def vocabulary_explain(
 
 @router.get("/language/wordbook")
 async def list_wordbook(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     words = store.list_payloads(LANGUAGE_MODULE, record_type=WORD_TYPE, owner_id=username)
     return {"status": "success", "data": words}
@@ -205,7 +200,7 @@ async def list_wordbook(authorization: str | None = Header(default=None), db: Se
 
 @router.post("/language/wordbook")
 async def add_word(request: WordbookAddRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     word = request.word.strip()
     record_key = word.lower()
@@ -233,7 +228,7 @@ async def add_word(request: WordbookAddRequest, authorization: str | None = Head
 
 @router.patch("/language/wordbook/{word}")
 async def update_word(word: str, request: WordbookPatchRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     existing = store.get_payload(LANGUAGE_MODULE, WORD_TYPE, word.lower(), owner_id=username)
     if existing is None:
@@ -251,7 +246,7 @@ async def update_word(word: str, request: WordbookPatchRequest, authorization: s
 
 @router.delete("/language/wordbook/{word}")
 async def delete_word(word: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     deleted = store.delete(LANGUAGE_MODULE, WORD_TYPE, word.lower())
     if not deleted:
@@ -267,7 +262,7 @@ async def writing_analyze(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     model_id = resolve_language_model(db, FOREIGN_AGENT_ID, request.model, category="text")
     try:
         data = await analyze_writing(model_id, request.text, request.mode)
@@ -322,7 +317,7 @@ async def writing_optimize(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     model_id = resolve_language_model(db, FOREIGN_AGENT_ID, request.model, category="text")
     try:
         data = await optimize_writing(model_id, request.text, request.mode, request.issues)
@@ -361,7 +356,7 @@ async def writing_optimize(
 @router.get("/language/writing/history")
 async def writing_history_list(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """写作历史摘要列表（新→旧），详情按需单独拉取，避免列表携带全文。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     records = store.list_payloads(LANGUAGE_MODULE, record_type=WRITING_HISTORY_TYPE, owner_id=username)
     entries = [
@@ -381,7 +376,7 @@ async def writing_history_list(authorization: str | None = Header(default=None),
 
 @router.get("/language/writing/history/{record_id}")
 async def writing_history_detail(record_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     record = store.get_payload(LANGUAGE_MODULE, WRITING_HISTORY_TYPE, record_id, owner_id=username)
     if record is None:
@@ -391,7 +386,7 @@ async def writing_history_detail(record_id: str, authorization: str | None = Hea
 
 @router.delete("/language/writing/history/{record_id}")
 async def writing_history_delete(record_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     record = store.get_payload(LANGUAGE_MODULE, WRITING_HISTORY_TYPE, record_id, owner_id=username)
     if record is None:
@@ -405,7 +400,7 @@ async def writing_history_delete(record_id: str, authorization: str | None = Hea
 @router.get("/language/reading/progress")
 async def reading_progress(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """当前用户已标记为「已读」的文章 id 列表。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     records = store.list_payloads(LANGUAGE_MODULE, record_type=ARTICLE_READ_TYPE, owner_id=username)
     return {"status": "success", "data": {"readArticleIds": [record.get("articleId") or record.get("id") for record in records]}}
@@ -413,7 +408,7 @@ async def reading_progress(authorization: str | None = Header(default=None), db:
 
 @router.post("/language/reading/progress")
 async def mark_article_read(request: ReadingMarkRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     article_id = request.articleId.strip()
     existing = store.get_payload(LANGUAGE_MODULE, ARTICLE_READ_TYPE, article_id, owner_id=username)
@@ -426,7 +421,7 @@ async def mark_article_read(request: ReadingMarkRequest, authorization: str | No
 
 @router.delete("/language/reading/progress/{article_id}")
 async def unmark_article_read(article_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     record = store.get_payload(LANGUAGE_MODULE, ARTICLE_READ_TYPE, article_id, owner_id=username)
     if record is None:
@@ -440,7 +435,7 @@ async def unmark_article_read(article_id: str, authorization: str | None = Heade
 @router.get("/language/reading/user-articles")
 async def list_user_articles(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """用户自行导入的 Word 文章列表（含全文，按导入时间新→旧）。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     records = store.list_payloads(LANGUAGE_MODULE, record_type=USER_ARTICLE_TYPE, owner_id=username)
     return {"status": "success", "data": records}
@@ -453,7 +448,7 @@ async def import_user_article(
     db: Session = Depends(get_db),
 ):
     """导入 .docx Word 文档，解析出文章文本后入库（不落盘文件）。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     filename = (file.filename or "").strip()
     if not filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="仅支持 .docx 格式的 Word 文档")
@@ -490,7 +485,7 @@ async def import_user_article(
 @router.patch("/language/reading/user-articles/{record_id}")
 async def rename_user_article(record_id: str, request: UserArticleRenameRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """重命名用户导入的文章。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     title = request.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="标题不能为空")
@@ -503,7 +498,7 @@ async def rename_user_article(record_id: str, request: UserArticleRenameRequest,
 
 @router.delete("/language/reading/user-articles/{record_id}")
 async def delete_user_article(record_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     record = store.get_payload(LANGUAGE_MODULE, USER_ARTICLE_TYPE, record_id, owner_id=username)
     if record is None:
@@ -520,7 +515,7 @@ async def speaking_analyze(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     model_id = resolve_language_model(db, SPEAKING_AGENT_ID, request.model, category="omni")
     try:
         data = await analyze_speaking(
@@ -561,7 +556,7 @@ async def speaking_analyze(
 
 @router.post("/language/progress")
 async def record_progress(request: ProgressRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     payload = {"type": request.type, "durationSec": request.durationSec, "title": request.title}
     if request.type == "reading":
@@ -617,7 +612,7 @@ def _build_overview(sessions: list[dict], words: list[dict]) -> dict:
 
 @router.get("/language/overview")
 async def language_overview(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     sessions = store.list_payloads(LANGUAGE_MODULE, record_type=SESSION_TYPE, owner_id=username)
     words = store.list_payloads(LANGUAGE_MODULE, record_type=WORD_TYPE, owner_id=username)
@@ -643,7 +638,7 @@ def _aggregate_errors(sessions: list[dict]) -> list[dict]:
 
 @router.get("/language/insights")
 async def language_insights(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     sessions = list(reversed(store.list_payloads(LANGUAGE_MODULE, record_type=SESSION_TYPE, owner_id=username)))
     words = store.list_payloads(LANGUAGE_MODULE, record_type=WORD_TYPE, owner_id=username)
@@ -691,7 +686,7 @@ async def language_insights(authorization: str | None = Header(default=None), db
 @router.get("/language/insights/advice")
 async def language_insights_advice(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """LLM 学习建议单独成端点：聚合画像秒回，建议异步补充，避免整页等待。"""
-    username = require_user(authorization)
+    username = require_user(authorization, db)
     store = JsonStore(db)
     sessions = list(reversed(store.list_payloads(LANGUAGE_MODULE, record_type=SESSION_TYPE, owner_id=username)))
     words = store.list_payloads(LANGUAGE_MODULE, record_type=WORD_TYPE, owner_id=username)

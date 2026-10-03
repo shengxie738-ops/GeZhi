@@ -31,17 +31,27 @@ export const request = async (url, options = {}) => {
     // 支持全链接覆盖
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
+    const requireCurrentSession = () => {
+        if (config.signal?.aborted || (localStorage.getItem('token') || '') !== (token || '')) {
+            const error = new Error('Session changed while request was pending');
+            error.name = 'AbortError';
+            throw error;
+        }
+    };
     try {
+        requireCurrentSession();
         const response = await fetch(fullUrl, config);
+        requireCurrentSession();
         
         // 1. 如果是流式请求，或者预期返回二进制，直接返回 response
-        if (options.isStream || config.headers.Accept === 'application/octet-stream') {
+        if (response.ok && (options.isStream || config.headers.Accept === 'application/octet-stream')) {
             return response;
         }
 
         // 2. 尝试解析 JSON，如果为空可能导致错误
         let data;
         const text = await response.text();
+        requireCurrentSession();
         if (text) {
             try {
                 data = JSON.parse(text);
@@ -54,7 +64,12 @@ export const request = async (url, options = {}) => {
         if (!response.ok) {
             let message;
             if (response.status === 401) {
-                window.dispatchEvent(new CustomEvent('auth-expired'));
+                const currentToken = localStorage.getItem('token') || '';
+                const currentAuthorization = currentToken ? `Bearer ${currentToken}` : '';
+                const requestAuthorization = config.headers.Authorization || config.headers.authorization || '';
+                if (!config.signal?.aborted && requestAuthorization === currentAuthorization) {
+                    window.dispatchEvent(new CustomEvent('auth-expired'));
+                }
                 message = '登录已过期，请重新登录';
             } else if (response.status === 403) {
                 message = data?.detail || data?.message || '没有权限执行此操作';

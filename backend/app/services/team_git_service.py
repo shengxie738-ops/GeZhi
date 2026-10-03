@@ -1,16 +1,22 @@
+from app.api.deps import teacher_student_ids
 from copy import deepcopy
+from contextlib import contextmanager
+from functools import wraps
 import re
 import threading
+import uuid
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, inspect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.gitea_account_binding import GiteaAccountBinding
 from app.models.user_account import UserAccount
-from app.repositories.json_store import JsonStore
+from app.models.domain_record import DomainRecord
+from app.repositories.json_store import JsonStore, atomic_store
 from app.services.gitea_account_service import RepoPermission, ensure_repository_collaborators, match_campus_user_from_gitea_event
 from app.services.gitea_service import GiteaService, is_stale_gitea_url, normalize_repo_slug
 from app.utils.datetime import format_chinese_datetime
@@ -46,7 +52,7 @@ def _is_gitea_system_login(login: str) -> bool:
         return False
     if normalized in _GITEA_SYSTEM_LOGINS:
         return True
-    return any(normalized.startswith(f"{prefix}-") for prefix in _GITEA_SYSTEM_LOGINS)
+    return False
 
 
 def _is_real_gitea_row(item: dict[str, Any]) -> bool:
@@ -97,24 +103,11 @@ def _refresh_repository_urls(project: dict[str, Any]) -> bool:
     branch = str(repo.get("defaultBranch") or "main").strip() or "main"
 
     gitea_svc = GiteaService()
-    try:
-        gitea_repo = gitea_svc.get_repository(owner=owner, repo=repo_name)
-        if gitea_repo and gitea_repo.get("default_branch"):
-            actual_branch = str(gitea_repo["default_branch"]).strip()
-            if actual_branch and actual_branch != branch:
-                branch = actual_branch
-                repo["defaultBranch"] = branch
-                changed = True
-            else:
-                changed = False
-        else:
-            changed = False
-    except Exception:
-        changed = False
+    changed = False
 
     urls = gitea_svc.repository_urls(owner=owner, repo=repo_name, branch=branch)
     for key in ("htmlUrl", "cloneUrl", "sshUrl", "archiveUrl"):
-        if not repo.get(key) or is_stale_gitea_url(repo.get(key)):
+        if (repo.get("externalVerified") and not repo.get(key)) or (repo.get(key) and is_stale_gitea_url(repo.get(key))):
             repo[key] = urls[key]
             changed = True
     if repo.get("giteaOwner") != owner:
@@ -168,88 +161,52 @@ def _actor_class(actor: dict[str, Any] | str | None) -> str:
     return ""
 
 
-def _actor_identifiers(actor: dict[str, Any] | str | None, fallback: str = "") -> set[str]:
-    if isinstance(actor, dict):
-        values = {
-            actor.get("username"),
-            actor.get("name"),
-            actor.get("realName"),
-            actor.get("real_name"),
-            actor.get("studentId"),
-            actor.get("student_id"),
-            fallback,
-        }
-    else:
-        values = {actor, fallback}
-    return {str(value).replace(" (你)", "").strip() for value in values if str(value or "").strip()}
+def _actor_identifiers(actor, fallback="") -> set[str]:
+    # Presentation aliases and caller viewer values never grant authorization.
+    name = _actor_name(actor)
+    return {name} if name else set()
 
 
-def _project_member_names(project: dict[str, Any]) -> set[str]:
-    names = {str(item.get("name") or "").replace(" (你)", "").strip() for item in project.get("memberProgress") or []}
-    names.update(str(item.get("id") or "").strip() for item in project.get("memberProgress") or [])
-    leader = str(project.get("project", {}).get("leaderId") or "").strip()
-    created_by = str(project.get("project", {}).get("createdBy") or "").strip()
-    if leader:
-        names.add(leader)
-    if created_by:
-        names.add(created_by)
-    return {name for name in names if name}
+def _canonical_member_id(member) -> str:
+    return str(member.get("username") or member.get("id") or member.get("memberId") or "").strip()
 
 
-def _project_visible_to_actor(project: dict[str, Any], actor: dict[str, Any] | str | None, *, fallback_viewer: str = "") -> bool:
-    if not actor:
-        return True
-    if _actor_role(actor) == "teacher":
-        actor_class = _actor_class(actor)
-        project_info = project.get("project") or {}
-        project_class = str(project_info.get("className") or project_info.get("class_name") or "")
-        if project_class:
-            return bool(actor_class) and actor_class == project_class
-        return True
-    return bool(_actor_identifiers(actor, fallback_viewer) & _project_member_names(project))
+def _project_member_names(project) -> set[str]:
+    return {_canonical_member_id(m) for m in project.get("memberProgress") or []} - {""}
 
 
-def _project_leader_identifiers(project: dict[str, Any]) -> set[str]:
-    project_info = project.get("project") or {}
-    leaders = {
-        project_info.get("leaderId"),
-        project_info.get("createdBy"),
-    }
-    for member in project.get("memberProgress") or []:
-        role = str(member.get("role") or "").lower()
-        if "队长" in role or "leader" in role or "captain" in role:
-            leaders.update(
-                {
-                    member.get("id"),
-                    member.get("name"),
-                    member.get("username"),
-                    member.get("studentId"),
-                    member.get("student_id"),
-                }
-            )
-    return {str(value).replace(" (你)", "").strip() for value in leaders if str(value or "").strip()}
+def _trusted_project_teacher(project, actor) -> bool:
+    if _actor_role(actor) != "teacher":
+        return False
+    members = _project_member_names(project)
+    return bool(members) and members <= teacher_student_ids(_actor_name(actor))
 
 
-def _project_can_be_deleted_by(project: dict[str, Any], actor: dict[str, Any] | str | None) -> bool:
-    if _actor_role(actor) == "teacher":
-        return True
-    return bool(_actor_identifiers(actor) & _project_leader_identifiers(project))
+def _project_visible_to_actor(project, actor, *, fallback_viewer="") -> bool:
+    return bool(_actor_identifiers(actor) & _project_member_names(project)) or _trusted_project_teacher(project, actor)
 
 
-def _actor_is_teacher_like(actor: dict[str, Any] | str | None) -> bool:
-    if _actor_role(actor) == "teacher":
-        return True
-    # Tests and legacy callers often pass a plain teacher username instead of
-    # the resolved actor dict. Keep that path working while endpoint callers
-    # still use the explicit role from the JWT-resolved account.
-    name = _actor_name(actor).strip().lower()
-    return name.startswith("teacher") or name in {"admin", "campus-admin"}
+def _project_leader_identifiers(project) -> set[str]:
+    leader = str((project.get("project") or {}).get("leaderId") or "")
+    return {leader} if leader else set()
 
 
-def _project_can_review_pull_requests(project: dict[str, Any], actor: dict[str, Any] | str | None) -> bool:
-    if _actor_is_teacher_like(actor):
-        return True
-    return bool(_actor_identifiers(actor) & _project_leader_identifiers(project))
+def _project_can_be_deleted_by(project, actor) -> bool:
+    return _project_can_review_pull_requests(project, actor)
+
+
+def _actor_is_teacher_like(actor) -> bool:
+    return _actor_role(actor) == "teacher"
+
+
+def _project_can_review_pull_requests(project, actor) -> bool:
+    return _trusted_project_teacher(project, actor) or bool(_actor_identifiers(actor) & _project_leader_identifiers(project))
+
+
+def require_project_action(project, actor, action="manage"):
+    allowed = _trusted_project_teacher(project, actor) if action == "grade" else _project_can_review_pull_requests(project, actor)
+    if not allowed:
+        raise PermissionError("assigned teacher required" if action == "grade" else "team leader or assigned teacher required")
 
 
 def _language_stats_for_project(project: dict[str, Any]) -> list[dict[str, Any]]:
@@ -290,8 +247,9 @@ def _default_repository_home(project: dict[str, Any]) -> dict[str, Any]:
         "visibility": "private",
         "course": project_info.get("course") or "编程团队实训",
         "about": description,
-        "readme": f"# {title}\n\n{description}\n\n## 团队协作说明\n\n本仓库用于团队协作实训演示，当前 clone 地址为演示数据。",
-        "classDiagram": "Controller -> Service -> Repository -> DomainRecord",
+        "readme": "",
+        "contentSource": "unavailable",
+        "classDiagram": "",
         "teacherComment": "",
         "revisionSuggestions": "",
         "teacherFeedbackUpdatedAt": "",
@@ -301,8 +259,8 @@ def _default_repository_home(project: dict[str, Any]) -> dict[str, Any]:
         "cloneUrl": repo.get("cloneUrl") or "",
         "sshUrl": repo.get("sshUrl") or "",
         "updatedAt": project.get("updatedAt") or _now_label(),
-        "languageStats": _language_stats_for_project(project),
-        "files": _default_repository_files(project),
+        "languageStats": [],
+        "files": [],
     }
 
 
@@ -313,6 +271,9 @@ def _ensure_repository_home(project: dict[str, Any]) -> bool:
     if not isinstance(existing, dict):
         project["repositoryHome"] = default_home
         return True
+    if "contentSource" not in existing and any(existing.get(k) for k in ("readme", "classDiagram", "files", "languageStats")):
+        existing["contentSource"] = "legacy_unverified"
+        changed = True
     for key, value in default_home.items():
         if key not in existing:
             existing[key] = value
@@ -327,7 +288,7 @@ def _ensure_repository_home(project: dict[str, Any]) -> bool:
 
 
 def _default_repo(repo_name: str = "huffman-coding-team", *, status: str = "collaborating") -> dict[str, Any]:
-    urls = _repo_urls(repo_name)
+    urls = _repo_urls(repo_name) if status != "not_created" else {"htmlUrl":"", "cloneUrl":"", "sshUrl":"", "archiveUrl":""}
     return {
         "repoName": repo_name,
         **urls,
@@ -340,12 +301,17 @@ def _default_repo(repo_name: str = "huffman-coding-team", *, status: str = "coll
     }
 
 
+def _validate_branch(branch):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", str(branch)) or ".." in branch or "//" in branch or branch.endswith(("/", ".", ".lock")):
+        raise ValueError("invalid Git branch name")
+
+
 def _workflow_steps(repo: dict[str, Any], member: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     repo_name = repo.get("repoName") or "huffman-coding-team"
-    task_branch = repo.get("taskBranch") or "feature/huffman-compress"
+    task_branch = (member or {}).get("branch") or repo.get("taskBranch") or "feature/task"
     default_branch = repo.get("defaultBranch") or "main"
     fallback_urls = _repo_urls(repo_name, repo.get("giteaOwner") or "campus")
-    clone_url = repo.get("cloneUrl") or fallback_urls["cloneUrl"]
+    clone_url = repo.get("cloneUrl") or ""
     html_url = (repo.get("htmlUrl") or fallback_urls["htmlUrl"]).rstrip("/")
     clone_done = member and member.get("cloneStatus") == "done"
     push_done = member and member.get("pushStatus") in {"detected", "done"}
@@ -356,7 +322,7 @@ def _workflow_steps(repo: dict[str, Any], member: dict[str, Any] | None = None) 
             "id": "clone",
             "title": "拉取代码",
             "description": "复制仓库地址，在本地终端完成项目初始化。",
-            "command": f"git clone {clone_url}",
+            "command": f"git clone {clone_url}" if clone_url else "",
             "status": "done" if clone_done else "current",
             "statusLabel": "已拉取" if clone_done else "待确认",
             "nextHint": "拉取后点击“我已完成拉取”。",
@@ -374,7 +340,7 @@ def _workflow_steps(repo: dict[str, Any], member: dict[str, Any] | None = None) 
             "id": "commit",
             "title": "提交代码",
             "description": "把本地改动提交到任务分支，commit message 要说明实现内容。",
-            "command": 'git add .\ngit commit -m "feat: 完成哈夫曼压缩核心逻辑"',
+            "command": 'git add .\ngit commit -m "feat: 完成当前协作任务"',
             "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
             "statusLabel": "已提交" if push_done else "待提交",
             "nextHint": "提交后推送到 Gitea。",
@@ -536,7 +502,7 @@ def _default_project(project_id: str = "huffman-coding-team") -> dict[str, Any]:
             },
         ],
         "recentCommits": [
-            {"id": "c-1", "author": "李明", "branch": "feature/huffman-compress", "message": "feat: 完成哈夫曼压缩核心逻辑", "time": "15:31"},
+            {"id": "c-1", "author": "李明", "branch": "feature/huffman-compress", "message": "feat: 完成当前协作任务", "time": "15:31"},
             {"id": "c-2", "author": "张华", "branch": "feature/huffman-tree", "message": "test: 补充建树边界用例", "time": "15:26"},
             {"id": "c-3", "author": "王磊", "branch": "feature/code-map", "message": "fix: 修复单字符编码边界", "time": "15:16"},
         ],
@@ -574,14 +540,7 @@ def _member_matches(member: dict[str, Any], user_id: str) -> bool:
     key = str(user_id or "").replace(" (你)", "").strip()
     if not key:
         return False
-    identifiers = {
-        _member_key(member),
-        str(member.get("id") or "").strip(),
-        str(member.get("studentId") or "").strip(),
-        str(member.get("student_id") or "").strip(),
-        str(member.get("username") or "").strip(),
-    }
-    return key in {item for item in identifiers if item}
+    return key == _canonical_member_id(member)
 
 
 def _member_lookup_from_match(match: dict[str, Any], fallback: str = "") -> str:
@@ -598,25 +557,7 @@ def _find_member(project: dict[str, Any], user_id: str) -> dict[str, Any]:
     for member in project.get("memberProgress") or []:
         if _member_matches(member, key):
             return member
-    member = {
-        "id": normalize_repo_slug(key or "member"),
-        "name": key or "匿名成员",
-        "role": "学生",
-        "task": project.get("project", {}).get("title") or "团队协作任务",
-        "branch": project.get("repository", {}).get("taskBranch") or "feature/task",
-        "cloneStatus": "pending",
-        "commitCount": 0,
-        "pushStatus": "pending",
-        "prStatus": "not_created",
-        "mergeStatus": "pending",
-        "statusLabel": "未开始",
-        "lastCommitAt": "-",
-        "score": 0,
-        "contribution": 0,
-        "progress": 0,
-    }
-    project.setdefault("memberProgress", []).append(member)
-    return member
+    raise ValueError("unknown team member")
 
 
 def _make_member(name: str, *, role: str = "学生", task: str = "待分配协作任务", branch: str = "") -> dict[str, Any]:
@@ -647,7 +588,7 @@ def _append_event(project: dict[str, Any], event_type: str, actor: str, text: st
     events.insert(
         0,
         {
-            "id": f"event-{len(events) + 1}-{normalize_repo_slug(actor or event_type)}",
+            "id": f"event-{uuid.uuid4().hex}",
             "type": event_type,
             "actor": actor or "系统",
             "text": text,
@@ -758,8 +699,8 @@ def _member_git_activity_score(member: dict[str, Any]) -> int:
 def _apply_auto_contribution(project: dict[str, Any]) -> None:
     members = project.get("memberProgress") or []
     manual_contribution_exists = any(
-        int(member.get("contribution") or 0) > 0
-        and member.get("contributionSource") != "gitea_auto"
+        member.get("contributionSource") == "teacher"
+        or (int(member.get("contribution") or 0) > 0 and member.get("contributionSource") != "gitea_auto")
         for member in members
     )
 
@@ -796,9 +737,9 @@ def _apply_auto_contribution(project: dict[str, Any]) -> None:
 def _team_summary(project: dict[str, Any]) -> dict[str, Any]:
     _apply_auto_contribution(project)
     members = project.get("memberProgress") or []
-    completed = [item for item in members if item.get("mergeStatus") == "merged"]
-    pushed = [item for item in members if item.get("pushStatus") in {"detected", "done"}]
-    open_pr = [item for item in project.get("pullRequests") or [] if item.get("status") == "open"]
+    completed = [item for item in members if item.get("source") == "gitea" and item.get("mergeStatus") == "merged"]
+    pushed = [item for item in members if item.get("source") == "gitea" and item.get("pushStatus") in {"detected", "done"}]
+    open_pr = [item for item in project.get("pullRequests") or [] if _is_real_gitea_row(item) and item.get("status") == "open"]
     average = round(sum(int(item.get("progress") or 0) for item in members) / max(len(members), 1))
     contribution_ranking = sorted(
         [
@@ -829,15 +770,17 @@ def _team_summary(project: dict[str, Any]) -> dict[str, Any]:
         "pushedMembers": len(pushed),
         "openPullRequests": len(open_pr),
         "averageProgress": average,
-        "pendingMembers": len([item for item in members if item.get("mergeStatus") != "merged"]),
-        "unsubmittedMembers": len([item for item in members if item.get("pushStatus") not in {"detected", "done"}]),
+        "pendingMembers": len(members) - len(completed),
+        "unsubmittedMembers": len(members) - len(pushed),
         "reminderCount": len(project.get("reminders") or []),
         "contributionRanking": contribution_ranking,
     }
 
 
 def _current_user_progress(project: dict[str, Any], viewer: str | None) -> dict[str, Any]:
-    member = _find_member(project, viewer or "李明")
+    member = next((m for m in project.get("memberProgress") or [] if _canonical_member_id(m) == viewer), None)
+    if member is None:
+        return {"userId": viewer or "", "member": None, "nextHint": "", "score": None}
     if member.get("mergeStatus") == "merged":
         next_hint = "任务已完成，等待教师汇总评分。"
     elif member.get("prStatus") == "open":
@@ -856,48 +799,17 @@ def _current_user_progress(project: dict[str, Any], viewer: str | None) -> dict[
     }
 
 
-def _enrich(project: dict[str, Any], viewer: str | None = None) -> dict[str, Any]:
+def _enrich(project: dict[str, Any], viewer: str | None = None, *, actor=None) -> dict[str, Any]:
     result = deepcopy(project)
-    # 清理因 Gitea 同步而误写入的系统账号幽灵成员
-    enrolled_names: set[str] = set()
-    for enrolled in (result.get("project", {}).get("members") or []):
-        if isinstance(enrolled, dict):
-            enrolled_names.update(
-                str(enrolled.get(key) or "").strip()
-                for key in ("id", "memberId", "studentId", "username", "name")
-                if str(enrolled.get(key) or "").strip()
-            )
-        else:
-            value = str(enrolled or "").strip()
-            if value:
-                enrolled_names.add(value)
-    def _is_system_phantom(m: dict[str, Any]) -> bool:
-        name = str(m.get("name") or "").strip()
-        member_id = str(m.get("id") or "").strip()
-        return _is_gitea_system_login(name) or _is_gitea_system_login(member_id)
-
-    def _is_phantom(m: dict[str, Any]) -> bool:
-        name = str(m.get("name") or "").strip()
-        if not name or name in enrolled_names:
-            return False
-        # 含"未绑定 Gitea 用户"标记字符串（如 "campus-admin (未绑定 Gitea 用户)"）
-        if "未绑定 Gitea 用户" in name:
-            return True
-        name_lower = name.lower()
-        # 匹配已知系统账号前缀（含变体形式）
-        if _is_system_phantom(m):
-            return True
-        # 纯 ASCII 英文用户名（无汉字）
-        return bool(re.match(r'^[A-Za-z0-9_\-]+$', name))
-
-    if enrolled_names:
-        result["memberProgress"] = [m for m in (result.get("memberProgress") or []) if not _is_phantom(m)]
-    else:
-        result["memberProgress"] = [m for m in (result.get("memberProgress") or []) if not _is_system_phantom(m)]
+    principal = actor if actor is not None else viewer
+    result["memberProgress"] = [m for m in result.get("memberProgress", []) if m.get("username") or not _is_gitea_system_login(str(m.get("id") or m.get("name") or ""))]
+    result["permissions"] = {"manage": _project_can_review_pull_requests(project, principal), "review": _project_can_review_pull_requests(project, principal), "evaluate": _trusted_project_teacher(project, principal)}
     _ensure_repository_home(result)
-    if not _repository_has_live_gitea_sync(result):
-        _ensure_pull_requests_from_member_progress(result)
-    member = _find_member(result, viewer or "李明")
+    for pr in result.get("pullRequests", []):
+        pr["verified"] = _is_real_gitea_row(pr)
+        if not pr["verified"]:
+            pr["provenance"] = "legacy_unverified"
+    member = next((m for m in result.get("memberProgress") or [] if _canonical_member_id(m) == viewer), None)
     result["repository"]["statusLabel"] = _status_label(result["repository"].get("status") or "")
     result["workflowSteps"] = _workflow_steps(result["repository"], member)
     result["currentUserProgress"] = _current_user_progress(result, viewer)
@@ -921,34 +833,74 @@ def _load_project(db: Session, project_id: str) -> dict[str, Any]:
     store = _store(db)
     existing = store.get_payload(MODULE, PROJECT, project_id)
     if existing:
-        changed = _ensure_repository_home(existing)
-        if not _repository_has_live_gitea_sync(existing):
-            changed = _ensure_pull_requests_from_member_progress(existing) or changed
+        _ensure_repository_home(existing)
         _resolve_member_display_names(db, existing)
-        if changed:
-            return store.upsert(
-                MODULE,
-                PROJECT,
-                project_id,
-                existing,
-                owner_id=_project_owner_id(existing),
-                status=existing.get("status") or "active",
-            )
         return existing
-    if project_id != "huffman-coding-team":
-        raise FileNotFoundError(f"team project not found: {project_id}")
-    project = _default_project(project_id)
-    _ensure_repository_home(project)
-    _resolve_member_display_names(db, project)
-    return store.upsert(MODULE, PROJECT, project_id, project, owner_id=_project_owner_id(project), status="active")
+    raise FileNotFoundError(f"team project not found: {project_id}")
+
+
+@contextmanager
+def _locked_project(db, project_id):
+    # Provider I/O must happen before this short write transaction.
+    with atomic_store(db):
+        db.expire_all()
+        row = db.query(DomainRecord).filter_by(module=MODULE, record_type=PROJECT, record_key=project_id).with_for_update().first()
+        if not row:
+            raise FileNotFoundError("team project not found")
+        yield _load_project(db, project_id)
+
+
+def _local_project_mutation(fn):
+    @wraps(fn)
+    def wrapped(db, project_id, *args, **kwargs):
+        with _locked_project(db, project_id):
+            return fn(db, project_id, *args, **kwargs)
+    return wrapped
 
 
 def _save_project(db: Session, project: dict[str, Any]) -> dict[str, Any]:
     project["updatedAt"] = _now_label()
     _ensure_repository_home(project)
-    if not _repository_has_live_gitea_sync(project):
-        _ensure_pull_requests_from_member_progress(project)
     return _store(db).upsert(MODULE, PROJECT, project["id"], project, owner_id=_project_owner_id(project), status="active")
+
+
+def _merge_external_changes(before, after, current, path=""):
+    """Apply only this operation's delta; conflicting same-field edits need retry."""
+    result = deepcopy(current)
+    for key in set(before) | set(after):
+        old, new = before.get(key), after.get(key)
+        if old == new:
+            continue
+        present = current.get(key)
+        if key == "gitEvents":
+            known = {v.get("id") for v in old or []}
+            result[key] = ([v for v in new or [] if v.get("id") not in known] + list(present or []))[:20]
+        elif key in {"memberProgress", "pullRequests"}:
+            identity = (lambda row: _canonical_member_id(row)) if key == "memberProgress" else (lambda row: row.get("number"))
+            old_rows = {identity(v):v for v in old or []}
+            new_rows = {identity(v):v for v in new or []}
+            latest = {identity(v):v for v in present or []}
+            for row_id, row in new_rows.items():
+                if row != old_rows.get(row_id):
+                    if row_id not in latest:
+                        raise FileExistsError("team changed during external operation; refresh and retry")
+                    latest[row_id] = _merge_external_changes(old_rows.get(row_id, {}), row, latest[row_id], path+key)
+            result[key] = list(latest.values())
+        elif isinstance(old, dict) and isinstance(new, dict) and isinstance(present, dict):
+            result[key] = _merge_external_changes(old, new, present, path+key+".")
+        elif present != old and present != new and key != "updatedAt":
+            raise FileExistsError(f"concurrent change to {path}{key}; refresh and retry")
+        elif key in after:
+            result[key] = deepcopy(new)
+        else:
+            result.pop(key, None)
+    return result
+
+
+def _save_external_changes(db, before, after):
+    with _locked_project(db, after["id"]) as latest:
+        merged = _merge_external_changes(before, after, latest)
+        return _save_project(db, merged)
 
 
 def _project_owner_id(project: dict[str, Any]) -> str:
@@ -987,10 +939,8 @@ def list_collaboration_projects(
     scope: str = "all",
 ) -> list[dict[str, Any]]:
     projects = _store(db).list_payloads(MODULE, PROJECT, status="active")
-    if not projects:
-        projects = [_load_project(db, "huffman-coding-team")]
     visible = [project for project in projects if _project_visible_to_actor(project, actor, fallback_viewer=viewer or "")]
-    return [_enrich(project, _actor_name(actor, viewer or "李明")) for project in visible]
+    return [_enrich(project, _actor_name(actor, viewer or ""), actor=actor) for project in visible]
 
 
 def delete_collaboration_project(
@@ -1006,14 +956,27 @@ def delete_collaboration_project(
         raise PermissionError("project is not visible to current user")
     if not _project_can_be_deleted_by(project, actor):
         raise PermissionError("only team leaders can delete team repositories")
-    deleted = _store(db).delete(MODULE, PROJECT, project_id)
-    return {"id": project_id, "deleted": deleted}
+    from app.models.git_coach import TeamProjectIdentity
+    if not inspect(db.get_bind()).has_table(TeamProjectIdentity.__tablename__):
+        raise RuntimeError("coach_schema_unavailable")
+    with _locked_project(db, project_id) as latest:
+        require_project_action(latest, actor, "manage")
+        if db.get(TeamProjectIdentity, project_id) is None:
+            db.add(TeamProjectIdentity(project_id=project_id, owner_id=_project_owner_id(latest)))
+            db.flush()
+        row = _store(db).get_record(MODULE, PROJECT, project_id)
+        db.delete(row)
+        db.flush()
+        deleted = True
+    return {"id": project_id, "deleted": deleted, "remoteDeleted": False, "scope": "local_project"}
 
 
 def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor: str | dict[str, Any]) -> dict[str, Any]:
     data = payload or {}
     actor_name = _actor_name(actor, "队长")
     project_id = _project_id_from_payload(data)
+    if _store(db).get_payload(MODULE, PROJECT, project_id):
+        raise FileExistsError("project ID already exists")
     title = str(data.get("title") or data.get("projectTitle") or project_id)
     team_name = str(data.get("teamName") or f"{actor_name or '队长'}的小组")
     leader_id = str(data.get("leaderId") or actor_name).strip()
@@ -1026,7 +989,7 @@ def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor:
     member_names = []
     for item in raw_members:
         if isinstance(item, dict):
-            member_names.append(str(item.get("memberId") or item.get("name") or "").strip())
+            member_names.append(str(item.get("username") or item.get("memberId") or item.get("id") or "").strip())
         else:
             member_names.append(str(item).strip())
     member_names = [name for name in member_names if name]
@@ -1035,11 +998,22 @@ def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor:
     if not member_names:
         member_names = [actor_name or "队长"]
 
+    member_names = list(dict.fromkeys(member_names))
+    if isinstance(actor, dict):
+        accounts = {a.username: a for a in db.query(UserAccount).filter(UserAccount.username.in_(member_names), UserAccount.role == "student").all()}
+        if set(accounts) != set(member_names):
+            raise ValueError("members must use existing student usernames")
+        if _actor_role(actor) == "teacher":
+            if not set(member_names) <= teacher_student_ids(actor_name):
+                raise PermissionError("members must be in assigned teacher roster")
+        elif leader_id != actor_name:
+            raise PermissionError("students must create their own team")
     tasks = [task for task in (data.get("tasks") or []) if isinstance(task, dict)]
     members = []
     for name in member_names:
         task, branch = _default_task_for_member(tasks, name, title)
-        members.append(_make_member(name, role="队长" if name == leader_id else "学生", task=task, branch=branch))
+        _validate_branch(branch)
+        members.append(dict(_make_member(name, role="队长" if name == leader_id else "学生", task=task, branch=branch), id=name, username=name))
 
     repo_name = normalize_repo_slug(data.get("repoName") or project_id)
     project = {
@@ -1051,7 +1025,7 @@ def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor:
             "teamName": team_name,
             "description": description,
             "leaderId": leader_id,
-            "teacherId": data.get("teacherId") or "",
+            "teacherId": actor_name if _actor_role(actor) == "teacher" else "",
             "className": class_name,
             "status": "active",
             "createdBy": actor_name,
@@ -1068,7 +1042,7 @@ def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor:
         "chatMessages": [
             {
                 "id": 1,
-                "sender": actor or "队长",
+                "sender": actor_name,
                 "content": f"团队项目「{title}」已创建，请各成员按照任务分支推进。",
                 "time": _now_label(),
             }
@@ -1079,19 +1053,37 @@ def create_collaboration_project(db: Session, payload: dict[str, Any], *, actor:
     }
     _ensure_repository_home(project)
     _append_event(project, "project_created", actor_name, f"{actor_name or '队长'} 创建了团队协作项目 {title}")
-    saved = _save_project(db, project)
-    return _enrich(saved, actor_name)
+    from app.models.git_coach import TeamProjectIdentity
+    if not inspect(db.get_bind()).has_table(TeamProjectIdentity.__tablename__):
+        raise RuntimeError("coach_schema_unavailable")
+    try:
+        with atomic_store(db):
+            db.add(TeamProjectIdentity(project_id=project_id, owner_id=_project_owner_id(project)))
+            db.flush()
+            if _store(db).get_payload(MODULE, PROJECT, project_id):
+                raise FileExistsError("project ID already exists")
+            saved = _save_project(db, project)
+    except IntegrityError as exc:
+        db.rollback()
+        raise FileExistsError("project ID already exists or has been reserved") from exc
+    return _enrich(saved, actor_name, actor=actor)
 
 
+@_local_project_mutation
 def update_collaboration_project(db: Session, project_id: str, payload: dict[str, Any], *, actor: str) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    require_project_action(project, actor, "manage")
+    principal = actor
+    actor = _actor_name(actor)
+    if any(k in payload for k in ("leaderId", "createdBy", "teacherId", "members", "ownerId")):
+        raise ValueError("project ownership and membership are immutable")
     project_info = project.setdefault("project", {})
-    for field in ("title", "course", "teamName", "description", "teacherId"):
+    for field in ("title", "course", "teamName", "description"):
         if field in (payload or {}):
             project_info[field] = payload[field]
     _append_event(project, "project_updated", actor, f"{actor or '队长'} 更新了项目资料")
     saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    return _enrich(saved, actor, actor=principal)
 
 
 def _sync_lock_for(project_id: str) -> threading.Lock:
@@ -1104,32 +1096,13 @@ def _sync_lock_for(project_id: str) -> threading.Lock:
 
 
 def _resolve_member_gitea_username(db: Session, member: dict[str, Any]) -> str:
-    candidates = [
-        str(member.get("username") or "").strip(),
-        str(member.get("id") or "").strip(),
-        str(member.get("name") or "").strip(),
-        str(member.get("studentId") or member.get("student_id") or "").strip(),
-    ]
-    candidates = [item for item in candidates if item]
-    if not candidates:
-        return ""
-    account = (
-        db.query(UserAccount)
-        .filter(
-            or_(
-                UserAccount.username.in_(candidates),
-                UserAccount.real_name.in_(candidates),
-                UserAccount.student_id.in_(candidates),
-            )
-        )
-        .first()
-    )
+    account = db.query(UserAccount).filter(UserAccount.username == _canonical_member_id(member)).first()
     if not account:
         return ""
     binding = db.query(GiteaAccountBinding).filter(GiteaAccountBinding.campus_user_id == account.username).first()
     if binding and binding.gitea_username:
         return str(binding.gitea_username)
-    return str(account.username or "")
+    return ""
 
 
 def _find_member_for_gitea_match(project: dict[str, Any], match: dict[str, Any], fallback: str = "") -> dict[str, Any]:
@@ -1144,17 +1117,10 @@ def _find_member_for_gitea_match(project: dict[str, Any], match: dict[str, Any],
 
 
 def _find_existing_member_for_gitea_match(project: dict[str, Any], match: dict[str, Any], fallback: str = "") -> dict[str, Any] | None:
-    display = str(match.get("displayName") or "").strip()
     campus = str(match.get("campusUserId") or "").strip()
-    student_id = str(match.get("studentId") or "").strip()
-    gitea_username = str(match.get("giteaUsername") or "").strip()
-    for key in (campus, student_id, display, gitea_username, str(fallback or "").strip()):
-        if not key:
-            continue
-        for member in project.get("memberProgress") or []:
-            if _member_matches(member, key):
-                return member
-    return None
+    if not campus or match.get("matchSource") == "unmatched":
+        return None
+    return next((m for m in project.get("memberProgress") or [] if _canonical_member_id(m) == campus), None)
 
 
 def _pr_status_label(status: str) -> str:
@@ -1219,6 +1185,8 @@ def _ensure_pull_requests_from_member_progress(project: dict[str, Any]) -> bool:
     audit panel and team cards read pullRequests, so keep that collection
     consistent with memberProgress instead of showing an empty PR state.
     """
+    if project.get("demoFixture") is not True:
+        return False
     if _repository_has_live_gitea_sync(project):
         return False
 
@@ -1303,7 +1271,7 @@ def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[
         # 跳过系统账号创建的 PR
         if _is_gitea_system_login(creator_login):
             continue
-        match = match_campus_user_from_gitea_event(db, sender_username=creator_login, commit_author={})
+        match = match_campus_user_from_gitea_event(db, sender_username=creator_login)
         creator = match.get("displayName") or creator_login
         status = str(pr.get("status") or "open")
         prev = existing.get(number) or {}
@@ -1315,6 +1283,7 @@ def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[
             "status": status,
             "statusLabel": prev.get("statusLabel") if status == prev.get("status") else _pr_status_label(status),
             "creator": creator,
+            "creatorId": match.get("campusUserId") or "",
             "sourceBranch": pr.get("sourceBranch") or prev.get("sourceBranch") or "",
             "targetBranch": pr.get("targetBranch") or prev.get("targetBranch") or "main",
             "url": pr.get("url") or prev.get("url") or "",
@@ -1349,7 +1318,7 @@ def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[
             continue
         member = _find_existing_member_for_gitea_match(
             project,
-            {"displayName": pr.get("creator"), "campusUserId": ""},
+            {"campusUserId": pr.get("creatorId")},
             str(pr.get("creator") or ""),
         )
         if not member:
@@ -1378,7 +1347,11 @@ def _apply_gitea_commits_to_project(
     branch_name = str(branch or repo.get("defaultBranch") or "main")
     for commit in commits:
         sha = str(commit.get("sha") or "")
-        if not sha or sha in existing_shas:
+        if not sha:
+            continue
+        from app.services.git_coach_jobs import register_commit
+        repository_key = f"{repo.get('giteaOwner')}/{repo.get('repoName')}#{repo.get('giteaRepositoryId') or 'legacy'}".lower()
+        if not register_commit(db, repository_key, sha) or sha in existing_shas:
             continue
         author_login = str(commit.get("authorLogin") or "")
         # 跳过 Gitea 系统账号的提交，不将其写入成员进度
@@ -1387,7 +1360,7 @@ def _apply_gitea_commits_to_project(
         match = match_campus_user_from_gitea_event(
             db,
             sender_username=author_login,
-            commit_author={"name": commit.get("authorName"), "email": commit.get("authorEmail")},
+            commit_author={"username": author_login, "name": commit.get("authorName"), "email": commit.get("authorEmail")},
         )
         if _is_gitea_system_login(str(match.get("displayName") or "")):
             continue
@@ -1472,85 +1445,55 @@ def _candidate_gitea_sync_branches(project: dict[str, Any], prs: list[dict[str, 
     return branches[:max_branches]
 
 
-def sync_project_from_gitea(
-    db: Session,
-    project_id: str,
-    *,
-    actor: dict[str, Any] | str | None = None,
-    gitea: GiteaService | None = None,
-) -> dict[str, Any]:
-    lock = _sync_lock_for(project_id)
-    if not lock.acquire(blocking=False):
-        project = _load_project(db, project_id)
-        if actor is not None and not _project_visible_to_actor(project, actor):
-            raise PermissionError("project is not visible to current user")
-        return _enrich(project, _actor_name(actor, "系统"))
-
+def sync_project_from_gitea(db: Session, project_id: str, *, actor=None, gitea=None) -> dict[str, Any]:
+    snapshot = _load_project(db, project_id)
+    if actor is not None and not _project_visible_to_actor(snapshot, actor):
+        raise PermissionError("project is not visible to current user")
+    client = gitea or GiteaService()
+    owner, repo, branch = _gitea_repo_target(snapshot)
     try:
-        project = _load_project(db, project_id)
-        if actor is not None and not _project_visible_to_actor(project, actor):
+        if not client.enabled or not client.token:
+            raise RuntimeError("Gitea 未启用或缺少 API Token")
+        prs = client.list_pull_requests(owner=owner, repo=repo, state="all")
+        issues = client.list_issues(owner=owner, repo=repo, state="open")
+        commits = [(name, client.list_commits(owner=owner, repo=repo, sha=name, limit=30))
+                   for name in _candidate_gitea_sync_branches(snapshot, prs, branch)]
+    except Exception as exc:
+        with _locked_project(db, project_id) as current:
+            _mark_gitea_sync_state(current, status="error", pr_source="stored",
+                fallback_reason="同步失败，保留上次已保存的数据", error=str(exc))
+            _save_project(db, current)
+        raise RuntimeError(f"Gitea 同步失败：{exc}") from exc
+
+    with _locked_project(db, project_id) as current:
+        if _gitea_repo_target(current) != (owner, repo, branch):
+            raise FileExistsError("repository binding changed during sync; refresh and retry")
+        if actor is not None and not _project_visible_to_actor(current, actor):
             raise PermissionError("project is not visible to current user")
-
-        gitea_svc = gitea or GiteaService()
-        owner, repo, branch = _gitea_repo_target(project)
-        repo_meta = project.setdefault("repository", {})
-
-        if not gitea_svc.enabled or not gitea_svc.token:
-            _mark_gitea_sync_state(
-                project,
-                status="disabled",
-                pr_source="demo_fallback",
-                fallback_reason="Gitea 未启用或缺少 API Token，已显示演示数据",
-                error="Gitea 未启用或缺少 API Token",
-            )
-            repo_meta["lastSyncedAt"] = _now_label()
-            _save_project(db, project)
-            raise RuntimeError(repo_meta["syncError"])
-
-        if not owner or not repo:
-            _mark_gitea_sync_state(
-                project,
-                status="unbound",
-                pr_source="demo_fallback",
-                fallback_reason="项目尚未绑定 Gitea 仓库，已显示演示数据",
-                error="项目尚未绑定 Gitea 仓库",
-            )
-            repo_meta["lastSyncedAt"] = _now_label()
-            _save_project(db, project)
-            raise RuntimeError(repo_meta["syncError"])
-
-        try:
-            prs = gitea_svc.list_pull_requests(owner=owner, repo=repo, state="all")
-            issues = gitea_svc.list_issues(owner=owner, repo=repo, state="open")
-            _apply_gitea_prs_to_project(db, project, prs)
-            for branch_name in _candidate_gitea_sync_branches(project, prs, branch or repo_meta.get("defaultBranch") or "main"):
-                commits = gitea_svc.list_commits(owner=owner, repo=repo, sha=branch_name, limit=30)
-                _apply_gitea_commits_to_project(db, project, commits, branch=branch_name)
-            _apply_gitea_issues_to_project(db, project, issues)
-            _mark_gitea_sync_state(
-                project,
-                status="synced",
-                pr_source=repo_meta.get("prSource") or ("gitea" if project.get("pullRequests") else "gitea_empty"),
-                webhook_status="configured" if repo_meta.get("webhookConfigured") else repo_meta.get("webhookStatus") or "",
-            )
-            repo_meta["lastSyncedAt"] = _now_label()
-            repo_meta["syncError"] = ""
-            _append_event(project, "gitea_synced", _actor_name(actor, "系统"), f"{_actor_name(actor, '系统')} 从 Gitea 同步了 PR/提交/任务")
-            saved = _save_project(db, project)
-            return _enrich(saved, _actor_name(actor, "系统"))
-        except Exception as exc:
-            _mark_gitea_sync_state(
-                project,
-                status="error",
-                pr_source="demo_fallback",
-                fallback_reason="Gitea 同步异常，已显示演示数据",
-                error=str(exc),
-            )
-            repo_meta["lastSyncedAt"] = _now_label()
-            _save_project(db, project)
-            raise RuntimeError(f"Gitea 同步失败：{exc}") from exc
-    finally:
-        lock.release()
+        old_members = {_canonical_member_id(m): m for m in snapshot.get("memberProgress", [])}
+        protected = {}
+        for member in current.get("memberProgress", []):
+            before = old_members.get(_canonical_member_id(member), {})
+            protected[_canonical_member_id(member)] = {k: deepcopy(v) for k, v in member.items()
+                if v != before.get(k) and k not in {"commitCount", "prCount", "mergedPrCount", "lastCommitAt"}}
+        old_prs = {r.get("number"):r for r in snapshot.get("pullRequests", [])}
+        changed_prs = {r.get("number"):deepcopy(r) for r in current.get("pullRequests", [])
+                      if r != old_prs.get(r.get("number"))}
+        _apply_gitea_prs_to_project(db, current, prs)
+        if changed_prs:
+            current["pullRequests"] = [r for r in current["pullRequests"] if r.get("number") not in changed_prs] + list(changed_prs.values())
+        for name, batch in commits:
+            _apply_gitea_commits_to_project(db, current, batch, branch=name)
+        _apply_gitea_issues_to_project(db, current, issues)
+        for member in current.get("memberProgress", []):
+            member.update(protected.get(_canonical_member_id(member), {}))
+        _mark_gitea_sync_state(current, status="synced", pr_source="gitea" if current.get("pullRequests") else "gitea_empty",
+            webhook_status="configured" if current["repository"].get("webhookConfigured") else "")
+        current["repository"]["lastSyncedAt"] = _now_label()
+        current["repository"]["syncError"] = ""
+        _append_event(current,"gitea_synced",_actor_name(actor),"从 Gitea 同步了 PR/提交/任务")
+        saved = _save_project(db,current)
+    return _enrich(saved,_actor_name(actor),actor=actor)
 
 
 def check_gitea_health(*, gitea: GiteaService | None = None) -> dict[str, Any]:
@@ -1567,9 +1510,14 @@ def assign_member_task(
     gitea: GiteaService | None = None,
 ) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    snapshot = deepcopy(project)
+    require_project_action(project, actor, "manage")
+    principal = actor
+    actor = _actor_name(actor)
     member = _find_member(project, member_id)
     task = str((payload or {}).get("task") or (payload or {}).get("title") or member.get("task") or "")
-    branch = str((payload or {}).get("branch") or member.get("branch") or f"feature/{normalize_repo_slug(member.get('name') or member_id)}")
+    branch = str((payload or {}).get("branch") or member.get("branch") or f"feature/{normalize_repo_slug(member_id)}")
+    _validate_branch(branch)
     owner, repo, _default_branch = _gitea_repo_target(project)
     gitea_svc = gitea or GiteaService()
 
@@ -1620,12 +1568,16 @@ def assign_member_task(
     if project.get("repository") and _member_matches(member, project.get("project", {}).get("leaderId") or ""):
         project["repository"]["taskBranch"] = branch
     _append_event(project, "task_assigned", actor, f"{actor or '队长'} 将「{task}」分配给 {member.get('name')}")
-    saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    saved = _save_external_changes(db, snapshot, project)
+    return _enrich(saved, actor, actor=principal)
 
 
+@_local_project_mutation
 def remind_unsubmitted_members(db: Session, project_id: str, payload: dict[str, Any], *, actor: str) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    require_project_action(project, actor, "manage")
+    principal = actor
+    actor = _actor_name(actor)
     data = payload or {}
     target_ids = data.get("memberIds") or data.get("members") or []
     if isinstance(target_ids, str):
@@ -1653,7 +1605,8 @@ def remind_unsubmitted_members(db: Session, project_id: str, payload: dict[str, 
                 "message": message,
                 "actor": actor,
                 "createdAt": _now_label(),
-                "status": "sent",
+                "status": "recorded",
+                "channel": "in_app",
             },
         )
         project.setdefault("chatMessages", []).append(
@@ -1666,7 +1619,7 @@ def remind_unsubmitted_members(db: Session, project_id: str, payload: dict[str, 
         )
     _append_event(project, "member_reminded", actor, f"{actor or '队长'} 提醒了 {len(targets)} 位未提交成员")
     saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    return _enrich(saved, actor, actor=principal)
 
 
 def get_collaboration_project(
@@ -1683,7 +1636,7 @@ def get_collaboration_project(
     project = _load_project(db, project_id)
     if actor is not None and not _project_visible_to_actor(project, actor, fallback_viewer=viewer or ""):
         raise PermissionError("project is not visible to current user")
-    return _enrich(project, _actor_name(actor, viewer or "李明"))
+    return _enrich(project, _actor_name(actor, viewer or ""), actor=actor)
 
 
 def get_repository_home(
@@ -1697,7 +1650,7 @@ def get_repository_home(
     if actor is not None and not _project_visible_to_actor(project, actor):
         raise PermissionError("repository home is not visible to current user")
     _ensure_repository_home(project)
-    saved = _save_project(db, project)
+    saved = project
     home = deepcopy(saved.get("repositoryHome") or {})
 
     # 实时从 Gitea 拉取 README 和类图，覆盖 mock 默认值
@@ -1707,6 +1660,7 @@ def get_repository_home(
         real_readme = gitea_svc.get_readme(owner=owner, repo=repo, branch=branch)
         if real_readme:
             home["readme"] = real_readme
+            home["readmeSource"] = "gitea"
 
         # 尝试读取约定类图文件，找不到回退存储值
         for diagram_path in ("class-diagram.md", "docs/class-diagram.md", "class-diagram.txt"):
@@ -1716,6 +1670,7 @@ def get_repository_home(
                 )
                 if blob.get("content"):
                     home["classDiagram"] = blob["content"]
+                    home["classDiagramSource"] = "gitea"
                     break
             except (FileNotFoundError, ValueError):
                 continue
@@ -1822,6 +1777,7 @@ def get_team_repository_languages(
     ]
 
 
+@_local_project_mutation
 def update_repository_feedback(
     db: Session,
     project_id: str,
@@ -1832,8 +1788,7 @@ def update_repository_feedback(
     if _actor_role(actor) != "teacher":
         raise PermissionError("only teachers can update repository feedback")
     project = _load_project(db, project_id)
-    if not _project_visible_to_actor(project, actor):
-        raise PermissionError("repository home is not visible to current teacher")
+    require_project_action(project, actor, "grade")
     _ensure_repository_home(project)
     home = project["repositoryHome"]
     home["teacherComment"] = str((payload or {}).get("teacherComment") or "")
@@ -1859,6 +1814,14 @@ def search_team_members(
 
     like_text = f"%{query_text}%"
     query = db.query(UserAccount).filter(UserAccount.role == "student")
+    if _actor_role(actor) == "teacher":
+        query = query.filter(UserAccount.username.in_(teacher_student_ids(_actor_name(actor))))
+    elif _actor_class(actor):
+        query = query.filter(UserAccount.class_name == _actor_class(actor))
+    else:
+        query = query.filter(UserAccount.username == _actor_name(actor))
+    if class_name:
+        query = query.filter(UserAccount.class_name == class_name)
     accounts = (
         query.filter(
             or_(
@@ -1882,13 +1845,7 @@ def search_team_members(
             for item in accounts
         ]
 
-    lowered = query_text.lower()
-    return [
-        item
-        for item in MOCK_CLASS_STUDENTS
-        if (not class_name or item["className"] == class_name)
-        and (query_text in item["studentId"] or query_text in item["name"] or lowered in item["username"])
-    ][:8]
+    return []
 
 
 def backfill_repository_home_records(db: Session) -> int:
@@ -1951,16 +1908,22 @@ def create_project_repository(
     gitea: GiteaService | None = None,
 ) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    snapshot = deepcopy(project)
+    require_project_action(project, actor, "manage")
+    principal = actor
+    actor = _actor_name(actor)
     project_title = project.get("project", {}).get("title") or project_id
     repo_name = project.get("repository", {}).get("repoName") or normalize_repo_slug(project_title)
     gitea_client = gitea or GiteaService()
+    if not gitea_client.enabled or not gitea_client.token:
+        raise RuntimeError("Gitea is unavailable; repository was not created")
     repo = gitea_client.create_repository(
         name=repo_name,
         description=f"{project_title} - 团队协作实训仓库",
         private=True,
         auto_init=True,
     )
-    webhook_result: dict[str, Any] = {"configured": True}
+    webhook_result: dict[str, Any] = {"configured": False, "error": "webhook verification unavailable"}
     ensure_webhook = getattr(gitea_client, "ensure_webhook", None)
     if callable(ensure_webhook):
         raw_webhook = ensure_webhook(
@@ -1986,6 +1949,9 @@ def create_project_repository(
         {
             "repoName": repo.get("giteaRepo") or repo_name,
             "giteaOwner": repo.get("giteaOwner") or "campus",
+            "giteaRepositoryId": repo.get("giteaRepositoryId"),
+            "source": "gitea",
+            "externalVerified": True,
             "htmlUrl": repo.get("htmlUrl") or project["repository"].get("htmlUrl"),
             "cloneUrl": repo.get("cloneUrl") or project["repository"].get("cloneUrl"),
             "sshUrl": repo.get("sshUrl") or project["repository"].get("sshUrl"),
@@ -2006,37 +1972,52 @@ def create_project_repository(
         gitea=gitea_client,
     )
     project["repository"]["giteaCollaborators"] = permission_sync
+    if not webhook_configured or any(item.get("status") != "synced" for item in permission_sync):
+        project["repository"]["status"] = "setup_incomplete"
     _ensure_repository_home(project)
     project["repositoryHome"]["cloneUrlMockOnly"] = not webhook_configured
     _append_event(project, "repository_created", actor, f"{actor or '老师'} 创建了 Gitea 仓库 {project['repository']['repoName']}")
-    saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    saved = _save_external_changes(db, snapshot, project)
+    return _enrich(saved, actor, actor=principal)
 
 
-def bind_project_repository(db: Session, project_id: str, payload: dict[str, Any], *, actor: str) -> dict[str, Any]:
+def bind_project_repository(db: Session, project_id: str, payload: dict[str, Any], *, actor, gitea=None) -> dict[str, Any]:
     project = _load_project(db, project_id)
-    repo_name = payload.get("repoName") or project["repository"].get("repoName") or project_id
-    default_urls = _repo_urls(repo_name, payload.get("giteaOwner") or "campus")
-    html_url = payload.get("htmlUrl") or default_urls["htmlUrl"]
-    project["repository"].update(
-        {
-            "repoName": repo_name,
-            "giteaOwner": payload.get("giteaOwner") or "campus",
-            "htmlUrl": html_url,
-            "cloneUrl": payload.get("cloneUrl") or default_urls["cloneUrl"],
-            "sshUrl": payload.get("sshUrl") or default_urls["sshUrl"],
-            "defaultBranch": payload.get("defaultBranch") or "main",
-            "taskBranch": payload.get("taskBranch") or project["repository"].get("taskBranch"),
-            "status": "created",
-            "webhookConfigured": bool(payload.get("webhookConfigured", False)),
-            "lastSyncedAt": _now_label(),
-        }
-    )
-    _append_event(project, "repository_bound", actor, f"{actor or '老师'} 绑定了已有仓库 {repo_name}")
-    saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    snapshot = deepcopy(project)
+    require_project_action(project, actor, "manage")
+    client = gitea or GiteaService()
+    if not client.enabled or not client.token:
+        raise RuntimeError("Gitea is unavailable; binding was not verified")
+    repo_name = str(payload.get("repoName") or "").strip()
+    owner = str(payload.get("giteaOwner") or client.org or "campus").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", repo_name) or not re.fullmatch(r"[A-Za-z0-9_.-]+", owner):
+        raise ValueError("valid repository owner and name required")
+    for other in _store(db).list_payloads(MODULE, PROJECT, status="active"):
+        repo = other.get("repository") or {}
+        if other.get("id") != project_id and str(repo.get("giteaOwner") or "").lower() == owner.lower() and str(repo.get("repoName") or "").lower() == repo_name.lower():
+            raise FileExistsError("repository already belongs to another project")
+    binding = db.query(GiteaAccountBinding).filter(GiteaAccountBinding.campus_user_id == _actor_name(actor)).first()
+    if not binding or binding.sync_status != "synced" or binding.gitea_user_id is None or client.get_repository_permission(owner=owner, repo=repo_name, username=binding.gitea_username) not in {"admin", "owner"}:
+        raise PermissionError("verified repository admin permission required to bind")
+    remote = client.get_repository(owner=owner, repo=repo_name)
+    if not remote:
+        raise FileNotFoundError("repository not found")
+    if remote.get("source") != "gitea" or str(remote.get("giteaOwner") or "").lower() != owner.lower() or str(remote.get("giteaRepo") or "").lower() != repo_name.lower():
+        raise RuntimeError("repository identity could not be verified")
+    hook = client.ensure_webhook(owner=owner, repo=repo_name, project_id=project_id)
+    collaborators = ensure_repository_collaborators(db, owner, repo_name, _team_repo_permissions(project), gitea=client)
+    configured = bool(hook.get("configured"))
+    project["repository"].update({**remote, "repoName":repo_name, "giteaOwner":owner, "externalVerified":True,
+        "status":"created" if configured and all(c.get("status") == "synced" for c in collaborators) else "setup_incomplete",
+        "webhookConfigured":configured,"webhookUrl":hook.get("url") or "", "webhookError":hook.get("error") or "",
+        "webhookEvents":hook.get("events") or [], "giteaCollaborators":collaborators,"lastSyncedAt":_now_label()})
+    _ensure_repository_home(project)
+    project["repositoryHome"]["cloneUrlMockOnly"] = False
+    _append_event(project,"repository_bound",_actor_name(actor),f"绑定已验证仓库 {owner}/{repo_name}")
+    return _enrich(_save_external_changes(db,snapshot,project),_actor_name(actor),actor=actor)
 
 
+@_local_project_mutation
 def confirm_clone(db: Session, project_id: str, *, user_id: str) -> dict[str, Any]:
     project = _load_project(db, project_id)
     member = _find_member(project, user_id)
@@ -2114,7 +2095,6 @@ def _legacy_apply_gitea_webhook(db: Session, project_id: str, payload: dict[str,
         member["prStatus"] = "merged"
         member["mergeStatus"] = "merged"
         member["statusLabel"] = "已完成"
-        member["score"] = max(int(member.get("score") or 0), 96)
         member["progress"] = 100
         number = int(payload.get("number") or 0)
         if number:
@@ -2124,7 +2104,8 @@ def _legacy_apply_gitea_webhook(db: Session, project_id: str, payload: dict[str,
     return _enrich(saved, sender)
 
 
-def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+@_local_project_mutation
+def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *, durable: bool = False) -> dict[str, Any]:
     project = _load_project(db, project_id)
     event_type = payload.get("hook_name") or payload.get("type") or "unknown"
     sender = _sender_username(payload) or "system"
@@ -2145,6 +2126,10 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -
             if not isinstance(commit, dict):
                 continue
             sha = _commit_sha(commit)
+            if durable:
+                from app.services.git_coach_jobs import register_commit
+                if not register_commit(db, f"{repo.get('giteaOwner')}/{repo.get('repoName')}#{(payload.get('repository') or {}).get('id') or repo.get('giteaRepositoryId') or 'legacy'}".lower(), sha):
+                    continue
             if sha and sha in existing_shas:
                 continue
             if _is_gitea_system_commit(commit):
@@ -2177,31 +2162,14 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -
                 member_key = str(member.get("id") or member.get("studentId") or member.get("name") or sender)
                 member_refs[member_key] = member
                 member_counts[member_key] = member_counts.get(member_key, 0) + 1
-            _upsert_coach_feedback(project, _coach_queue_entry(commit, branch, author))
 
-        if not commits and not _is_gitea_system_login(sender):
-            author = _match_student_by_username(db, sender, sender)
-            member = _find_existing_member_for_gitea_match(project, {"displayName": author}, sender)
-            if member:
-                member_key = str(member.get("id") or member.get("studentId") or member.get("name") or sender)
-                member_refs[member_key] = member
-                member_counts[member_key] = int(payload.get("commitCount") or 1)
-            recent_commits.insert(
-                0,
-                {
-                    "id": f"commit-{len(recent_commits) + 1}",
-                    "author": author,
-                    "branch": branch,
-                    "message": payload.get("commitMessage") or "Detected Git push",
-                    "time": _now_label(),
-                },
-            )
 
         for member_key, count in member_counts.items():
             member = member_refs[member_key]
             member["source"] = "gitea"
             member["pushStatus"] = "detected"
-            member["prStatus"] = "needs_pr"
+            if member.get("prStatus") not in {"open", "merged"}:
+                member["prStatus"] = "needs_pr"
             member["statusLabel"] = "PR pending"
             member["commitCount"] = int(member.get("commitCount") or 0) + count
             member["lastCommitAt"] = _now_label()
@@ -2217,11 +2185,11 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -
         action = str(payload.get("action") or "").lower()
         number = int(pr.get("number") or payload.get("number") or 0)
         pr_user = pr.get("user") if isinstance(pr.get("user"), dict) else {}
-        creator_login = payload.get("creator") or pr_user.get("login") or pr_user.get("username") or sender
+        creator_login = pr_user.get("login") or pr_user.get("username") or ""
         if _is_gitea_system_login(str(creator_login or sender)):
             saved = _save_project(db, project)
             return _enrich(saved, sender)
-        match = match_campus_user_from_gitea_event(db, sender_username=str(creator_login or sender), commit_author={})
+        match = match_campus_user_from_gitea_event(db, sender_username=str(creator_login or ""))
         creator = match["displayName"]
         member = _find_existing_member_for_gitea_match(project, match, str(creator_login or sender))
         head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
@@ -2252,6 +2220,7 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -
                     "number": number,
                     "title": pr.get("title") or payload.get("title") or f"Pull Request #{number}",
                     "creator": creator,
+            "creatorId": match.get("campusUserId") or "",
                     "sourceBranch": source_branch,
                     "targetBranch": target_branch,
                     "status": status,
@@ -2288,40 +2257,27 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any]) -
             event_kind = "merge" if status == "merged" else "pull_request"
             _append_unique_event(project, event_kind, sender, f"{sender} updated Pull Request #{number}", f"pr:{number}:{status}:{action}")
 
-    # Task 4: 规则校验，写入 lastWorkflowRuleResult
-    if event_type == "push" or str(event_type).startswith("pull_request"):
-        try:
-            matched_sender = match_campus_user_from_gitea_event(db, sender_username=sender, commit_author={})
-            workflow_event_type = "pull_request" if str(event_type).startswith("pull_request") else event_type
-            rule_result = evaluate_git_workflow(
-                event_type=workflow_event_type,
-                payload=payload,
-                project=project,
-                matched_member=matched_sender,
-                author_match_source=matched_sender.get("source") or "unmatched",
-            )
-            project["lastWorkflowRuleResult"] = rule_result
-            # 若有 error 级别违规，更新成员 statusLabel 附加提示（不回退进度）
-            has_error = any(v.get("severity") == "error" for v in rule_result.get("violations") or [])
-            if has_error and event_type == "push":
-                branch_push = payload.get("branch") or _branch_from_ref(payload.get("ref")) or ""
-                for commit in (payload.get("commits") or []):
-                    if not isinstance(commit, dict):
-                        continue
-                    c_match = match_campus_user_from_gitea_event(
-                        db,
-                        sender_username=sender,
-                        commit_author=commit.get("author") if isinstance(commit.get("author"), dict) else {},
-                    )
-                    c_author_lookup = _member_lookup_from_match(c_match, sender)
-                    if c_author_lookup:
-                        member = _find_member(project, c_author_lookup)
-                        current_label = str(member.get("statusLabel") or "")
-                        if "修正" not in current_label:
-                            member["statusLabel"] = f"{current_label}·分支需修正" if current_label else "推送已检测·分支需修正"
-        except Exception as _rule_exc:
-            import logging as _log
-            _log.getLogger(__name__).warning("apply_gitea_webhook: 规则校验失败: %s", _rule_exc)
+    # Assess each actual commit author, never the authenticated delivery/pusher.
+    workflow_event = "pull_request" if str(event_type).startswith("pull_request") else event_type
+    evidence = payload.get("commits") or [] if workflow_event == "push" else [None]
+    results = []
+    for commit in evidence:
+        author = commit.get("author") if isinstance(commit, dict) and isinstance(commit.get("author"), dict) else {}
+        identity = match_campus_user_from_gitea_event(db, sender_username=sender, commit_author=author)
+        scoped_payload = {**payload, "commits": [commit]} if commit is not None else payload
+        assessed = evaluate_git_workflow(event_type=workflow_event, payload=scoped_payload,
+            project=project, matched_member=identity, author_match_source=identity.get("matchSource") or "unmatched")
+        assessed["sha"] = _commit_sha(commit) if commit else ""
+        assessed["authorId"] = identity.get("campusUserId") or ""
+        results.append(assessed)
+    if results:
+        project["lastWorkflowRuleResult"] = {
+            "eventType": workflow_event, "evaluatedAt": _now_label(),
+            "score": min(r["score"] for r in results), "results": results,
+            "violations": [v for r in results for v in r.get("violations", [])],
+            "passed": [v for r in results for v in r.get("passed", [])],
+            "scoreExplanation": {"aggregation": "minimum per-commit workflow score", "scope": "Workflow heuristics only"},
+        }
 
     saved = _save_project(db, project)
     return _enrich(saved, sender)
@@ -2352,29 +2308,31 @@ def find_project_id_by_repo_name(db: Session, repo_name: str) -> str | None:
 
 
 def resolve_team_project_id(db: Session, project_id: str, payload: dict) -> str:
-    """优先按 project_id 定位项目；若无效则从 payload.repository 反查 repoName。
-    两边均失败时 raise FileNotFoundError。
-    """
-    # 1) 直接按 project_id 加载
+    """The signed repository must match the exact path's persisted binding."""
     existing = _store(db).get_payload(MODULE, PROJECT, project_id)
-    if existing:
-        return project_id
+    if not existing:
+        raise FileNotFoundError("team project not found for webhook")
+    repo = payload.get("repository")
+    if not isinstance(repo, dict):
+        raise ValueError("repository object required")
+    owner = repo.get("owner")
+    if not isinstance(owner, dict):
+        raise ValueError("repository owner required")
+    owner_name = str(owner.get("login") or owner.get("username") or "")
+    repo_name = str(repo.get("name") or "")
+    stored = existing.get("repository") or {}
+    expected_owner = str(stored.get("giteaOwner") or "")
+    expected_name = str(stored.get("giteaRepo") or stored.get("repoName") or "")
+    if not owner_name or not repo_name or owner_name.lower() != expected_owner.lower() or repo_name.lower() != expected_name.lower():
+        raise PermissionError("webhook repository does not match project binding")
+    if repo.get("full_name") and str(repo["full_name"]).lower() != f"{expected_owner}/{expected_name}".lower():
+        raise PermissionError("inconsistent webhook repository identity")
+    if type(stored.get("giteaRepositoryId")) is not int or stored["giteaRepositoryId"] <= 0:
+        raise FileExistsError("binding_verification_required")
+    if type(repo.get("id")) is not int or repo.get("id") != stored["giteaRepositoryId"]:
+        raise PermissionError("webhook repository ID does not match project binding")
+    return project_id
 
-    # 2) 从 payload 提取仓库名，尝试反查
-    repo_payload = payload.get("repository") or {}
-    candidates = [
-        repo_payload.get("name"),
-        repo_payload.get("full_name"),
-        repo_payload.get("repo"),
-    ]
-    for candidate in candidates:
-        if not candidate:
-            continue
-        found_id = find_project_id_by_repo_name(db, str(candidate))
-        if found_id:
-            return found_id
-
-    raise FileNotFoundError(f"team project not found for webhook (project_id={project_id!r})")
 
 
 def enqueue_git_coach_feedback(project_id: str, payload: dict[str, Any]) -> None:
@@ -2399,27 +2357,7 @@ def _find_pr(project: dict[str, Any], pr_number: int) -> dict[str, Any]:
     for pr in project.get("pullRequests") or []:
         if int(pr.get("number") or 0) == int(pr_number or 0):
             return pr
-    repo = project.get("repository") or {}
-    pr = {
-        "id": f"pr-{pr_number}",
-        "number": int(pr_number or len(project.get("pullRequests") or []) + 1),
-        "title": f"Pull Request #{pr_number}",
-        "creator": "",
-        "sourceBranch": repo.get("taskBranch") or "feature/task",
-        "targetBranch": repo.get("defaultBranch") or "main",
-        "status": "open",
-        "statusLabel": "PR 待审核",
-        "leaderReviewStatus": "pending",
-        "leaderReviewer": "",
-        "teacherReviewStatus": "pending",
-        "teacherReviewer": "",
-        "reviewComment": "",
-        "createdAt": _now_label(),
-        "updatedAt": _now_label(),
-        "url": f"{str(repo.get('htmlUrl') or '').rstrip('/')}/pulls/{pr_number}",
-    }
-    project.setdefault("pullRequests", []).insert(0, pr)
-    return pr
+    raise FileNotFoundError("pull request not found")
 
 
 def review_pull_request(
@@ -2432,6 +2370,7 @@ def review_pull_request(
     gitea: GiteaService | None = None,
 ) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    snapshot = deepcopy(project)
     data = payload or {}
     action = str(data.get("action") or "recommend_merge")
     comment = str(data.get("comment") or "")
@@ -2445,9 +2384,15 @@ def review_pull_request(
         "reject",
     }
     merge_actions = {"teacher_approve", "teacher_merge", "merge", "leader_merge", "approve_merge"}
-    if action in review_actions | merge_actions and not _project_can_review_pull_requests(project, actor):
+    if action not in review_actions | merge_actions:
+        raise ValueError("unsupported review action")
+    if action.startswith("teacher_") or action == "reject":
+        require_project_action(project, actor, "grade")
+    if not _project_can_review_pull_requests(project, actor):
         raise PermissionError("only team leaders or teachers can review pull requests")
     pr = _find_pr(project, int(pr_number))
+    if not _is_real_gitea_row(pr):
+        raise ValueError("sync this pull request from Gitea before reviewing it")
     now = _now_label()
 
     if action in {"leader_approve", "recommend_merge"}:
@@ -2504,13 +2449,14 @@ def review_pull_request(
         pr["status"] = "merged"
         pr["statusLabel"] = "已合并"
         pr["reviewComment"] = comment
-        creator = pr.get("creator") or data.get("creator") or actor_display
-        member = _find_member(project, creator)
-        member["prStatus"] = "merged"
-        member["mergeStatus"] = "merged"
-        member["statusLabel"] = "已完成"
-        member["progress"] = 100
-        member["score"] = max(int(member.get("score") or 0), int(data.get("score") or 96))
+        creator = pr.get("creatorId") or pr.get("creator")
+        member = next((m for m in project.get("memberProgress", []) if _canonical_member_id(m) == creator), None)
+        if member is not None:
+            member["source"] = "gitea"
+            member["prStatus"] = "merged"
+            member["mergeStatus"] = "merged"
+            member["statusLabel"] = "已完成"
+            member["progress"] = 100
         project["repository"]["status"] = "completed" if all(
             item.get("mergeStatus") == "merged" for item in project.get("memberProgress") or []
         ) else project.get("repository", {}).get("status") or "collaborating"
@@ -2532,14 +2478,21 @@ def review_pull_request(
 
     pr["updatedAt"] = now
     _append_event(project, event_type, actor_display, event_text)
-    saved = _save_project(db, project)
-    return _enrich(saved, actor_display)
+    saved = _save_external_changes(db, snapshot, project)
+    return _enrich(saved, actor_display, actor=actor)
 
 
+@_local_project_mutation
 def evaluate_team_contribution(db: Session, project_id: str, payload: dict[str, Any], *, actor: str) -> dict[str, Any]:
     project = _load_project(db, project_id)
+    require_project_action(project, actor, "grade")
+    principal = actor
+    actor = _actor_name(actor)
     data = payload or {}
     for item in data.get("scores") or []:
+        for field in ("score", "contribution"):
+            if field in item and (type(item[field]) is not int or not 0 <= item[field] <= 100):
+                raise ValueError(f"{field} must be an integer between 0 and 100")
         member = _find_member(project, str(item.get("memberId") or item.get("name") or ""))
         if "score" in item:
             member["score"] = int(item.get("score") or 0)
@@ -2555,7 +2508,7 @@ def evaluate_team_contribution(db: Session, project_id: str, payload: dict[str, 
     }
     _append_event(project, "contribution_evaluated", actor, f"{actor} 评价了团队贡献度")
     saved = _save_project(db, project)
-    return _enrich(saved, actor)
+    return _enrich(saved, actor, actor=principal)
 
 
 def refresh_project_status(
@@ -2574,23 +2527,22 @@ def refresh_project_status(
 
     project = _load_project(db, project_id)
     if stage == "merged":
-        member = _find_member(project, "李明")
+        member = _find_member(project, "liming")
         member["cloneStatus"] = "done"
         member["pushStatus"] = "detected"
         member["prStatus"] = "merged"
         member["mergeStatus"] = "merged"
         member["statusLabel"] = "已完成"
-        member["score"] = max(int(member.get("score") or 0), 96)
         member["progress"] = 100
         project["repository"]["status"] = "completed"
     elif stage == "pr":
-        member = _find_member(project, "李明")
+        member = _find_member(project, "liming")
         member["pushStatus"] = "detected"
         member["prStatus"] = "open"
         member["statusLabel"] = "PR 待审核"
         member["progress"] = max(int(member.get("progress") or 0), 74)
     elif stage == "push":
-        member = _find_member(project, "李明")
+        member = _find_member(project, "liming")
         member["pushStatus"] = "detected"
         member["prStatus"] = "needs_pr"
         member["statusLabel"] = "PR 待创建"

@@ -28,3 +28,6 @@ api_router.include_router(learning_diagnosis.router, prefix="", tags=["learning_
 api_router.include_router(teacher_learning_diagnosis.router, prefix="", tags=["teacher_learning_diagnosis"])
 api_router.include_router(teacher_lesson_prep.router, prefix="", tags=["teacher_lesson_prep"])
 api_router.include_router(language.router, prefix="", tags=["language"])
+
+from app.api.endpoints import git_coach
+api_router.include_router(git_coach.router, prefix="", tags=["git_coach"])

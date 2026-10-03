@@ -1,0 +1,24 @@
+# Approved team Git repair specification
+
+Scope: authenticated team API, canonical campus username membership, trusted teacher roster authorization, immutable ownership and duplicate-create rejection, action-specific management/assessment policy, truthful local versus external outcomes, strict signed webhook repository binding. Persisted coach feed and durable event/job integration use the shared jobs service, not a parallel queue.
+
+Policy: authenticated members can read and confirm their own clone; project leader or trusted roster teacher can manage project/tasks/repository/reminders/review. Only a trusted roster teacher can grade or write teaching feedback. Teacher identity is explicit authenticated role, never a name prefix or class-name match. Ownership is immutable. All grading values are integers in [0,100]. Unknown action/member is an error.
+
+Test plan: real FastAPI ASGI requests against isolated SQLite with mocked external adapters. Cover absent/invalid auth, viewer/actor impersonation, member/leader/assigned teacher/outsider matrix, classless projects, duplicate and cross-project replacement, colliding display names, immutable owner, unknown members/actions, grading bounds, member-specific commands, disabled and real mocked provider outcomes, webhook signature/event/owner/name/path/id mismatches and valid durable ingest. No live Gitea/AI/production DB, credentials, push or deployment.
+
+## Implemented release contracts
+
+- Every ordinary route requires the shared authenticated principal and an existing local account. Viewer/body actor strings do not grant authority. New member identifiers are existing campus usernames; display names remain presentation only. Trusted teacher access uses the configured roster, including for classless teams.
+- Create is create-only: the versioned `TeamProjectIdentity` primary key reservation and JSON write share one transaction. Deletion is local-project-only and keeps a permanent identity reservation, including old projects that predate the registry. No remote deletion is claimed.
+- Persisted project reads do not contact Gitea or write project JSON. Empty projects remain empty, and normal load/save/startup do not manufacture PR approvals or repository files/languages/README/diagrams. Existing historical content is retained with unverified provenance; such PRs cannot be reviewed until a real sync establishes their identity.
+- Local project writes and webhook application use short database row-lock transactions. Sync does external reads first, then reloads the latest project under a short lock. External assignment/repository/review mutations save only their scoped delta and reject same-field edit conflicts. Concurrent grades, task edits and reviews are preserved.
+- Repository creation and binding use adapter-verified outcomes; partial hook/collaborator setup remains `setup_incomplete`. Binding requires a synchronized caller-to-Gitea identity and verified admin/owner permission, and ignores user-supplied URLs and webhook-success flags.
+- Webhooks read at most 1 MiB before HMAC/JSON work. Missing/common placeholder secrets fail closed. Event/shape validation precedes exact path/owner/name/numeric repository-ID binding. Legacy bindings without a positive canonical repository ID return `409 binding_verification_required` without applying progress or enqueueing; an operator must perform verified rebinding. No production records are rewritten automatically.
+- Webhook acceptance atomically persists the delivery/job and project changes. Push/PR identity is based on actual author/PR creator, never the push actor. Sync and webhook share an immutable-repository/SHA ledger, so replay after bounded display-history eviction cannot add contribution twice. Empty pushes add no commit credit.
+- Teaching grades require a trusted assigned teacher and integer values in 0–100; merge itself does not award grades. Unknown review actions, unknown PRs and unknown members fail explicitly. Unbound real contributors can have their PR merged without becoming manufactured team members.
+
+## Rollout prerequisites and limits
+
+Run the versioned coach/team identity schema migration before serving writes or webhooks. Configure `GITEA_WEBHOOK_SECRET` with an operator-supplied random secret through the deployment environment; shipped/common placeholders are rejected both during provisioning and ingestion. Revalidate old owner/name-only repository bindings through the verified bind operation. Local removal leaves the external repository, hooks and collaborator permissions untouched.
+
+Validation is isolated SQLite/ASGI plus the separately coordinated disposable-MySQL runtime harness and mocked Gitea/provider I/O. No real Gitea, paid model, production database, credentials, push or deployment was used. This does not establish live third-party acceptance.

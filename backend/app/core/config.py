@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8516
     BACKEND_CORS_ORIGINS: str = ""
 
+    # Operator-managed enrollment. Never infer permissions from editable profiles.
+    AGENT_CONFIG_WRITERS: str = "[]"
+    FORUM_MODERATOR_IDS: str = "[]"
+    TEACHER_STUDENT_ASSIGNMENTS: str = "{}"
+    LEARNING_DIAGNOSIS_INTERNAL_TOKEN: str = ""
+
     # Academic search
     OPENALEX_API_KEY: str = ""
     CROSSREF_MAILTO: str = ""

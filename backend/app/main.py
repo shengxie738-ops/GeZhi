@@ -1,4 +1,7 @@
 import os
+from contextlib import asynccontextmanager
+from app.core.database import SessionLocal, engine
+from app.services.git_coach_jobs import CoachWorkerLoop, worker_enabled, schema_ready
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +13,20 @@ from app.core.init_db import init_db
 
 init_db()
 
-app = FastAPI(title="AI Private Tutor Backend", version="3.0")
+@asynccontextmanager
+async def lifespan(app):
+    worker = CoachWorkerLoop(SessionLocal) if worker_enabled() and schema_ready(engine) else None
+    app.state.git_coach_worker = worker
+    if worker:
+        worker.start()
+    try:
+        yield
+    finally:
+        if worker:
+            worker.stop()
+
+
+app = FastAPI(title="AI Private Tutor Backend", version="3.0", lifespan=lifespan)
 
 static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(static_dir, exist_ok=True)

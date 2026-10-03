@@ -66,7 +66,7 @@ assert.match(home, /height:190px/);
 assert.match(home, /metric-flow/);
 assert.doesNotMatch(home, /<learning-diagnosis-metric-detail/);
 assert.match(home, /metric\.value \+ '%'/);
-assert.match(request, /无法连接学习诊断服务/);
+// Request failure behavior is exercised by repairApiTruth.test.mjs.
 assert.match(hook, /return null/);
 assert.match(task, /INDEPENDENT_RETEST/);
 assert.match(task, /Level 1/);

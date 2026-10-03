@@ -20,7 +20,6 @@ from app.models.domain_record import DomainRecord
 from app.models.user_account import UserAccount
 from app.repositories.json_store import JsonStore
 from app.schemas.teacher_learning_diagnosis import ReviewNoteRequest, ReviewStateRequest, WatchFlagRequest
-from app.services.learning_diagnosis.workflow import DiagnosisWorkflow
 
 
 class TeacherLearningDiagnosisPlaceholderTest(unittest.TestCase):
@@ -29,10 +28,18 @@ class TeacherLearningDiagnosisPlaceholderTest(unittest.TestCase):
         DomainRecord.__table__.create(bind=engine)
         UserAccount.__table__.create(bind=engine)
         self.db = sessionmaker(bind=engine)()
-        created = asyncio.run(DiagnosisWorkflow(self.db).create_session("student-1", {"course": "data-structures"}))
-        self.session_id = created["session"]["id"]
-        self.snapshot_id = created["snapshot"]["id"]
-        self.student_id = created["snapshot"]["student_id"]
+        self.roster = {"student-1"}
+        self.scope_patch = patch("app.services.learning_diagnosis.teacher_review_service.teacher_student_ids", side_effect=lambda _: set(self.roster))
+        self.scope_patch.start()
+        self.addCleanup(self.scope_patch.stop)
+        self.db.add(UserAccount(username="student-1", role="student"))
+        self.db.commit()
+        self.session_id = "synthetic-session"
+        self.snapshot_id = "synthetic-snapshot"
+        self.student_id = "student-1"
+        JsonStore(self.db).upsert("learning_diagnosis", "snapshot", self.snapshot_id,
+                                  {"student_id": self.student_id, "version": 1, "review": {}, "assessments": []},
+                                  owner_id=self.student_id)
         self.baseline_snapshots = self.db.query(DomainRecord).filter_by(module="learning_diagnosis", record_type="snapshot").count()
         self.baseline_evidence = self.db.query(DomainRecord).filter_by(module="learning_diagnosis", record_type="evidence").count()
         self.baseline_sessions = self.db.query(DomainRecord).filter_by(module="learning_diagnosis", record_type="session").count()
@@ -100,6 +107,7 @@ class TeacherLearningDiagnosisPlaceholderTest(unittest.TestCase):
         self.assertEqual(self.db.query(DomainRecord).filter_by(module="learning_diagnosis", record_type="evidence").count(), self.baseline_evidence)
 
     def test_review_list_uses_real_student_accounts_with_latest_snapshot_only(self):
+        self.roster = {"20230001", "20230002"}
         self.db.add_all(
             [
                 UserAccount(username="20230001", role="student", real_name="林知行", student_id="20230001", class_name="计科 2301"),

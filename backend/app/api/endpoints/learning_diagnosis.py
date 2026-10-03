@@ -1,8 +1,10 @@
+import hmac
+from app.core.config import settings
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.responses import ok
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from datetime import datetime, timezone
 from app.schemas.learning_diagnosis import CreateDiagnosisGoalRequest, CreateDiagnosisSessionRequest, GitEvidenceToggleRequest, HintRequest, LearningActivityEventRequest, RefreshDiagnosisRequest, RunTaskRequest, SubmitTaskRequest
 from app.services.learning_diagnosis.activity_listener import ActivityListener
@@ -12,19 +14,13 @@ from app.services.learning_diagnosis.workflow import DiagnosisWorkflow
 router = APIRouter()
 
 
-def _user(authorization: str | None) -> str:
-    if not isinstance(authorization, str):
-        authorization = None
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=401, detail="invalid token")
-    return str(payload["sub"])
+def _user(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    return account.username
 
 
-def _student(requested: str, authorization: str | None) -> str:
-    user = _user(authorization)
+def _student(requested: str, authorization: str | None, db: Session) -> str:
+    user = _user(authorization, db)
     if requested != user:
         raise HTTPException(status_code=403, detail="student scope mismatch")
     return user
@@ -32,14 +28,14 @@ def _student(requested: str, authorization: str | None) -> str:
 
 @router.post("/learning-diagnosis/sessions")
 async def create_diagnosis_session(payload: CreateDiagnosisSessionRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    student = _student(payload.student_id, authorization)
+    student = _student(payload.student_id, authorization, db)
     result = await DiagnosisWorkflow(db).create_session(student, payload.model_dump())
     return ok(result)
 
 
 @router.post("/learning-diagnosis/sessions/{session_id}/goals")
 async def create_diagnosis_goal(session_id: str, payload: CreateDiagnosisGoalRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    student = _student(payload.student_id, authorization)
+    student = _student(payload.student_id, authorization, db)
     workflow = DiagnosisWorkflow(db)
     if not workflow.store.get_session(session_id, student):
         raise HTTPException(status_code=404, detail="session not found")
@@ -48,7 +44,7 @@ async def create_diagnosis_goal(session_id: str, payload: CreateDiagnosisGoalReq
 
 @router.get("/learning-diagnosis/sessions/{session_id}")
 async def get_diagnosis_session(session_id: str, student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     result = DiagnosisWorkflow(db).store.get_session(session_id, student_id)
     if not result: raise HTTPException(status_code=404, detail="session not found")
     snapshots = DiagnosisWorkflow(db).store.list_snapshots(student_id, session_id)
@@ -57,7 +53,7 @@ async def get_diagnosis_session(session_id: str, student_id: str, db: Session = 
 
 @router.get("/learning-diagnosis/latest")
 async def get_latest_diagnosis_session(student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     workflow = DiagnosisWorkflow(db)
     sessions = workflow.store.list_sessions(student_id)
     if not sessions:
@@ -81,19 +77,19 @@ async def get_latest_diagnosis_session(student_id: str, db: Session = Depends(ge
 
 @router.post("/learning-diagnosis/sessions/{session_id}/refresh")
 async def refresh_diagnosis_session(session_id: str, payload: RefreshDiagnosisRequest, student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     return ok(await DiagnosisWorkflow(db).refresh_session(session_id, student_id, payload.trigger))
 
 
 @router.get("/learning-diagnosis/sessions/{session_id}/path")
 async def get_diagnosis_path(session_id: str, student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     return ok({"session_id": session_id, "paths": DiagnosisWorkflow(db).store.list_paths(student_id, session_id)})
 
 
 @router.post("/learning-diagnosis/tasks/{task_id}/hints")
 async def request_task_hint(task_id: str, session_id: str, payload: HintRequest, student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     try:
         return ok(await DiagnosisWorkflow(db).request_hint(session_id, student_id, task_id, payload.requested_level, payload.assessment_mode, payload.attempt))
     except KeyError as exc:
@@ -102,7 +98,7 @@ async def request_task_hint(task_id: str, session_id: str, payload: HintRequest,
 
 @router.post("/learning-diagnosis/tasks/{task_id}/submit")
 async def submit_diagnosis_task(task_id: str, payload: SubmitTaskRequest, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(payload.student_id, authorization)
+    student_id = _student(payload.student_id, authorization, db)
     workflow = DiagnosisWorkflow(db)
     session_id = payload.session_id
     if not session_id:
@@ -124,7 +120,7 @@ async def submit_diagnosis_task(task_id: str, payload: SubmitTaskRequest, db: Se
 
 @router.post("/learning-diagnosis/tasks/{task_id}/run")
 async def run_diagnosis_task(task_id: str, payload: RunTaskRequest, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(payload.student_id, authorization)
+    student_id = _student(payload.student_id, authorization, db)
     try:
         result = DiagnosisWorkflow(db).preview_task_execution(
             session_id=payload.session_id,
@@ -141,7 +137,7 @@ async def run_diagnosis_task(task_id: str, payload: RunTaskRequest, db: Session 
 
 @router.post("/learning-diagnosis/sessions/{session_id}/git-evidence")
 async def toggle_git_evidence(session_id: str, payload: GitEvidenceToggleRequest, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(payload.student_id, authorization)
+    student_id = _student(payload.student_id, authorization, db)
     try:
         return ok(await DiagnosisWorkflow(db).set_git_evidence(session_id, student_id, payload.include_git_evidence))
     except KeyError as exc:
@@ -150,16 +146,20 @@ async def toggle_git_evidence(session_id: str, payload: GitEvidenceToggleRequest
 
 @router.post("/learning-diagnosis/internal/activity")
 async def publish_learning_activity(payload: LearningActivityEventRequest, db: Session = Depends(get_db), x_internal_token: str | None = Header(default=None, alias="X-Learning-Diagnosis-Internal")):
-    # Internal callers may use the same process; external requests still require a shared token when configured.
+    expected = settings.LEARNING_DIAGNOSIS_INTERNAL_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal activity ingestion is not configured")
+    if not x_internal_token or not hmac.compare_digest(expected, x_internal_token):
+        raise HTTPException(status_code=401, detail="Invalid internal activity token")
     occurred = payload.occurred_at or datetime.now(timezone.utc).isoformat()
-    event = LearningActivityEvent(**payload.model_dump(), occurred_at=occurred)
+    event = LearningActivityEvent(**{**payload.model_dump(), "occurred_at": occurred})
     result = await ActivityListener(__import__("app.services.learning_diagnosis.evidence_store", fromlist=["LearningDiagnosisStore"]).LearningDiagnosisStore(db)).handle(event)
     return ok(result)
 
 
 @router.get("/learning-diagnosis/snapshots/{snapshot_id}")
 async def get_diagnosis_snapshot(snapshot_id: str, student_id: str, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
-    student_id = _student(student_id, authorization)
+    student_id = _student(student_id, authorization, db)
     result = DiagnosisWorkflow(db).store.get_snapshot(snapshot_id, student_id)
     if not result: raise HTTPException(status_code=404, detail="snapshot not found")
     return ok(result)

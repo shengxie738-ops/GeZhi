@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher
+from app.api.deps import ensure_self_or_teacher, get_auth_payload, require_teacher, teacher_student_ids
 from app.core.database import get_db
 from app.core.miniprogram_response import api_response, is_miniprogram_client, page_items
 from app.core.responses import ok
@@ -316,7 +316,7 @@ def _student_card(
     focus = metrics["focus"]
 
     return {
-        "id": index,
+        "id": username,
         "userId": username,
         "username": username,
         "name": real_name,
@@ -336,8 +336,8 @@ def _student_card(
     }
 
 
-def _student_cards(db: Session) -> list[dict[str, Any]]:
-    students = db.query(UserAccount).filter(UserAccount.role == "student").order_by(UserAccount.created_at.asc()).all()
+def _student_cards(db: Session, student_ids: set[str]) -> list[dict[str, Any]]:
+    students = db.query(UserAccount).filter(UserAccount.role == "student", UserAccount.username.in_(student_ids)).order_by(UserAccount.created_at.asc()).all()
     # 纵深防御：即使库里混入非法账号（自动化测试残留、直接插库），
     # 画像也只聚合"纯数字学号或含中文姓名"的学生
     students = [student for student in students if is_valid_student_username(student.username)]
@@ -359,6 +359,18 @@ def _student_cards(db: Session) -> list[dict[str, Any]]:
         )
         for index, student in enumerate(students)
     ]
+
+
+def _student_records(store: JsonStore, module: str, record_type: str, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Use persisted ownership, never caller-editable payload labels, for aggregation."""
+    return [record for sid in sorted({str(s["username"]) for s in students})
+            for record in store.list_payloads(module, record_type, owner_id=sid)]
+
+
+def _teacher_records(store: JsonStore, record_type: str, teacher_id: str) -> list[dict[str, Any]]:
+    allowed = teacher_student_ids(teacher_id)
+    return [record for record in store.list_payloads("analytics", record_type, owner_id=teacher_id)
+            if record.get("studentIds") and set(record["studentIds"]).issubset(allowed)]
 
 
 def _build_student_timeline(matched: dict[str, Any], error_count: int, pending_intervention: bool = False) -> list[dict[str, Any]]:
@@ -412,8 +424,8 @@ def _weekly_activity_rates(students: list[dict[str, Any]], store: JsonStore | No
     if store:
         # 按星期几聚合所有学生的提交时间戳（0=周一, 6=周日）
         weekday_active = [0] * 7
-        all_submissions = store.list_payloads("homework", "submission")
-        all_attempts = store.list_payloads("exams", "attempt")
+        all_submissions = _student_records(store, "homework", "submission", students)
+        all_attempts = _student_records(store, "exams", "attempt", students)
 
         active_students_per_day = [set() for _ in range(7)]
 
@@ -474,7 +486,7 @@ def _hourly_active_data(students: list[dict[str, Any]], store: JsonStore | None 
 
     # 收集作业提交时间
     try:
-        submissions = store.list_payloads("homework", "submission")
+        submissions = _student_records(store, "homework", "submission", students)
         for sub in submissions:
             ts = sub.get("submittedAt") or sub.get("createdAt") or sub.get("updatedAt")
             if ts:
@@ -488,7 +500,7 @@ def _hourly_active_data(students: list[dict[str, Any]], store: JsonStore | None 
 
     # 收集考试提交时间
     try:
-        attempts = store.list_payloads("exams", "attempt")
+        attempts = _student_records(store, "exams", "attempt", students)
         for att in attempts:
             ts = att.get("submittedAt") or att.get("clientStartedAt") or att.get("createdAt")
             if ts:
@@ -511,7 +523,7 @@ def _hourly_active_data(students: list[dict[str, Any]], store: JsonStore | None 
 
 
 def _weak_points(db: Session, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    mistakes = JsonStore(db).list_payloads("exams", "mistake")
+    mistakes = _student_records(JsonStore(db), "exams", "mistake", students)
     total_students = max(1, len(students))
     weak_points = []
 
@@ -533,10 +545,10 @@ def _weak_points(db: Session, students: list[dict[str, Any]]) -> list[dict[str, 
     return weak_points
 
 
-def _auto_generate_advices(store: JsonStore, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _auto_generate_advices(store: JsonStore, students: list[dict[str, Any]], teacher_id: str) -> list[dict[str, Any]]:
     """自动生成 AI 建议（供 overview 自动初始化使用，不调用 AI 时使用规则兜底）"""
-    mistakes = store.list_payloads("exams", "mistake")
-    submissions = store.list_payloads("homework", "submission")
+    mistakes = _student_records(store, "exams", "mistake", students)
+    submissions = _student_records(store, "homework", "submission", students)
 
     high_risk_count = len([s for s in students if s.get("alert")])
     unmastered_count = len([m for m in mistakes if not m.get("mastered")])
@@ -561,15 +573,16 @@ def _auto_generate_advices(store: JsonStore, students: list[dict[str, Any]]) -> 
     ]
 
     for adv in advices:
-        store.upsert("analytics", "advice", adv["id"], adv)
+        adv["studentIds"] = [s["username"] for s in students]
+        store.upsert("analytics", "advice", adv["id"], adv, owner_id=teacher_id)
 
     return advices
 
 
-def _auto_generate_actions(store: JsonStore, students: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _auto_generate_actions(store: JsonStore, students: list[dict[str, Any]], teacher_id: str) -> list[dict[str, Any]]:
     """自动生成行动队列（供 overview 自动初始化使用，纯规则引擎）"""
-    mistakes = store.list_payloads("exams", "mistake")
-    homeworks = store.list_payloads("homework", "homework")
+    mistakes = _student_records(store, "exams", "mistake", students)
+    homeworks = [h for h in store.list_payloads("homework", "homework") if h.get("teacherId") == teacher_id]
     now_iso = utc_now_iso()
     actions: list[dict[str, Any]] = []
 
@@ -612,32 +625,33 @@ def _auto_generate_actions(store: JsonStore, students: list[dict[str, Any]]) -> 
             })
 
     for action in actions:
-        store.upsert("analytics", "action", action["id"], action)
+        action["studentIds"] = [s["username"] for s in students]
+        store.upsert("analytics", "action", action["id"], action, owner_id=teacher_id)
 
     return actions
 
 
 @router.get("/analytics/overview")
 async def get_overview_stats(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    students = _student_cards(db)
+    students = _student_cards(db, teacher_student_ids(payload["sub"]))
     progress_values = [item["progress"] for item in students]
     focus_values = [item["focus"] for item in students]
-    interactions = JsonStore(db).list_payloads("analytics", "interaction")
+    interactions = _teacher_records(JsonStore(db), "interaction", payload["sub"])
     store = JsonStore(db)
 
     # 自动初始化：如果 AI 建议为空，自动生成一次
-    advices = store.list_payloads("analytics", "advice")
-    if not advices:
+    advices = _teacher_records(store, "advice", payload["sub"])
+    if not advices and students:
         try:
-            advices = _auto_generate_advices(store, students)
+            advices = _auto_generate_advices(store, students, payload["sub"])
         except Exception:
             advices = []
 
     # 自动初始化：如果行动队列为空，自动生成一次
-    actions = store.list_payloads("analytics", "action")
-    if not actions:
+    actions = _teacher_records(store, "action", payload["sub"])
+    if not actions and students:
         try:
-            actions = _auto_generate_actions(store, students)
+            actions = _auto_generate_actions(store, students, payload["sub"])
         except Exception:
             actions = []
 
@@ -664,13 +678,13 @@ async def get_overview_stats(payload: dict = Depends(require_teacher), db: Sessi
 
 @router.get("/analytics/students")
 async def get_student_list(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    return ok(_student_cards(db))
+    return ok(_student_cards(db, teacher_student_ids(payload["sub"])))
 
 
 @router.get("/analytics/students/search")
 async def search_students(q: str = "", payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     keyword = (q or "").strip().lower()
-    students = _student_cards(db)
+    students = _student_cards(db, teacher_student_ids(payload["sub"]))
     if not keyword:
         return ok({"query": q, "matches": [], "total": 0})
 
@@ -702,7 +716,7 @@ async def get_my_radar(user_id: str = "", payload: dict = Depends(get_auth_paylo
         raise HTTPException(status_code=400, detail="user_id is required")
     ensure_self_or_teacher(username, payload)
 
-    students = _student_cards(db)
+    students = _student_cards(db, {username})
     matched = next(
         (item for item in students if item.get("username") == username or item.get("userId") == username),
         None,
@@ -753,7 +767,7 @@ async def get_my_radar(user_id: str = "", payload: dict = Depends(get_auth_paylo
 async def get_student_details(student_id: str, payload: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     ensure_self_or_teacher(student_id, payload)
     store = JsonStore(db)
-    students = _student_cards(db)
+    students = _student_cards(db, {student_id})
     matched = next(
         (
             item
@@ -779,7 +793,7 @@ async def get_student_details(student_id: str, payload: dict = Depends(get_auth_
     username = matched.get("username") or matched.get("userId") or student_id
     mistakes = [
         item
-        for item in store.list_payloads("exams", "mistake")
+        for item in _student_records(store, "exams", "mistake", students)
         if item.get("studentId") == username or item.get("studentId") == student_id
     ]
     pending_nudges = store.list_payloads("analytics", "nudge", owner_id=username)
@@ -819,7 +833,7 @@ async def send_nudge_message(student_id: str, payload: FreePayload, auth: dict =
     ensure_self_or_teacher(student_id, auth)
     data = payload.model_dump()
     # 优先用 username 作为 owner_id，保证学生端 list_payloads(owner_id=username) 能读到
-    students = _student_cards(db)
+    students = _student_cards(db, {student_id})
     matched = next(
         (
             item
@@ -828,7 +842,7 @@ async def send_nudge_message(student_id: str, payload: FreePayload, auth: dict =
         ),
         None,
     )
-    owner_id = (matched or {}).get("username") or data.get("username") or student_id
+    owner_id = student_id
     record_id = make_record_key("nudge")
     JsonStore(db).upsert(
         "analytics",
@@ -849,12 +863,12 @@ async def send_nudge_message(student_id: str, payload: FreePayload, auth: dict =
 
 @router.get("/analytics/advices")
 async def get_ai_intervention_advices(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    return ok(JsonStore(db).list_payloads("analytics", "advice"))
+    return ok(_teacher_records(JsonStore(db), "advice", payload["sub"]))
 
 
 @router.get("/analytics/action-queue")
 async def get_action_queue(payload: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    return ok(JsonStore(db).list_payloads("analytics", "action"))
+    return ok(_teacher_records(JsonStore(db), "action", payload["sub"]))
 
 
 @router.get("/analytics/interactions")
@@ -863,7 +877,7 @@ async def get_interaction_records(
     db: Session = Depends(get_db),
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
 ):
-    interactions = JsonStore(db).list_payloads("analytics", "interaction")
+    interactions = _teacher_records(JsonStore(db), "interaction", payload["sub"])
     if is_miniprogram_client(x_gezhi_client):
         return api_response(page_items(interactions, limit=len(interactions) or 20))
     return ok(interactions)
@@ -872,43 +886,34 @@ async def get_interaction_records(
 @router.post("/analytics/interactions")
 async def dispatch_student_interaction(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
-    record_id = str(data.get("id") or make_record_key("ir"))
+    record_id = make_record_key("ir")
     target = data.get("target") or {}
     target_label = target.get("label") if isinstance(target, dict) else str(target or "all")
     student_ids = target.get("studentIds", []) if isinstance(target, dict) else []
-    # 将数字 id 解析为 username，保证学生端按 username 过滤可见
-    if student_ids:
-        cards = _student_cards(db)
-        resolved: list[str] = []
-        for sid in student_ids:
-            matched = next(
-                (
-                    item
-                    for item in cards
-                    if str(item["id"]) == str(sid) or item.get("username") == sid or item.get("userId") == sid
-                ),
-                None,
-            )
-            resolved.append((matched or {}).get("username") or str(sid))
-        student_ids = resolved
-    initial_count = len(student_ids) or 48
+    allowed = {s["username"] for s in _student_cards(db, teacher_student_ids(auth["sub"]))}
+    if not isinstance(student_ids, list):
+        raise HTTPException(status_code=400, detail="studentIds must be a list")
+    student_ids = sorted({str(sid) for sid in student_ids}) if student_ids else sorted(allowed)
+    if not student_ids or not set(student_ids).issubset(allowed):
+        raise HTTPException(status_code=403, detail="no assigned students for this target")
+    initial_count = len(student_ids)
     record = {
         "id": record_id,
         "type": data.get("type"),
         "title": data.get("title") or data.get("topic") or "Interaction task",
         "targetLabel": target_label or "all",
         "studentIds": student_ids,
-        "completionRate": data.get("completionRate", 0),
-        "unreadCount": data.get("unreadCount", initial_count),
-        "pendingCount": data.get("pendingCount", initial_count),
-        "completedCount": data.get("completedCount", 0),
+        "completionRate": 0,
+        "unreadCount": initial_count,
+        "pendingCount": initial_count,
+        "completedCount": 0,
         "createdAt": utc_now_iso(),
         "status": data.get("status") or "running",
         "nextAction": data.get("nextAction") or "Track student response.",
         "payload": data.get("payload") or {},
         "source": data.get("source") or {},
     }
-    JsonStore(db).upsert("analytics", "interaction", record_id, record, status=record["status"])
+    JsonStore(db).upsert("analytics", "interaction", record_id, record, owner_id=auth["sub"], status=record["status"])
 
     # 个人提醒同步写入 analytics/nudge，学生仪表盘可直接拉取
     if data.get("type") == "nudge" and student_ids:
@@ -937,12 +942,16 @@ async def dispatch_student_interaction(payload: FreePayload, auth: dict = Depend
 @router.patch("/analytics/interactions/{record_id}")
 async def update_interaction_record(record_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
-    data = payload.model_dump()
-    updated = store.patch("analytics", "interaction", record_id, data)
+    existing = next((r for r in _teacher_records(store, "interaction", auth["sub"]) if r["id"] == record_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Interaction record not found")
+    data = {key: value for key, value in payload.model_dump().items()
+            if key in {"status", "nextAction", "message", "unreadCount"}}
+    updated = store.patch("analytics", "interaction", record_id, data, owner_id=auth["sub"])
 
     # 如果是补发提醒（更新 unreadCount），写入通知记录供学生端拉取
     if "unreadCount" in data:
-        existing = store.get_payload("analytics", "interaction", record_id) or {}
+        existing = updated or existing
         notification_id = make_record_key("notif")
         store.upsert("dashboard", "notification", notification_id, {
             "id": notification_id,
@@ -960,29 +969,13 @@ async def update_interaction_record(record_id: str, payload: FreePayload, auth: 
 
 @router.post("/analytics/dispatch")
 async def dispatch_intervention_task(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    data = payload.model_dump()
-    record_id = make_record_key("ir")
-    record = {
-        "id": record_id,
-        "type": data.get("type"),
-        "title": data.get("topic") or data.get("title") or "Intervention task",
-        "targetLabel": (data.get("target") or {}).get("label", "all") if isinstance(data.get("target"), dict) else "all",
-        "completionRate": 0,
-        "unreadCount": 48,
-        "pendingCount": 48,
-        "completedCount": 0,
-        "createdAt": utc_now_iso(),
-        "status": "running",
-        "nextAction": "Track student response.",
-        "payload": data.get("payload") or {},
-        "source": {"module": "teacher-analytics", "weakPointId": data.get("targetId")},
-    }
-    JsonStore(db).upsert("analytics", "interaction", record_id, record, status="running")
-    return ok({"success": True, "dispatchedAt": utc_now_iso(), "record": record})
+    result = await dispatch_student_interaction(payload, auth, db)
+    result["data"]["dispatchedAt"] = utc_now_iso()
+    return result
 
 
 @router.post("/analytics/interactions/{record_id}/complete")
-async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
+async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     """学生标记交互任务完成，自动更新 completionRate 等计数（防重复提交）"""
     store = JsonStore(db)
     record = store.get_payload("analytics", "interaction", record_id)
@@ -990,7 +983,10 @@ async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: 
         raise HTTPException(status_code=404, detail="Interaction record not found")
 
     data = payload.model_dump()
-    user_id = data.get("userId") or data.get("studentId") or ""
+    user_id = str(data.get("userId") or data.get("studentId") or auth["sub"])
+    ensure_self_or_teacher(user_id, auth)
+    if user_id not in (record.get("studentIds") or []):
+        raise HTTPException(status_code=403, detail="not an interaction recipient")
 
     # 防重复提交：检查该学生是否已完成此任务
     completion_id = f"{record_id}:{user_id}"
@@ -1036,9 +1032,11 @@ async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: 
 async def generate_ai_advices(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """基于班级学情数据调用 AI 生成干预建议"""
     store = JsonStore(db)
-    students = _student_cards(db)
-    mistakes = store.list_payloads("exams", "mistake")
-    submissions = store.list_payloads("homework", "submission")
+    students = _student_cards(db, teacher_student_ids(auth["sub"]))
+    if not students:
+        return ok([])
+    mistakes = _student_records(store, "exams", "mistake", students)
+    submissions = _student_records(store, "homework", "submission", students)
 
     # 聚合班级数据
     student_count = len(students)
@@ -1097,7 +1095,8 @@ async def generate_ai_advices(payload: FreePayload = None, auth: dict = Depends(
     for adv in advices:
         adv_id = adv.get("id") or make_record_key("adv")
         adv["id"] = adv_id
-        store.upsert("analytics", "advice", adv_id, adv)
+        adv["studentIds"] = [s["username"] for s in students]
+        store.upsert("analytics", "advice", adv_id, adv, owner_id=auth["sub"])
 
     return ok(advices)
 
@@ -1106,9 +1105,11 @@ async def generate_ai_advices(payload: FreePayload = None, auth: dict = Depends(
 async def generate_action_queue(payload: FreePayload = None, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     """基于规则引擎 + AI 生成今日行动队列"""
     store = JsonStore(db)
-    students = _student_cards(db)
-    mistakes = store.list_payloads("exams", "mistake")
-    homeworks = store.list_payloads("homework", "homework")
+    students = _student_cards(db, teacher_student_ids(auth["sub"]))
+    if not students:
+        return ok([])
+    mistakes = _student_records(store, "exams", "mistake", students)
+    homeworks = [h for h in store.list_payloads("homework", "homework") if h.get("teacherId") == auth["sub"]]
 
     actions: list[dict[str, Any]] = []
     now_iso = utc_now_iso()
@@ -1162,6 +1163,7 @@ async def generate_action_queue(payload: FreePayload = None, auth: dict = Depend
 
     # 持久化
     for action in actions:
-        store.upsert("analytics", "action", action["id"], action)
+        action["studentIds"] = [s["username"] for s in students]
+        store.upsert("analytics", "action", action["id"], action, owner_id=auth["sub"])
 
     return ok(actions)

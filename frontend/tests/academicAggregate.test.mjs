@@ -409,7 +409,7 @@ test('academicAggregate: converts a Chinese natural-language finance request int
     assert.equal(result.effectiveQuery, 'quantitative finance');
 });
 
-test('academicAggregate: excludes source records unrelated to the translated academic topic', async () => {
+test('academicAggregate: downranks unrelated metadata without discarding fetched evidence', async () => {
     clearAcademicCache();
     const providers = {
         source_a: {
@@ -446,11 +446,14 @@ test('academicAggregate: excludes source records unrelated to the translated aca
     });
 
     assert.deepEqual(result.items.map(item => item.title), [
-        'FinRL: Deep Reinforcement Learning for Quantitative Finance'
+        'FinRL: Deep Reinforcement Learning for Quantitative Finance',
+        'Handbook of Quantitative Finance',
+        'A Review of Landslide Susceptibility Assessment'
     ]);
+    assert.ok(result.items[0].ranking.relevanceScore > result.items[2].ranking.relevanceScore);
     assert.equal(result.sourceStatuses[0].rawCount, 4);
-    assert.equal(result.sourceStatuses[0].count, 1);
+    assert.equal(result.sourceStatuses[0].count, 3);
     assert.equal(result.totalFetched, 4);
-    assert.equal(result.totalRejected, 3);
-    assert.equal(result.totalBeforeMerge, 1);
+    assert.equal(result.totalRejected, 1);
+    assert.equal(result.totalBeforeMerge, 3);
 });

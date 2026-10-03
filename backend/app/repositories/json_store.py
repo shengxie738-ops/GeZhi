@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import time
 import uuid
@@ -60,6 +62,8 @@ class JsonStore:
         )
         if owner_id is not None:
             query = query.filter(DomainRecord.owner_id == owner_id)
+        if self.db.info.get("atomic_json_store"):
+            query = query.with_for_update()
         return query.order_by(DomainRecord.id.desc()).first()
 
     def get_payload(
@@ -95,7 +99,11 @@ class JsonStore:
             self.db.add(record)
         record.status = status or payload.get("status") or record.status or ""
         record.payload = json.dumps(payload, ensure_ascii=False, default=str)
-        self.db.commit()
+        record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        if self.db.info.get("atomic_json_store"):
+            self.db.flush()
+        else:
+            self.db.commit()
         self.db.refresh(record)
         return load_payload(record) or payload
 
@@ -142,3 +150,20 @@ class JsonStore:
         self.db.delete(record)
         self.db.commit()
         return True
+
+
+@contextmanager
+def atomic_store(db: Session):
+    """Opt-in unit of work. Existing callers retain immediate-commit semantics."""
+    if db.info.get("atomic_json_store"):
+        yield
+        return
+    db.info["atomic_json_store"] = True
+    try:
+        yield
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+    finally:
+        db.info.pop("atomic_json_store", None)

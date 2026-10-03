@@ -221,11 +221,14 @@ export default {
             return Math.round((queueSummary.value.reviewed / total) * 100);
         });
 
+        let selectionVersion = 0;
         const selectReview = async (item) => {
             const snapshotId = typeof item === 'string' ? item : item?.snapshotId;
             if (!snapshotId) return;
+            const version = ++selectionVersion;
             activeReview.value = reviewQueue.value.find((review) => review.snapshotId === snapshotId) || null;
             const result = await teacherLearningDiagnosisApi.getReviewDetail(snapshotId).catch(() => null);
+            if (version !== selectionVersion) return;
             if (result) {
                 const merged = normalizeReview(result, activeReview.value || {});
                 reviewQueue.value = reviewQueue.value.map((review) => (
@@ -240,11 +243,11 @@ export default {
             loading.value = true;
             loadError.value = '';
             try {
-                const reviewResult = await teacherLearningDiagnosisApi.listReviews().catch(() => null);
+                const reviewResult = await teacherLearningDiagnosisApi.listReviews();
                 const rawItems = Array.isArray(reviewResult)
                     ? reviewResult
                     : (reviewResult?.reviews || reviewResult?.items || reviewResult?.data || []);
-                const nextQueue = rawItems.length ? deriveQueue(rawItems) : deriveQueue(SAMPLE_QUEUE);
+                const nextQueue = deriveQueue(rawItems);
                 reviewQueue.value = nextQueue;
                 if (!activeReview.value || !nextQueue.some((item) => item.snapshotId === activeReview.value.snapshotId)) {
                     activeReview.value = nextQueue[0] || null;
@@ -252,7 +255,7 @@ export default {
                 }
             } catch (error) {
                 loadError.value = error?.message || '加载失败';
-                reviewQueue.value = deriveQueue(SAMPLE_QUEUE);
+                reviewQueue.value = [];
                 activeReview.value = reviewQueue.value[0] || null;
             } finally {
                 loading.value = false;

@@ -1,4 +1,5 @@
-import os
+from pathlib import Path
+from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -12,6 +13,7 @@ from app.core.username_policy import NUMERIC_ID_RE, has_chinese
 from app.models.user_account import UserAccount
 
 router = APIRouter()
+AVATAR_DIRECTORY = Path(__file__).resolve().parents[2] / "static" / "avatars"
 
 
 class UserInfoUpdate(BaseModel):
@@ -128,6 +130,8 @@ async def upload_avatar(
     db: Session = Depends(get_db),
 ):
     ensure_self_or_teacher(username, payload)
+    # Resolve the target before even reading or writing an uploaded file.
+    account = get_account_or_404(db, username)
     allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="only JPG / PNG / GIF / WebP images are supported")
@@ -136,9 +140,7 @@ async def upload_avatar(
     if len(content) > 2 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="image size must not exceed 2MB")
 
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "static")
-    avatar_dir = os.path.join(static_dir, "avatars")
-    os.makedirs(avatar_dir, exist_ok=True)
+    AVATAR_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
     ext_map = {
         "image/jpeg": ".jpg",
@@ -147,15 +149,22 @@ async def upload_avatar(
         "image/webp": ".webp",
     }
     ext = ext_map.get(file.content_type, ".jpg")
-    filename = f"{username}{ext}"
-    filepath = os.path.join(avatar_dir, filename)
-
-    with open(filepath, "wb") as f:
-        f.write(content)
-
-    account = get_account_or_404(db, username)
-    account.avatar_path = filename
-    db.commit()
+    filename = f"avatar-{uuid4().hex}{ext}"
+    filepath = AVATAR_DIRECTORY / filename
+    created = False
+    try:
+        with filepath.open("xb") as handle:
+            created = True
+            handle.write(content)
+        account.avatar_path = filename
+        db.commit()
+    except BaseException:
+        try:
+            db.rollback()
+        finally:
+            if created:
+                filepath.unlink(missing_ok=True)
+        raise
     db.refresh(account)
 
     return {

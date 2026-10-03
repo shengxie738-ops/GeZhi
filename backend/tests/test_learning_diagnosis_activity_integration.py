@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -18,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api.endpoints.exams import FreePayload as ExamPayload, submit_attempt, update_mistake
 from app.api.endpoints.homework import FreePayload as HomeworkPayload, submit_homework
 from app.api.endpoints.ranked import RankedMatchSubmitPayload, submit_ranked_match
+from app.core.config import settings
 from app.core.security import create_access_token
 from app.models.domain_record import DomainRecord
 from app.repositories.json_store import JsonStore
@@ -25,6 +27,9 @@ from app.repositories.json_store import JsonStore
 
 class ActivityPublishingIntegrationTest(unittest.TestCase):
     def setUp(self):
+        roster = patch.object(settings, "TEACHER_STUDENT_ASSIGNMENTS", '{"teacher-1":["student-1"]}')
+        roster.start()
+        self.addCleanup(roster.stop)
         engine = create_engine("sqlite:///:memory:")
         DomainRecord.__table__.create(bind=engine)
         self.db = sessionmaker(bind=engine)()
@@ -34,8 +39,8 @@ class ActivityPublishingIntegrationTest(unittest.TestCase):
 
     def test_exam_submit_and_mistake_correction_publish_after_original_write(self):
         store = JsonStore(self.db)
-        store.upsert("exams", "exam", "exam-1", {"id": "exam-1", "objectiveQuestions": [{"id": "q-1", "type": "choice", "correctAnswer": "A", "score": 10}]})
-        store.upsert("exams", "attempt", "attempt-1", {"id": "attempt-1", "examId": "exam-1", "studentId": "student-1", "answers": {"q-1": "A"}}, owner_id="student-1")
+        store.upsert("exams", "exam", "exam-1", {"id": "exam-1", "teacherId": "teacher-1", "status": "running", "startsAt": (datetime.now(timezone.utc)-timedelta(minutes=1)).isoformat(), "durationMinutes": 60, "objectiveQuestions": [{"id": "q-1", "type": "choice", "correctAnswer": "A", "score": 10}]})
+        store.upsert("exams", "attempt", "attempt-1", {"id": "attempt-1", "attemptId": "attempt-1", "status": "started", "startedAt": datetime.now(timezone.utc).isoformat(), "examId": "exam-1", "studentId": "student-1", "answers": {"q-1": "A"}}, owner_id="student-1")
         with patch("app.api.endpoints.exams.publish_learning_activity_safely", new=AsyncMock(return_value={"status": "PROCESSED"})) as publisher:
             result = asyncio.run(submit_attempt("attempt-1", ExamPayload(), {"sub": "student-1", "role": "student"}, self.db))
             self.assertEqual(result["data"]["status"], "submitted")
@@ -47,6 +52,7 @@ class ActivityPublishingIntegrationTest(unittest.TestCase):
             self.assertTrue(any(call.args[1]["content_type"] == "WRONG_QUESTION" for call in publisher.await_args_list))
 
     def test_homework_submit_returns_success_even_when_listener_fails(self):
+        JsonStore(self.db).upsert("homework", "homework", "hw-1", {"id": "hw-1", "teacherId": "teacher-1"})
         token = f"Bearer {create_access_token('student-1', 'student')}"
         with patch("app.api.endpoints.homework.publish_learning_activity_safely", new=AsyncMock(side_effect=RuntimeError("listener failed"))):
             result = asyncio.run(submit_homework("hw-1", HomeworkPayload(answers={"q": "a"}), token, self.db))

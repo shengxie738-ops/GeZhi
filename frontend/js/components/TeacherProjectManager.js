@@ -1,8 +1,12 @@
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue';
 import { teamGitApi } from '../api/teamGit.js';
+import TeamCoachFeedback from './TeamCoachFeedback.js';
+import { isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning } from '../utils/teamProvenance.js';
+import { createTeamRequestScope } from '../utils/teamCoachFeed.js';
 
 export default {
     name: 'TeacherProjectManager',
+    components: {TeamCoachFeedback},
     template: `
         <div class="absolute inset-0 overflow-hidden tpm-root" style="background: #ffffff;">
             
@@ -431,9 +435,9 @@ export default {
                         </div>
                         <div class="flex items-center gap-4">
                             <button @click="loadTrainingProjects" class="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-white/90 transition-all active:scale-95 flex items-center gap-2">
-                                <i class="ph ph-arrows-clockwise" :class="trainingLoading ? 'animate-spin' : ''"></i> 同步团队
+                                <i class="ph ph-arrows-clockwise" :class="trainingLoading ? 'animate-spin' : ''"></i> 读取团队
                             </button>
-                            <button @click="createTeacherTrainingProject" class="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl shadow-md hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-2">
+                            <button @click="createTeacherTrainingProject" :disabled="trainingLoading || trainingActionLoading" class="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl shadow-md hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-2">
                                 <i class="ph ph-users"></i> 分配实训团队
                             </button>
                         </div>
@@ -459,7 +463,7 @@ export default {
                                 </div>
                                 <span class="text-xs font-bold text-slate-500 bg-white/80 border border-slate-200/70 rounded-xl px-2 py-1">{{ trainingProjects.length }} 组</span>
                             </div>
-                            <div v-if="trainingProjects.length === 0" class="rounded-2xl bg-white/70 border border-slate-200/70 p-6 text-center text-xs text-slate-500">暂无团队数据，点击“分配实训团队”创建演示团队。</div>
+                            <div v-if="trainingProjects.length === 0" class="rounded-2xl bg-white/70 border border-slate-200/70 p-6 text-center text-xs text-slate-500">暂无团队数据，点击“分配实训团队”选择真实账号创建团队。</div>
                             <button v-for="project in trainingProjects" :key="project.id" @click="selectTrainingProject(project)" class="text-left rounded-2xl border p-4 transition-all duration-300"
                                 :class="selectedTrainingProject && selectedTrainingProject.id === project.id
                                     ? 'bg-[#1c2b38]/85 backdrop-blur-sm text-white border-white/10 shadow-xl ring-1 ring-white/5'
@@ -485,6 +489,7 @@ export default {
                         </aside>
 
                         <main v-if="selectedTrainingProject" class="flex flex-col gap-6 min-w-0">
+                            <TeamCoachFeedback :key="selectedTrainingProject.id" :project-id="selectedTrainingProject.id" :can-retry="selectedTrainingProject.permissions?.manage === true" />
                             <section class="glass-panel-liquid p-6">
                                 <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
                                     <div class="min-w-0">
@@ -514,7 +519,7 @@ export default {
                                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.18em]">Members and tasks</p>
                                             <h3 class="text-lg font-serif font-bold text-slate-900">成员 Git 协作进度</h3>
                                         </div>
-                                        <button @click="sendTeacherReminder" class="px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600">提醒未提交成员</button>
+                                        <button @click="sendTeacherReminder" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.manage" class="px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600">提醒未提交成员</button>
                                     </div>
                                     <div class="overflow-x-auto">
                                         <table class="w-full min-w-[820px] text-left text-xs">
@@ -538,7 +543,7 @@ export default {
                                                     <td class="py-3 pr-3 text-slate-700">{{ member.statusLabel }}</td>
                                                     <td class="py-3 pr-3 font-bold text-slate-900">{{ member.progress }}%</td>
                                                     <td class="py-3 pr-3">
-                                                        <button @click="quickAssignTeacherTask(member)" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50">分配任务</button>
+                                                        <button @click="quickAssignTeacherTask(member)" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.manage" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50">分配任务</button>
                                                     </td>
                                                 </tr>
                                             </tbody>
@@ -559,14 +564,14 @@ export default {
                                                     <p class="text-[11px] text-slate-500 mt-1 truncate">{{ pr.creator }} · {{ pr.sourceBranch }} -> {{ pr.targetBranch }}</p>
                                                 </div>
                                                 <span class="text-[10px] px-2 py-1 rounded-full font-bold border"
-                                                    :class="pr.status === 'merged' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : pr.leaderReviewStatus === 'recommended' ? 'bg-teal-50 text-teal-700 border-teal-100' : 'bg-blue-50 text-blue-700 border-blue-100'">
-                                                    {{ pr.statusLabel }}
+                                                    :class="!isVerifiedPullRequest(pr) ? 'bg-amber-50 text-amber-700 border-amber-100' : pr.status === 'merged' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : pr.leaderReviewStatus === 'recommended' ? 'bg-teal-50 text-teal-700 border-teal-100' : 'bg-blue-50 text-blue-700 border-blue-100'">
+                                                    {{ pullRequestLabel(pr) }}
                                                 </span>
                                             </div>
-                                            <p v-if="pr.reviewComment" class="mt-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2">队长意见：{{ pr.reviewComment }}</p>
-                                            <div v-if="pr.status === 'open'" class="mt-3 flex flex-wrap gap-2">
-                                                <button @click="teacherAuditPr(pr, 'teacher_reject')" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">要求修改</button>
-                                                <button @click="teacherAuditPr(pr, 'teacher_approve')" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">审核并合并</button>
+                                            <p v-if="isVerifiedPullRequest(pr) && pr.reviewComment" class="mt-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-2">队长意见：{{ pr.reviewComment }}</p>
+                                            <div v-if="canReviewPullRequest(pr)" class="mt-3 flex flex-wrap gap-2">
+                                                <button @click="teacherAuditPr(pr, 'teacher_reject')" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.review" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">要求修改</button>
+                                                <button @click="teacherAuditPr(pr, 'teacher_approve')" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.review" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">审核并合并</button>
                                             </div>
                                         </article>
                                     </div>
@@ -579,16 +584,16 @@ export default {
                                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.18em]">Contribution review</p>
                                         <h3 class="text-lg font-serif font-bold text-slate-900 mt-1">评价团队贡献</h3>
                                     </div>
-                                    <button @click="saveTeacherContribution" class="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">保存贡献评价</button>
+                                    <button @click="saveTeacherContribution" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.evaluate" class="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">保存贡献评价</button>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-3">
                                     <div v-for="member in filteredMemberProgress" :key="member.id" class="bg-white/80 border border-slate-200/70 rounded-2xl p-4">
                                         <h4 class="text-sm font-bold text-slate-900">{{ member.name }}</h4>
                                         <p class="text-[11px] text-slate-500 line-clamp-2 mt-1">{{ member.task }}</p>
                                         <label class="block mt-3 text-[10px] font-bold text-slate-500">得分</label>
-                                        <input v-model.number="contributionDraft[member.name].score" type="number" min="0" max="100" class="mt-1 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900">
+                                        <input v-model.number="contributionDraft[member.id].score" type="number" min="0" max="100" class="mt-1 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900">
                                         <label class="block mt-2 text-[10px] font-bold text-slate-500">贡献度 %</label>
-                                        <input v-model.number="contributionDraft[member.name].contribution" type="number" min="0" max="100" class="mt-1 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900">
+                                        <input v-model.number="contributionDraft[member.id].contribution" type="number" min="0" max="100" class="mt-1 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900">
                                     </div>
                                 </div>
                             </section>
@@ -626,6 +631,7 @@ export default {
                                     </div>
                                     <div v-else-if="teacherRepositoryHome" class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
                                         <div class="min-w-0 space-y-4">
+                                            <p v-if="repositoryContentWarning(teacherRepositoryHomeInfo)" role="alert" class="p-3 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">{{ repositoryContentWarning(teacherRepositoryHomeInfo) }}</p>
                                             <!-- 仓库头信息 -->
                                             <div class="rounded-2xl bg-white/80 border border-slate-200/70 p-4">
                                                 <div class="flex flex-wrap items-center justify-between gap-3">
@@ -700,12 +706,14 @@ export default {
                                             <section class="rounded-2xl bg-white/80 border border-slate-200/70 overflow-hidden">
                                                 <h4 class="px-4 py-3 bg-slate-50 border-b border-slate-100 text-sm font-extrabold text-slate-900">README.md</h4>
                                                 <pre class="p-5 text-sm leading-relaxed whitespace-pre-wrap text-slate-700">{{ teacherRepositoryHomeInfo.readme }}</pre>
+                                                <p v-if="repositoryContentWarning(teacherRepositoryHomeInfo, 'readme')" role="status" class="p-4 text-xs text-amber-700">{{ repositoryContentWarning(teacherRepositoryHomeInfo, 'readme') }}</p>
                                             </section>
 
                                             <!-- 项目类图 -->
                                             <section class="rounded-2xl bg-white/80 border border-slate-200/70 overflow-hidden">
                                                 <h4 class="px-4 py-3 bg-slate-50 border-b border-slate-100 text-sm font-extrabold text-slate-900">项目类图</h4>
                                                 <div class="p-5">
+                                                    <p v-if="repositoryContentWarning(teacherRepositoryHomeInfo, 'classDiagram')" role="status" class="mb-3 text-xs text-amber-700">{{ repositoryContentWarning(teacherRepositoryHomeInfo, 'classDiagram') }}</p>
                                                     <div class="rounded-xl bg-slate-950 text-slate-100 p-4 font-mono text-xs whitespace-pre-wrap">{{ teacherRepositoryHomeInfo.classDiagram }}</div>
                                                 </div>
                                             </section>
@@ -769,7 +777,7 @@ export default {
                                                 <h4 class="text-sm font-extrabold text-slate-900 mt-4">修改建议</h4>
                                                 <textarea v-model="teacherFeedbackDraft.revisionSuggestions" rows="4" class="mt-3 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-slate-900 resize-none" placeholder="写下需要学生继续修改的建议"></textarea>
                                                 <p class="mt-3 text-[10px] text-slate-400">最后更新：{{ teacherRepositoryHome.teacherFeedbackUpdatedBy || '暂无' }} · {{ teacherRepositoryHome.teacherFeedbackUpdatedAt || '尚未更新' }}</p>
-                                                <button @click="saveTeacherRepositoryFeedback" :disabled="teacherRepositoryLoading" class="mt-4 w-full px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50">保存教师反馈</button>
+                                                <button @click="saveTeacherRepositoryFeedback" :disabled="trainingActionLoading || teacherRepositoryLoading || !selectedTrainingProject?.permissions?.evaluate" class="mt-4 w-full px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50">保存教师反馈</button>
                                             </section>
                                         </aside>
                                     </div>
@@ -807,6 +815,17 @@ export default {
         const teacherRepoBrowserError = ref('');
         const teacherRepoBrowserLanguages = ref([]);
         const teacherRepoCopiedCloneUrl = ref(false);
+
+        const trainingActionLoading = ref(false);
+        const teamScope = createTeamRequestScope(teamGitApi);
+        const teamApi = teamScope.api;
+        watch([() => selectedTrainingProject.value?.id, activeModule, teacherRepositoryOpen], () => {
+            teamScope.invalidate(); teacherRepositoryHome.value = null;
+            teacherRepoBrowserEntries.value = []; teacherRepoBrowserBlob.value = null;
+            teacherRepoBrowserLanguages.value = []; teacherRepoBrowserError.value = '';
+            teacherRepositoryLoading.value = false; trainingActionLoading.value = false;
+        }, {flush:'sync'});
+        onBeforeUnmount(() => teamScope.invalidate());
 
         onMounted(() => {
             setTimeout(() => {
@@ -1010,7 +1029,7 @@ export default {
         const syncContributionDraft = (project) => {
             const next = {};
             (project?.memberProgress || []).forEach((member) => {
-                next[member.name] = {
+                next[member.id] = {
                     score: Number(member.score || 0),
                     contribution: Number(member.contribution || 0)
                 };
@@ -1027,25 +1046,16 @@ export default {
         const loadTrainingProjects = async () => {
             trainingLoading.value = true;
             try {
-                const projects = await teamGitApi.listProjects({ viewer: 'teacher' });
+                const projects = await teamApi.listProjects({ viewer: 'teacher' });
                 trainingProjects.value = projects;
                 if (!selectedTrainingProject.value || !projects.some((item) => item.id === selectedTrainingProject.value.id)) {
                     selectedTrainingProject.value = projects[0] || null;
                 } else {
                     selectedTrainingProject.value = projects.find((item) => item.id === selectedTrainingProject.value.id);
                 }
-                if (selectedTrainingProject.value?.id) {
-                    try {
-                        const synced = await teamGitApi.refreshStatus(selectedTrainingProject.value.id, { actor: 'teacher' });
-                        replaceTrainingProject(synced);
-                    } catch (syncErr) {
-                        emit('show-toast', syncErr?.message || 'Gitea 同步失败，已显示缓存数据', 'error');
-                        syncContributionDraft(selectedTrainingProject.value);
-                    }
-                } else {
-                    syncContributionDraft(selectedTrainingProject.value);
-                }
+                syncContributionDraft(selectedTrainingProject.value);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '编程团队实训数据同步失败', 'error');
             } finally {
                 trainingLoading.value = false;
@@ -1064,10 +1074,11 @@ export default {
             syncContributionDraft(project);
             if (!project?.id) return;
             try {
-                const synced = await teamGitApi.getProjectDetail(project.id, { viewer: 'teacher', sync: 1 });
+                const synced = await teamApi.getProjectDetail(project.id, { viewer: 'teacher', sync: 0 });
                 replaceTrainingProject(synced);
             } catch (err) {
-                emit('show-toast', err?.message || '从 Gitea 同步团队详情失败', 'error');
+                if (err?.name === 'AbortError') return;
+                emit('show-toast', err?.message || '从 Gitea 读取团队详情失败', 'error');
             }
         };
 
@@ -1103,17 +1114,20 @@ export default {
             teacherRepoBrowserLoading.value = true;
             teacherRepoBrowserError.value = '';
             teacherRepoBrowserBlob.value = null;
+            const requestGeneration = teamScope.generation;
             try {
-                const data = await teamGitApi.getRepositoryTree(id, {
+                const data = await teamApi.getRepositoryTree(id, {
                     path,
                     ref: teacherRepositoryHomeInfo.value.defaultBranch || teacherRepositoryHomeRepo.value.defaultBranch || 'main'
                 });
                 teacherRepoBrowserPath.value = data.path || '';
                 teacherRepoBrowserEntries.value = data.entries || [];
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teacherRepoBrowserEntries.value = [];
                 teacherRepoBrowserError.value = err?.message || '文件目录加载失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teacherRepoBrowserLoading.value = false;
             }
         };
@@ -1123,15 +1137,18 @@ export default {
             if (!id || !path) return;
             teacherRepoBrowserLoading.value = true;
             teacherRepoBrowserError.value = '';
+            const requestGeneration = teamScope.generation;
             try {
-                teacherRepoBrowserBlob.value = await teamGitApi.getRepositoryBlob(id, {
+                teacherRepoBrowserBlob.value = await teamApi.getRepositoryBlob(id, {
                     path,
                     ref: teacherRepositoryHomeInfo.value.defaultBranch || teacherRepositoryHomeRepo.value.defaultBranch || 'main'
                 });
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teacherRepoBrowserBlob.value = null;
                 teacherRepoBrowserError.value = err?.message || '文件预览失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teacherRepoBrowserLoading.value = false;
             }
         };
@@ -1149,9 +1166,11 @@ export default {
             const id = projectId || selectedTrainingProject.value?.id;
             if (!id) return;
             try {
-                teacherRepoBrowserLanguages.value = await teamGitApi.getRepositoryLanguages(id);
+                teacherRepoBrowserLanguages.value = await teamApi.getRepositoryLanguages(id);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teacherRepoBrowserLanguages.value = [];
+                teacherRepoBrowserError.value = err?.message || '语言统计读取失败';
             }
         };
 
@@ -1181,30 +1200,36 @@ export default {
             selectedTrainingProject.value = project;
             teacherRepositoryOpen.value = true;
             teacherRepositoryLoading.value = true;
+            teacherRepositoryHome.value = null;
             resetTeacherRepoBrowser();
+            const requestGeneration = teamScope.generation;
             try {
-                const home = await teamGitApi.getRepositoryHome(project.id);
+                const home = await teamApi.getRepositoryHome(project.id);
                 teacherRepositoryHome.value = home;
                 teacherFeedbackDraft.value = {
                     teacherComment: home.teacherComment || '',
                     revisionSuggestions: home.revisionSuggestions || ''
                 };
+                if (requestGeneration !== teamScope.generation) return;
                 await Promise.all([
                     loadTeacherRepoBrowser('', project.id),
                     loadTeacherRepoLanguages(project.id)
                 ]);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '仓库主页加载失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teacherRepositoryLoading.value = false;
             }
         };
 
         const saveTeacherRepositoryFeedback = async () => {
-            if (!selectedTrainingProject.value) return;
+            if (!selectedTrainingProject.value || teacherRepositoryLoading.value) return;
             teacherRepositoryLoading.value = true;
+            const requestGeneration = teamScope.generation;
             try {
-                const feedback = await teamGitApi.updateRepositoryFeedback(selectedTrainingProject.value.id, {
+                const feedback = await teamApi.updateRepositoryFeedback(selectedTrainingProject.value.id, {
                     ...teacherFeedbackDraft.value,
                     actor: 'teacher'
                 });
@@ -1212,45 +1237,49 @@ export default {
                     ...(teacherRepositoryHome.value || {}),
                     ...feedback
                 };
-                emit('show-toast', '教师评语和修改建议已同步到仓库主页', 'success');
+                emit('show-toast', '教师评语和修改建议已保存到本系统', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '教师反馈保存失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teacherRepositoryLoading.value = false;
             }
         };
 
         const createTeacherTrainingProject = async () => {
+            if (trainingLoading.value || trainingActionLoading.value) return;
+            const keyword = window.prompt('输入负责学生的姓名或账号，选择真实队长');
+            if (!keyword?.trim()) return;
             trainingLoading.value = true;
             try {
-                const project = await teamGitApi.createProject({
-                    title: '教师端编程团队实训',
-                    course: '软件工程综合实训',
-                    teamName: `实训团队 ${trainingProjects.value.length + 1}`,
-                    description: '由教师端管理员创建，用于管理团队任务、Git 协作进度、PR 审核与贡献评价。',
-                    leaderId: '队长',
-                    members: ['队长', '李明', '王磊'],
-                    actor: 'teacher'
-                });
+                const candidates = await teamApi.searchMembers({keyword:keyword.trim()});
+                if (!candidates.length) throw new Error('未找到可管理的真实学生账号');
+                const choice = window.prompt(candidates.map(m => `${m.username}: ${m.name}`).join('\n') + '\n请输入上列队长账号');
+                const leader = candidates.find(m => m.username === choice?.trim());
+                if (!leader) throw new Error('请选择搜索结果中的真实账号');
+                const title = window.prompt('实训项目名称');
+                if (!title?.trim()) return;
+                const project = await teamApi.createProject({title:title.trim(),course:'软件工程综合实训',teamName:title.trim(),description:'教师分配的编程团队实训项目',leaderId:leader.username,members:[{username:leader.username}],actor:'teacher'});
                 trainingProjects.value.unshift(project);
-                selectTrainingProject(project);
-                emit('show-toast', '已创建实训团队，学生端队长可继续完善项目介绍', 'success');
+                await selectTrainingProject(project);
+                emit('show-toast', '已创建真实学生项目，队长可继续完善团队', 'success');
             } catch (err) {
-                emit('show-toast', err?.message || '分配实训团队失败', 'error');
-            } finally {
-                trainingLoading.value = false;
-            }
+                if (err?.name === 'AbortError') return; if(err?.name !== 'AbortError') emit('show-toast',err?.message || '创建失败','error'); }
+            finally {trainingLoading.value=false;}
         };
 
         const quickAssignTeacherTask = async (member) => {
-            if (!selectedTrainingProject.value) return;
+            if (!selectedTrainingProject.value || trainingActionLoading.value || !selectedTrainingProject.value.permissions?.manage) return;
             const task = window.prompt(`给 ${member.name} 分配任务`, member.task || '');
             if (task === null || !task.trim()) return;
             const branch = window.prompt('任务分支名', member.branch || `feature/${member.id || 'task'}`);
             if (branch === null || !branch.trim()) return;
+            trainingActionLoading.value = true;
+            const requestGeneration = teamScope.generation;
             try {
-                const project = await teamGitApi.assignMemberTask(selectedTrainingProject.value.id, {
-                    memberId: member.name,
+                const project = await teamApi.assignMemberTask(selectedTrainingProject.value.id, {
+                    memberId: member.username || member.id,
                     task: task.trim(),
                     branch: branch.trim(),
                     actor: 'teacher'
@@ -1258,28 +1287,37 @@ export default {
                 replaceTrainingProject(project);
                 emit('show-toast', '教师端任务分配已同步', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '任务分配失败', 'error');
-            }
+            } finally {
+                if (requestGeneration !== teamScope.generation) return; trainingActionLoading.value = false; }
         };
 
         const sendTeacherReminder = async () => {
-            if (!selectedTrainingProject.value) return;
+            if (!selectedTrainingProject.value || trainingActionLoading.value || !selectedTrainingProject.value.permissions?.manage) return;
+            trainingActionLoading.value = true;
+            const requestGeneration = teamScope.generation;
             try {
-                const project = await teamGitApi.remindMembers(selectedTrainingProject.value.id, {
+                const project = await teamApi.remindMembers(selectedTrainingProject.value.id, {
                     message: '教师端提醒：请尽快完成本地提交、push 并创建 Pull Request，便于本周审核。',
                     actor: 'teacher'
                 });
                 replaceTrainingProject(project);
-                emit('show-toast', '已提醒未提交成员', 'success');
+                emit('show-toast', '已保存站内提醒（未发送邮件或短信）', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '提醒发送失败', 'error');
-            }
+            } finally {
+                if (requestGeneration !== teamScope.generation) return; trainingActionLoading.value = false; }
         };
 
         const teacherAuditPr = async (pr, action) => {
-            if (!selectedTrainingProject.value) return;
+            if (!canReviewPullRequest(pr)) return;
+            if (!selectedTrainingProject.value || trainingActionLoading.value || !selectedTrainingProject.value.permissions?.review) return;
+            trainingActionLoading.value = true;
+            const requestGeneration = teamScope.generation;
             try {
-                const project = await teamGitApi.reviewPullRequest(selectedTrainingProject.value.id, pr.number, {
+                const project = await teamApi.reviewPullRequest(selectedTrainingProject.value.id, pr.number, {
                     action,
                     comment: teacherReviewComment.value,
                     actor: 'teacher'
@@ -1287,19 +1325,23 @@ export default {
                 replaceTrainingProject(project);
                 emit('show-toast', action === 'teacher_approve' ? 'PR 已审核并合并' : '已要求学生继续修改 PR', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || 'PR 审核失败', 'error');
-            }
+            } finally {
+                if (requestGeneration !== teamScope.generation) return; trainingActionLoading.value = false; }
         };
 
         const saveTeacherContribution = async () => {
-            if (!selectedTrainingProject.value) return;
+            if (!selectedTrainingProject.value || trainingActionLoading.value || !selectedTrainingProject.value.permissions?.evaluate) return;
             const scores = (selectedTrainingProject.value.memberProgress || []).map((member) => ({
-                memberId: member.name,
-                score: Number(contributionDraft.value[member.name]?.score || 0),
-                contribution: Number(contributionDraft.value[member.name]?.contribution || 0)
+                memberId: member.username || member.id,
+                score: Number(contributionDraft.value[member.id]?.score || 0),
+                contribution: Number(contributionDraft.value[member.id]?.contribution || 0)
             }));
+            trainingActionLoading.value = true;
+            const requestGeneration = teamScope.generation;
             try {
-                const project = await teamGitApi.evaluateContribution(selectedTrainingProject.value.id, {
+                const project = await teamApi.evaluateContribution(selectedTrainingProject.value.id, {
                     scores,
                     summary: '教师端管理员已完成团队贡献度评价。',
                     actor: 'teacher'
@@ -1307,12 +1349,16 @@ export default {
                 replaceTrainingProject(project);
                 emit('show-toast', '团队贡献度评价已保存', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '贡献评价保存失败', 'error');
-            }
+            } finally {
+                if (requestGeneration !== teamScope.generation) return; trainingActionLoading.value = false; }
         };
 
         return {
+            isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning,
             mounted,
+            trainingActionLoading,
             activeModule,
             pipelineStages,
             activeStage,

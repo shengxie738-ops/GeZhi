@@ -1,3 +1,4 @@
+import { renderMarkdown } from '../utils/safeRendering.js';
 import { ref, computed, onMounted } from 'vue';
 import { forumApi } from '../api/forum.js';
 import { formatTime } from '../utils/helpers.js';
@@ -197,18 +198,7 @@ export default {
         onMounted(loadAllData);
 
         // 简易渲染 Markdown 预览
-        const formatMarkdown = (text) => {
-            let parsed = text;
-            if (window.marked && typeof window.marked.parse === 'function') {
-                parsed = window.marked.parse(text);
-            } else {
-                parsed = text.replace(/\n/g, '<br>');
-            }
-            if (window.DOMPurify && typeof window.DOMPurify.sanitize === 'function') {
-                return window.DOMPurify.sanitize(parsed);
-            }
-            return parsed;
-        };
+        const formatMarkdown = renderMarkdown;
 
         // ─── 课程答疑 Tab 状态与逻辑 ────────────────────────────
         const activeQnaPost = ref(null);       // 当前选中的帖子

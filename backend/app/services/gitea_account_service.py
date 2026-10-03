@@ -5,12 +5,11 @@ import re
 import secrets
 import string
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.gitea_account_binding import GiteaAccountBinding
 from app.models.user_account import UserAccount
-from app.services.gitea_service import GiteaService
+from app.services.gitea_service import GiteaService, GiteaUnavailableError
 from app.utils.datetime import utc_now_iso
 
 
@@ -148,36 +147,25 @@ def ensure_gitea_account_for_user(
             class_name=account.class_name or "",
             gitea_username=username,
             gitea_email=email,
-            sync_status="mock",
+            sync_status="pending",
             sync_error="",
         )
         db.add(binding)
 
     _apply_account_fields(binding, account, username=username, email=email)
 
-    if (
-        not force_sync
-        and binding.sync_status == "synced"
-        and binding.gitea_user_id is not None
-    ):
+    if isinstance(client, GiteaService) and not _uses_real_gitea_api(client):
+        binding.sync_status = "unavailable"
+        binding.sync_error = "Gitea provider unavailable"
         db.commit()
         db.refresh(binding)
         return _identity_from_binding(binding)
 
     if (
         not force_sync
-        and binding.sync_status == "mock"
+        and binding.sync_status == "synced"
         and binding.gitea_user_id is not None
-        and _uses_real_gitea_api(client)
     ):
-        org_error = binding.sync_error or ""
-        try:
-            client.ensure_org_membership(username, role="member")
-            org_error = ""
-        except Exception as org_exc:
-            org_error = str(org_exc)
-        binding.sync_status = "synced"
-        binding.sync_error = org_error
         db.commit()
         db.refresh(binding)
         return _identity_from_binding(binding)
@@ -195,11 +183,11 @@ def ensure_gitea_account_for_user(
                 binding.gitea_user_id = user.get("id")
                 if hasattr(client, "ensure_org_membership"):
                     client.ensure_org_membership(username, role="member")
-                binding.sync_status = "synced" if user.get("id") is not None else "mock"
+                binding.sync_status = "synced" if user.get("id") is not None else "failed"
                 binding.sync_error = ""
             except Exception as exc:
-                binding.sync_status = "mock"
-                binding.sync_error = str(exc)
+                binding.sync_status = "failed"
+                binding.sync_error = "Gitea account synchronization failed"
         db.commit()
         db.refresh(binding)
         return _identity_from_binding(binding)
@@ -217,23 +205,26 @@ def ensure_gitea_account_for_user(
         try:
             client.ensure_org_membership(username, role="member")
         except Exception as org_exc:
-            org_error = str(org_exc)
-        binding.sync_status = "synced" if user.get("id") is not None else "mock"
+            org_error = "Gitea organization membership failed"
+        binding.sync_status = "synced" if user.get("id") is not None else "failed"
         binding.sync_error = org_error
     except Exception as exc:
-        existing = client.get_user(username) if hasattr(client, "get_user") else None
+        try:
+            existing = client.get_user(username) if hasattr(client, "get_user") else None
+        except Exception:
+            existing = None
         if existing and existing.get("id") is not None:
             binding.gitea_user_id = existing.get("id")
             org_error = ""
             try:
                 client.ensure_org_membership(username, role="member")
             except Exception as org_exc:
-                org_error = str(org_exc)
+                org_error = "Gitea organization membership failed"
             binding.sync_status = "synced"
             binding.sync_error = org_error
         else:
-            binding.sync_status = "mock"
-            binding.sync_error = str(exc)
+            binding.sync_status = "failed"
+            binding.sync_error = "Gitea account synchronization failed"
 
     db.commit()
     db.refresh(binding)
@@ -273,96 +264,57 @@ def create_or_rotate_gitea_token(db: Session, account: UserAccount, *, gitea: Gi
 
 
 def ensure_repository_collaborators(
-    db: Session,
-    repo_owner: str,
-    repo_name: str,
-    permissions: list[RepoPermission],
-    *,
-    gitea: GiteaService | None = None,
+    db: Session, repo_owner: str, repo_name: str, permissions: list[RepoPermission], *, gitea: GiteaService | None = None,
 ) -> list[dict]:
     client = gitea or GiteaService()
     result = []
     for item in permissions:
-        identity = ensure_gitea_account_by_username(db, item.campus_user_id, gitea=client)
-        if not identity:
-            result.append({"campusUserId": item.campus_user_id, "status": "missing_user", "permission": item.permission})
-            continue
+        record = {"campusUserId": item.campus_user_id, "permission": item.permission}
         try:
-            client.add_repository_collaborator(
-                owner=repo_owner,
-                repo=repo_name,
-                username=identity.gitea_username,
-                permission=item.permission,
-            )
-            result.append({"campusUserId": item.campus_user_id, "giteaUsername": identity.gitea_username, "status": "synced", "permission": item.permission})
-        except Exception as exc:
-            result.append({"campusUserId": item.campus_user_id, "giteaUsername": identity.gitea_username, "status": "mock", "permission": item.permission, "error": str(exc)})
+            identity = ensure_gitea_account_by_username(db, item.campus_user_id, gitea=client)
+            if not identity:
+                result.append({**record, "status": "missing_user"})
+                continue
+            record["giteaUsername"] = identity.gitea_username
+            if identity.sync_status != "synced" or identity.gitea_user_id is None:
+                result.append({**record, "status": "unavailable" if identity.sync_status == "unavailable" else "failed",
+                               "error": "Gitea account is not synchronized"})
+                continue
+            succeeded = client.add_repository_collaborator(owner=repo_owner, repo=repo_name,
+                         username=identity.gitea_username, permission=item.permission)
+            result.append({**record, "status": "synced" if succeeded is True else "failed"})
+        except GiteaUnavailableError:
+            result.append({**record, "status": "unavailable", "error": "Gitea provider unavailable"})
+        except Exception:
+            result.append({**record, "status": "failed", "error": "Gitea collaborator synchronization failed"})
     return result
 
 
 def match_campus_user_from_gitea_event(db: Session, *, sender_username: str = "", commit_author: dict | None = None) -> dict:
-    author = commit_author or {}
-    sender = _clean(sender_username)
-    if sender:
-        binding = db.query(GiteaAccountBinding).filter(GiteaAccountBinding.gitea_username == sender).first()
-        if binding:
-            account = db.query(UserAccount).filter(UserAccount.username == binding.campus_user_id).first()
-            return {
-                "campusUserId": binding.campus_user_id,
-                "studentId": binding.student_id,
-                "giteaUsername": binding.gitea_username,
-                "displayName": (account.real_name if account and account.real_name else binding.campus_user_id),
-                "matchSource": "gitea_username",
-            }
-    email = _clean(author.get("email") if isinstance(author, dict) else "")
-    if email:
-        binding = db.query(GiteaAccountBinding).filter(GiteaAccountBinding.gitea_email == email).first()
-        if binding:
-            account = db.query(UserAccount).filter(UserAccount.username == binding.campus_user_id).first()
-            return {
-                "campusUserId": binding.campus_user_id,
-                "studentId": binding.student_id,
-                "giteaUsername": binding.gitea_username,
-                "displayName": (account.real_name if account and account.real_name else binding.campus_user_id),
-                "matchSource": "gitea_email",
-            }
-        if email.lower().endswith("@gezhi.local"):
-            local_part = email.split("@", 1)[0]
-            if local_part.lower().startswith("teacher_"):
-                teacher_key = local_part[len("teacher_") :]
-                account = db.query(UserAccount).filter(
-                    or_(UserAccount.teacher_id == teacher_key, UserAccount.username == teacher_key)
-                ).first()
-                if account:
-                    return {
-                        "campusUserId": account.username,
-                        "studentId": account.student_id or "",
-                        "giteaUsername": "",
-                        "displayName": account.real_name or account.username,
-                        "matchSource": "teacher_email",
-                    }
-            else:
-                account = db.query(UserAccount).filter(UserAccount.student_id == local_part).first()
-                if account:
-                    return {
-                        "campusUserId": account.username,
-                        "studentId": account.student_id or "",
-                        "giteaUsername": "",
-                        "displayName": account.real_name or account.username,
-                        "matchSource": "student_email",
-                    }
-    for candidate in (author.get("username"), author.get("name"), sender):
-        value = _clean(candidate)
+    """Associate metadata, not cryptographically authenticate authorship.
+
+    Presence of commit_author (including {}) forbids falling back to the pusher.
+    Display names and guessed email local parts are never identity evidence.
+    """
+    author = commit_author if isinstance(commit_author, dict) else {}
+    username = _clean(author.get("username") or author.get("login")) if commit_author is not None else _clean(sender_username)
+    email = _clean(author.get("email"))
+    candidates = {}
+    for field, value, source in ((GiteaAccountBinding.gitea_username, username, "gitea_username"),
+                                 (GiteaAccountBinding.gitea_email, email, "gitea_email")):
         if not value:
             continue
-        account = db.query(UserAccount).filter(or_(UserAccount.username == value, UserAccount.real_name == value)).first()
-        if account:
-            return {
-                "campusUserId": account.username,
-                "studentId": account.student_id or "",
-                "giteaUsername": "",
-                "displayName": account.real_name or account.username,
-                "matchSource": "legacy_user_account",
-            }
-    fallback = _clean(author.get("name") if isinstance(author, dict) else "") or sender or "unknown"
-    return {"campusUserId": "", "studentId": "", "giteaUsername": sender, "displayName": f"{fallback} (未绑定 Gitea 用户)", "matchSource": "unmatched"}
+        bindings = db.query(GiteaAccountBinding).filter(field == value,
+                    GiteaAccountBinding.sync_status == "synced", GiteaAccountBinding.gitea_user_id.isnot(None)).all()
+        for binding in bindings:
+            account = db.query(UserAccount).filter(UserAccount.username == binding.campus_user_id).first()
+            if account:
+                candidates[account.username] = (account, binding, source)
+    if len(candidates) == 1:
+        account, binding, source = next(iter(candidates.values()))
+        return {"campusUserId": account.username, "studentId": account.student_id or "",
+                "giteaUsername": binding.gitea_username if binding else "",
+                "displayName": account.real_name or account.username, "matchSource": source, "source": source}
+    source = "ambiguous" if len(candidates) > 1 else "unmatched"
+    return {"campusUserId": "", "studentId": "", "giteaUsername": "", "displayName": _clean(author.get("name")) or username or "unknown",
+            "matchSource": source, "source": source}

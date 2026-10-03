@@ -1,4 +1,6 @@
 import os
+import json
+from unittest.mock import patch
 import unittest
 
 os.environ.setdefault("RAGFLOW_API_KEY", "test")
@@ -14,6 +16,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.domain_record import DomainRecord
+from app.models import git_coach
+from app.core.config import settings
 from app.models.gitea_account_binding import GiteaAccountBinding
 from app.models.user_account import UserAccount, hash_password
 from app.repositories.json_store import JsonStore
@@ -68,6 +72,9 @@ class FakeGiteaService:
     def create_repository(self, *, name, description="", private=False, auto_init=True):
         self.created.append({"name": name, "description": description, "private": private, "auto_init": auto_init})
         return {
+            "source": "gitea",
+            "status": "available",
+            "giteaRepositoryId": 71,
             "giteaOwner": "campus",
             "giteaRepo": name,
             "htmlUrl": f"https://git.example.edu/campus/{name}",
@@ -82,7 +89,8 @@ class FakeGiteaService:
 
     def ensure_webhook(self, *, owner, repo, project_id, module="team_git"):
         url = f"http://host.docker.internal:8516/api/team-git/projects/{project_id}/webhooks/gitea"
-        payload = {"configured": True, "url": url, "events": ["push", "pull_request"]}
+        payload = {"configured": True, "url": url, "events": ["push", "pull_request"],
+                   "secretVerification": "write_acknowledged", "deliveryVerified": False}
         self.webhooks.append({"owner": owner, "repo": repo, "project_id": project_id, **payload})
         return payload
 
@@ -184,15 +192,64 @@ class FakeGiteaService:
 class TeamGitServiceTest(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:")
-        DomainRecord.__table__.create(bind=self.engine)
-        UserAccount.__table__.create(bind=self.engine)
-        GiteaAccountBinding.__table__.create(bind=self.engine)
+        DomainRecord.metadata.create_all(bind=self.engine)
         self.SessionLocal = sessionmaker(bind=self.engine)
+        self.rosters = {name: [] for name in ("teacher", "teacher-a", "teacher_chen")}
+        self.roster_patch = patch.object(settings, "TEACHER_STUDENT_ASSIGNMENTS", json.dumps(self.rosters))
+        self.roster_patch.start()
+        self.addCleanup(self.roster_patch.stop)
+        self.addCleanup(self.engine.dispose)
+        legacy_cases = {
+            "test_explicit_legacy_fixture_preserves_git_workflow",
+            "test_create_repository_updates_project_without_touching_code_repository_module",
+            "test_confirm_clone_and_webhook_advance_member_progress",
+            "test_gitea_push_payload_maps_student_and_deduplicates_commit_sha",
+            "test_gitea_pull_request_upserts_by_number_and_merge_does_not_score",
+            "test_refresh_project_status_can_drive_demo_state_switches",
+        }
+        if self._testMethodName in legacy_cases:
+            from app.services.team_git_service import _default_project
+            with self.SessionLocal() as db:
+                project = _default_project()
+                project["demoFixture"] = True
+                project["project"]["leaderId"] = "zhanghua"
+                for member in project["memberProgress"]:
+                    member["username"] = member["id"]
+                    if not (member["id"] == "liming" and self._testMethodName.startswith("test_gitea_")):
+                        db.add(UserAccount(username=member["id"], role="student", real_name=member["name"], password_hash="fixture"))
+                    db.add(GiteaAccountBinding(campus_user_id=member["id"], role="student", gitea_username=member["id"],
+                           gitea_email=member["id"] + "@fixture.invalid", gitea_user_id=100 + len(member["id"]), sync_status="synced"))
+                for teacher in self.rosters:
+                    self.rosters[teacher] = [m["id"] for m in project["memberProgress"]]
+                settings.TEACHER_STUDENT_ASSIGNMENTS = json.dumps(self.rosters)
+                db.commit()
+                JsonStore(db).upsert("team_collaboration_git", "project", project["id"], project, owner_id="zhanghua", status="active")
 
-    def test_default_project_contains_complete_git_workflow_mock(self):
+    def create_project(self, db, payload, *, actor, existing_bindings=True):
+        """Explicit synthetic accounts plus independently configured trusted teachers."""
+        members = payload.get("members") or []
+        names = [m.get("username") or m.get("memberId") or m.get("id") if isinstance(m, dict) else m for m in members]
+        names.append(payload.get("leaderId") or actor["username"])
+        for name in set(names):
+            if db.query(UserAccount).filter_by(username=name).first() is None:
+                db.add(UserAccount(username=name, role="student", real_name=name, student_id="fixture_" + name.encode().hex(), password_hash="fixture"))
+        for teacher in self.rosters:
+            if db.query(UserAccount).filter_by(username=teacher).first() is None:
+                db.add(UserAccount(username=teacher, role="teacher", password_hash="fixture"))
+            self.rosters[teacher] = sorted(set(self.rosters[teacher]) | set(names))
+        for index, name in enumerate(sorted(set(names)) if existing_bindings else [], 1):
+            if db.query(GiteaAccountBinding).filter_by(campus_user_id=name).first() is None:
+                db.add(GiteaAccountBinding(campus_user_id=name, gitea_username=name,
+                       gitea_user_id=1000 + index, gitea_email=name + "@fixture.invalid", role="student", sync_status="synced"))
+        db.commit()
+        settings.TEACHER_STUDENT_ASSIGNMENTS = json.dumps(self.rosters)
+        return create_collaboration_project(db, payload, actor=actor)
+
+
+    def test_explicit_legacy_fixture_preserves_git_workflow(self):
         db = self.SessionLocal()
         try:
-            detail = get_collaboration_project(db, "huffman-coding-team", viewer="李明")
+            detail = get_collaboration_project(db, "huffman-coding-team", actor={"username": "liming", "role": "student"})
 
             self.assertEqual(detail["project"]["title"], "哈夫曼压缩与解压引擎")
             self.assertEqual(detail["repository"]["repoName"], "huffman-coding-team")
@@ -205,11 +262,13 @@ class TeamGitServiceTest(unittest.TestCase):
         finally:
             db.close()
 
+    @patch.object(settings, "GITEA_SSH_DOMAIN", "gezhisystem.com")
+    @patch.object(settings, "GITEA_PUBLIC_BASE_URL", "https://gezhisystem.com/gitea")
     def test_repository_home_rewrites_legacy_local_clone_urls(self):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "rag-course",
@@ -220,7 +279,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "rag-course",
                     "className": "CS2601",
                 },
-                actor="leader",
+                actor={"username": "leader", "role": "student"},
             )
             created["repository"].update(
                 {
@@ -275,7 +334,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 ]
             )
             db.commit()
-            project = create_collaboration_project(
+            project = self.create_project(
                 db,
                 {
                     "title": "权限同步实验",
@@ -287,9 +346,10 @@ class TeamGitServiceTest(unittest.TestCase):
                     "teacherId": "teacher_chen",
                     "className": "计科2601",
                 },
-                actor={"username": "20260001", "role": "student", "studentId": "20260001"},
+                actor={"username": "teacher_chen", "role": "teacher"},
+                existing_bindings=False,
             )
-            result = create_project_repository(db, project["id"], actor="20260001", gitea=gitea)
+            result = create_project_repository(db, project["id"], actor={"username": "20260001", "role": "student"}, gitea=gitea)
             self.assertEqual(result["repository"]["status"], "created")
             self.assertIn({"owner": "campus", "repo": project["id"], "username": "stu_20260001", "permission": "admin"}, gitea.collaborators)
             self.assertIn({"owner": "campus", "repo": project["id"], "username": "stu_20260002", "permission": "write"}, gitea.collaborators)
@@ -301,7 +361,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            result = create_project_repository(db, "huffman-coding-team", actor="teacher-a", gitea=gitea)
+            result = create_project_repository(db, "huffman-coding-team", actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
 
             self.assertEqual(result["repository"]["status"], "created")
             self.assertEqual(result["repository"]["cloneUrl"], "https://git.example.edu/campus/huffman-coding-team.git")
@@ -313,7 +373,7 @@ class TeamGitServiceTest(unittest.TestCase):
             )
             self.assertEqual(gitea.created[0]["name"], "huffman-coding-team")
 
-            detail = get_collaboration_project(db, "huffman-coding-team", viewer="teacher-a")
+            detail = get_collaboration_project(db, "huffman-coding-team", actor={"username": "teacher-a", "role": "teacher"})
             self.assertEqual(detail["repository"]["htmlUrl"], "https://git.example.edu/campus/huffman-coding-team")
             self.assertTrue(any(event["type"] == "repository_created" for event in detail["gitEvents"]))
         finally:
@@ -322,7 +382,7 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_missing_pull_request_rows_are_backfilled_from_member_progress(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "student-score-warning-system",
@@ -335,7 +395,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "student-score-warning-system",
                     "className": "计科 2301",
                 },
-                actor="夏清禾",
+                actor={"username": "夏清禾", "role": "student"},
             )
             for index, member in enumerate(created["memberProgress"]):
                 member["cloneStatus"] = "done"
@@ -354,6 +414,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     member["prStatus"] = "needs_pr"
                     member["statusLabel"] = "PR 待创建"
             created["pullRequests"] = []
+            created["demoFixture"] = True
             JsonStore(db).upsert(
                 "team_collaboration_git",
                 "project",
@@ -363,10 +424,16 @@ class TeamGitServiceTest(unittest.TestCase):
                 status="active",
             )
 
-            detail = get_collaboration_project(db, created["id"], actor={"username": "teacher-a", "role": "teacher", "className": "计科 2301"})
+            untouched = get_collaboration_project(db, created["id"], actor={"username": "teacher-a", "role": "teacher"})
+            self.assertEqual(untouched["pullRequests"], [])
+            self.assertEqual(JsonStore(db).get_payload("team_collaboration_git", "project", created["id"])["pullRequests"], [])
+            self.assertGreaterEqual(backfill_training_pull_request_records(db), 1)
+            detail = get_collaboration_project(db, created["id"], actor={"username": "teacher-a", "role": "teacher"})
             persisted = JsonStore(db).get_payload("team_collaboration_git", "project", created["id"])
 
-            self.assertEqual(detail["teamSummary"]["openPullRequests"], 1)
+            self.assertEqual(detail["teamSummary"]["openPullRequests"], 0)
+            self.assertTrue(all(pr["verified"] is False for pr in detail["pullRequests"]))
+            self.assertTrue(all(pr["provenance"] == "legacy_unverified" for pr in detail["pullRequests"]))
             self.assertEqual(len(detail["pullRequests"]), 2)
             self.assertTrue(any(pr["creator"] == "沈砚辞" and pr["status"] == "open" for pr in detail["pullRequests"]))
             self.assertTrue(any(pr["creator"] == "贺临川" and pr["status"] == "merged" for pr in detail["pullRequests"]))
@@ -378,7 +445,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "ai-learning-companion",
@@ -390,7 +457,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "ai-learning-companion",
                     "className": "计科 2301",
                 },
-                actor="林舟",
+                actor={"username": "林舟", "role": "student"},
             )
             for member in created["memberProgress"]:
                 member["cloneStatus"] = "done"
@@ -401,6 +468,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 member["progress"] = 74 if member["name"] == "周予安" else 58
             created["repository"]["status"] = "collaborating"
             created["pullRequests"] = []
+            created["demoFixture"] = True
             JsonStore(db).upsert(
                 "team_collaboration_git",
                 "project",
@@ -427,7 +495,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "live-empty-pr-project",
@@ -438,10 +506,10 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "live-empty-pr-project",
                     "className": "CS2601",
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="队长", gitea=gitea)
-            created = get_collaboration_project(db, created["id"], actor="队长")
+            create_project_repository(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
+            created = get_collaboration_project(db, created["id"], actor={"username": "队长", "role": "student"})
             for member in created["memberProgress"]:
                 member["cloneStatus"] = "done"
                 member["pushStatus"] = "detected"
@@ -459,7 +527,7 @@ class TeamGitServiceTest(unittest.TestCase):
             )
 
             gitea.pull_requests = []
-            synced = sync_project_from_gitea(db, created["id"], actor="队长", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
 
             self.assertEqual(synced["pullRequests"], [])
             self.assertEqual(synced["teamSummary"]["openPullRequests"], 0)
@@ -469,12 +537,12 @@ class TeamGitServiceTest(unittest.TestCase):
         finally:
             db.close()
 
-    def test_disabled_gitea_marks_demo_fallback_metadata(self):
+    def test_disabled_gitea_records_failure_without_fabricating_pull_requests(self):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         gitea.enabled = False
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "disabled-gitea-fallback",
@@ -485,7 +553,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "disabled-gitea-fallback",
                     "className": "CS2601",
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
             for member in created["memberProgress"]:
                 member["pushStatus"] = "detected"
@@ -502,13 +570,12 @@ class TeamGitServiceTest(unittest.TestCase):
             )
 
             with self.assertRaises(RuntimeError):
-                sync_project_from_gitea(db, created["id"], actor="队长", gitea=gitea)
+                sync_project_from_gitea(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
 
-            persisted = get_collaboration_project(db, created["id"], actor="队长")
-            self.assertEqual(persisted["repository"]["giteaSyncStatus"], "disabled")
-            self.assertEqual(persisted["repository"]["prSource"], "demo_fallback")
-            self.assertIn("Gitea", persisted["repository"]["demoFallbackReason"])
-            self.assertGreaterEqual(len(persisted["pullRequests"]), 1)
+            persisted = get_collaboration_project(db, created["id"], actor={"username": "队长", "role": "student"})
+            self.assertEqual(persisted["repository"]["giteaSyncStatus"], "error")
+            self.assertIn("Gitea", persisted["repository"]["lastSyncError"])
+            self.assertEqual(persisted["pullRequests"], [])
         finally:
             db.close()
 
@@ -535,10 +602,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23001020120",
                     class_name="23006",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "contribution-real-counts",
@@ -549,9 +617,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "contribution-real-counts",
                     "className": "23006",
                 },
-                actor="23001020120",
+                actor={"username": "23001020120", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="23001020120", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "23001020120", "role": "student"}, gitea=gitea)
             gitea.pull_requests = [
                 {
                     "number": 7,
@@ -573,7 +641,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 }
             ]
 
-            synced = sync_project_from_gitea(db, created["id"], actor="23001020120", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "23001020120", "role": "student"}, gitea=gitea)
             ranking = synced["teamSummary"]["contributionRanking"]
             member = next(item for item in ranking if item["studentId"] == "23001020120" or item["name"] == "顾清寒")
 
@@ -607,10 +675,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23001020124",
                     class_name="23006",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "webhook-empty-to-live-pr",
@@ -621,7 +690,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "webhook-empty-to-live-pr",
                     "className": "23006",
                 },
-                actor="23001020124",
+                actor={"username": "23001020124", "role": "student"},
             )
             created["repository"]["giteaSyncStatus"] = "synced"
             created["repository"]["prSource"] = "gitea_empty"
@@ -659,7 +728,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 },
             )
 
-            detail = get_collaboration_project(db, created["id"], actor="23001020124")
+            detail = get_collaboration_project(db, created["id"], actor={"username": "23001020124", "role": "student"})
             self.assertEqual(detail["repository"]["prSource"], "gitea")
             self.assertEqual(len(detail["pullRequests"]), 1)
             self.assertEqual(detail["pullRequests"][0]["number"], 1)
@@ -693,11 +762,12 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23010000001",
                     class_name="CS2601",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
 
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "system-account-filter",
@@ -708,9 +778,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "system-account-filter",
                     "className": "CS2601",
                 },
-                actor="23010000001",
+                actor={"username": "23010000001", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="23010000001", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "23010000001", "role": "student"}, gitea=gitea)
             gitea.commits = [
                 {
                     "sha": "system001",
@@ -730,7 +800,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 },
             ]
 
-            synced = sync_project_from_gitea(db, created["id"], actor="23010000001", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "23010000001", "role": "student"}, gitea=gitea)
 
             names = [str(item.get("name") or "") for item in synced["memberProgress"]]
             ranking_names = [str(item.get("name") or "") for item in synced["teamSummary"]["contributionRanking"]]
@@ -770,6 +840,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23010000101",
                     class_name="CS2601",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.add(
@@ -781,11 +852,12 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23010000199",
                     class_name="CS2601",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
 
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "non-team-author-filter",
@@ -796,9 +868,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "non-team-author-filter",
                     "className": "CS2601",
                 },
-                actor="23010000101",
+                actor={"username": "23010000101", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="23010000101", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "23010000101", "role": "student"}, gitea=gitea)
             gitea.commits = [
                 {
                     "sha": "leader001",
@@ -826,12 +898,13 @@ class TeamGitServiceTest(unittest.TestCase):
                 },
             ]
 
-            synced = sync_project_from_gitea(db, created["id"], actor="23010000101", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "23010000101", "role": "student"}, gitea=gitea)
 
             names = [str(item.get("name") or "") for item in synced["memberProgress"]]
             ranking_names = [str(item.get("name") or "") for item in synced["teamSummary"]["contributionRanking"]]
-            self.assertEqual(names, ["23010000101"])
-            self.assertEqual(ranking_names, ["23010000101"])
+            self.assertEqual([item["username"] for item in synced["memberProgress"]], ["23010000101"])
+            self.assertEqual(names, ["Team Leader"])
+            self.assertEqual(ranking_names, ["Team Leader"])
             self.assertTrue(any(item.get("sha") == "other001" for item in synced["recentCommits"]))
             self.assertFalse(any("Other Student" in name for name in names + ranking_names))
             self.assertFalse(any("Gezhi System Bot" in name for name in names + ranking_names))
@@ -841,7 +914,7 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_existing_system_gitea_members_are_hidden_even_without_enrolled_member_list(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "existing-system-member-filter",
@@ -852,7 +925,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "existing-system-member-filter",
                     "className": "CS2601",
                 },
-                actor="23010000901",
+                actor={"username": "23010000901", "role": "student"},
             )
             created["memberProgress"].append(
                 {
@@ -883,7 +956,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 status="active",
             )
 
-            detail = get_collaboration_project(db, created["id"], actor="23010000901")
+            detail = get_collaboration_project(db, created["id"], actor={"username": "23010000901", "role": "student"})
 
             names = [str(item.get("name") or "") for item in detail["memberProgress"]]
             ranking_names = [str(item.get("name") or "") for item in detail["teamSummary"]["contributionRanking"]]
@@ -916,11 +989,12 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23010000002",
                     class_name="CS2601",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
 
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "feature-branch-sync",
@@ -938,9 +1012,9 @@ class TeamGitServiceTest(unittest.TestCase):
                         }
                     ],
                 },
-                actor="23010000002",
+                actor={"username": "23010000002", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="23010000002", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "23010000002", "role": "student"}, gitea=gitea)
             gitea.commits = []
             gitea.branch_commits = {
                 "feature/beta-task": [
@@ -955,7 +1029,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 ]
             }
 
-            synced = sync_project_from_gitea(db, created["id"], actor="23010000002", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "23010000002", "role": "student"}, gitea=gitea)
 
             member = synced["memberProgress"][0]
             self.assertIn("feature/beta-task", gitea.commit_calls)
@@ -990,11 +1064,12 @@ class TeamGitServiceTest(unittest.TestCase):
                         student_id=student_id,
                         class_name="CS2601",
                         sync_status="synced",
+                    gitea_user_id=71,
                     )
                 )
             db.commit()
 
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "auto-contribution-sync",
@@ -1005,9 +1080,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "auto-contribution-sync",
                     "className": "CS2601",
                 },
-                actor="23010000003",
+                actor={"username": "23010000003", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="23010000003", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "23010000003", "role": "student"}, gitea=gitea)
             gitea.pull_requests = [
                 {
                     "number": 3,
@@ -1037,7 +1112,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 },
             ]
 
-            synced = sync_project_from_gitea(db, created["id"], actor="23010000003", gitea=gitea)
+            synced = sync_project_from_gitea(db, created["id"], actor={"username": "23010000003", "role": "student"}, gitea=gitea)
             ranking = synced["teamSummary"]["contributionRanking"]
             contributions = {item["studentId"]: item["contribution"] for item in ranking}
 
@@ -1070,11 +1145,12 @@ class TeamGitServiceTest(unittest.TestCase):
                     student_id="23001020119",
                     class_name="CS2601",
                     sync_status="synced",
+                    gitea_user_id=71,
                 )
             )
             db.commit()
 
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "real-gitea-only",
@@ -1085,7 +1161,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "real-gitea-only",
                     "className": "CS2601",
                 },
-                actor="23001020119",
+                actor={"username": "23001020119", "role": "student"},
             )
             created["repository"]["status"] = "created"
             created["pullRequests"] = [
@@ -1143,7 +1219,7 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_training_pull_request_backfill_updates_all_active_projects(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "id": "campus-secondhand-market",
@@ -1153,7 +1229,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "members": ["周叙白", "许安然"],
                     "repoName": "campus-secondhand-market",
                 },
-                actor="周叙白",
+                actor={"username": "周叙白", "role": "student"},
             )
             for member in created["memberProgress"]:
                 if member["name"] == "许安然":
@@ -1164,6 +1240,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     member["progress"] = 76
                     member["commitCount"] = 4
             created["pullRequests"] = []
+            created["demoFixture"] = True
             JsonStore(db).upsert("team_collaboration_git", "project", created["id"], created, owner_id="周叙白", status="active")
 
             changed = backfill_training_pull_request_records(db)
@@ -1178,17 +1255,19 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_confirm_clone_and_webhook_advance_member_progress(self):
         db = self.SessionLocal()
         try:
-            clone_result = confirm_clone(db, "huffman-coding-team", user_id="赵雷")
-            zhaolei = next(member for member in clone_result["memberProgress"] if member["name"] == "赵雷")
+            with self.assertRaises(ValueError):
+                confirm_clone(db, "huffman-coding-team", user_id="赵雷")
+            clone_result = confirm_clone(db, "huffman-coding-team", user_id="liming")
+            zhaolei = next(member for member in clone_result["memberProgress"] if member["id"] == "liming")
             self.assertEqual(zhaolei["cloneStatus"], "done")
-            self.assertEqual(clone_result["currentUserProgress"]["nextHint"], "完成提交并推送后，等待系统检测 push 事件。")
+            self.assertEqual(clone_result["currentUserProgress"]["nextHint"], "系统已检测到 push，请前往 Gitea 创建 Pull Request。")
 
             push_result = apply_gitea_webhook(
                 db,
                 "huffman-coding-team",
                 {
                     "type": "push",
-                    "sender": "李明",
+                    "sender": "liming",
                     "branch": "feature/huffman-compress",
                     "commitMessage": "feat: 完成哈夫曼压缩核心逻辑",
                     "commitCount": 2,
@@ -1204,12 +1283,26 @@ class TeamGitServiceTest(unittest.TestCase):
                 {
                     "type": "pull_request",
                     "action": "opened",
-                    "sender": "李明",
+                    "sender": "liming",
                     "number": 7,
                     "title": "feat: 哈夫曼压缩核心逻辑",
                     "sourceBranch": "feature/huffman-compress",
                     "targetBranch": "main",
                     "url": "https://git.example.edu/campus/huffman-coding-team/pulls/7",
+                    "pull_request": {
+                        "number": 7,
+                        "user": {
+                            "login": "liming"
+                        },
+                        "title": "feat: 哈夫曼压缩核心逻辑",
+                        "head": {
+                            "ref": "feature/huffman-compress"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": False
+                    },
                 },
             )
             self.assertTrue(any(pr["number"] == 7 and pr["status"] == "open" for pr in pr_result["pullRequests"]))
@@ -1221,8 +1314,22 @@ class TeamGitServiceTest(unittest.TestCase):
                     "type": "pull_request",
                     "action": "merged",
                     "sender": "teacher-a",
-                    "creator": "李明",
+                    "creator": "liming",
                     "number": 7,
+                    "pull_request": {
+                        "number": 7,
+                        "user": {
+                            "login": "liming"
+                        },
+                        "title": "fixture PR",
+                        "head": {
+                            "ref": "feature/test"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": True
+                    },
                 },
             )
             liming = next(member for member in merge_result["memberProgress"] if member["name"] == "李明")
@@ -1325,6 +1432,9 @@ class TeamGitServiceTest(unittest.TestCase):
             self.assertEqual(len(prs), 1)
             self.assertEqual(prs[0]["title"], "feat: refine compression flow")
             self.assertEqual(prs[0]["source"], "gitea_webhook")
+            self.assertTrue(prs[0]["verified"])
+            self.assertEqual(after_update["teamSummary"]["openPullRequests"], 1)
+            self.assertEqual(after_merge["teamSummary"]["completedMembers"], 1)
             merged_pr = next(item for item in after_merge["pullRequests"] if item.get("number") == 17)
             self.assertEqual(merged_pr["status"], "merged")
             member = next(item for item in after_merge["memberProgress"] if item["name"] == "李明")
@@ -1340,11 +1450,18 @@ class TeamGitServiceTest(unittest.TestCase):
                 db,
                 "huffman-coding-team",
                 stage="merged",
-                actor="teacher-a",
+                actor={"username": "teacher-a", "role": "teacher"},
                 allow_demo_stage=True,
             )
             self.assertEqual(result["repository"]["status"], "completed")
-            self.assertEqual(result["teamSummary"]["completedMembers"], 2)
+            # Demo history remains inspectable, but cannot count as verified Git activity.
+            self.assertEqual(sum(m.get("mergeStatus") == "merged" for m in result["memberProgress"]), 2)
+            self.assertTrue(all(m.get("source") != "gitea" for m in result["memberProgress"]))
+            self.assertEqual(result["teamSummary"]["completedMembers"], 0)
+            self.assertEqual(result["teamSummary"]["pushedMembers"], 0)
+            self.assertEqual(result["teamSummary"]["openPullRequests"], 0)
+            self.assertTrue(all(pr["verified"] is False for pr in result["pullRequests"]))
+            self.assertTrue(all(pr["provenance"] == "legacy_unverified" for pr in result["pullRequests"]))
             self.assertTrue(any(event["type"] == "status_refreshed" for event in result["gitEvents"]))
         finally:
             db.close()
@@ -1352,7 +1469,7 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_captain_can_create_project_and_assign_member_tasks(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "校园算法协作平台",
@@ -1366,7 +1483,7 @@ class TeamGitServiceTest(unittest.TestCase):
                         {"memberId": "王磊", "task": "补充端到端测试", "branch": "feature/e2e-tests"},
                     ],
                 },
-                actor="张华",
+                actor={"username": "张华", "role": "student"},
             )
 
             self.assertEqual(created["project"]["leaderId"], "张华")
@@ -1381,7 +1498,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 "王磊",
                 {"task": "负责 Pull Request 回归测试", "branch": "feature/pr-regression"},
-                actor="张华",
+                actor={"username": "张华", "role": "student"},
             )
             wanglei = next(member for member in updated["memberProgress"] if member["name"] == "王磊")
             self.assertEqual(wanglei["task"], "负责 Pull Request 回归测试")
@@ -1393,7 +1510,7 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_captain_reminds_unsubmitted_members_and_recommends_pr_merge(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "PR 协作演练",
@@ -1402,14 +1519,14 @@ class TeamGitServiceTest(unittest.TestCase):
                     "leaderId": "队长",
                     "members": ["队长", "成员A"],
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
 
             reminded = remind_unsubmitted_members(
                 db,
                 created["id"],
                 {"memberIds": ["成员A"], "message": "今晚 22:00 前请完成 push 并创建 PR。"},
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
             member = next(item for item in reminded["memberProgress"] if item["name"] == "成员A")
             self.assertEqual(member["reminderCount"], 1)
@@ -1426,6 +1543,20 @@ class TeamGitServiceTest(unittest.TestCase):
                     "title": "feat: 完成协作模块",
                     "sourceBranch": "feature/member-a",
                     "targetBranch": "main",
+                    "pull_request": {
+                        "number": 12,
+                        "user": {
+                            "login": "成员A"
+                        },
+                        "title": "feat: 完成协作模块",
+                        "head": {
+                            "ref": "feature/member-a"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": False
+                    },
                 },
             )
             self.assertTrue(any(pr["number"] == 12 for pr in pr_opened["pullRequests"]))
@@ -1435,7 +1566,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 12,
                 {"action": "recommend_merge", "comment": "本地测试通过，建议教师合并。"},
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
             pr = next(item for item in reviewed["pullRequests"] if item["number"] == 12)
             self.assertEqual(pr["leaderReviewStatus"], "recommended")
@@ -1448,7 +1579,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "教师端管理演练",
@@ -1459,9 +1590,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "admin-flow",
                     "className": "计科 2301",
                 },
-                actor="赵队",
+                actor={"username": "赵队", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             apply_gitea_webhook(
                 db,
                 created["id"],
@@ -1473,6 +1604,20 @@ class TeamGitServiceTest(unittest.TestCase):
                     "title": "feat: 提交核心实现",
                     "sourceBranch": "feature/core",
                     "targetBranch": "main",
+                    "pull_request": {
+                        "number": 3,
+                        "user": {
+                            "login": "李明"
+                        },
+                        "title": "feat: 提交核心实现",
+                        "head": {
+                            "ref": "feature/core"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": False
+                    },
                 },
             )
             gitea.pull_requests = [{"number": 3, "status": "open", "merged": False, "state": "open"}]
@@ -1481,11 +1626,11 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 3,
                 {"action": "recommend_merge", "comment": "队长初审通过。"},
-                actor="赵队",
+                actor={"username": "赵队", "role": "student"},
                 gitea=gitea,
             )
 
-            projects = list_collaboration_projects(db, viewer="teacher-a")
+            projects = list_collaboration_projects(db, actor={"username": "teacher-a", "role": "teacher"})
             self.assertTrue(any(item["id"] == created["id"] for item in projects))
 
             audited = review_pull_request(
@@ -1493,7 +1638,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 3,
                 {"action": "teacher_approve", "comment": "管理员审核通过。"},
-                actor="teacher-a",
+                actor={"username": "teacher-a", "role": "teacher"},
                 gitea=gitea,
             )
             pr = next(item for item in audited["pullRequests"] if item["number"] == 3)
@@ -1511,7 +1656,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     ],
                     "summary": "团队完成度高，PR 流程闭环清晰。",
                 },
-                actor="teacher-a",
+                actor={"username": "teacher-a", "role": "teacher"},
             )
             self.assertEqual(evaluated["teacherEvaluation"]["summary"], "团队完成度高，PR 流程闭环清晰。")
             ranking = evaluated["teamSummary"]["contributionRanking"]
@@ -1520,10 +1665,10 @@ class TeamGitServiceTest(unittest.TestCase):
         finally:
             db.close()
 
-    def test_created_project_has_repository_home_and_mock_clone_warning(self):
+    def test_created_project_has_unavailable_repository_home_without_fabrication(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "仓库主页演示",
@@ -1532,7 +1677,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "description": "系统内仓库主页演示。",
                     "members": ["张华", "李明"],
                 },
-                actor="张华",
+                actor={"username": "张华", "role": "student"},
             )
 
             home = get_repository_home(
@@ -1543,16 +1688,37 @@ class TeamGitServiceTest(unittest.TestCase):
 
             self.assertEqual(home["repoName"], created["repository"]["repoName"])
             self.assertTrue(home["cloneUrlMockOnly"])
-            self.assertIn("files", home)
+            self.assertEqual(home["files"], [])
+            self.assertEqual(home["languageStats"], [])
+            self.assertEqual(home["readme"], "")
+            self.assertEqual(home["classDiagram"], "")
+            self.assertFalse(home["cloneUrl"])
             self.assertIn("teacherFeedbackUpdatedAt", home)
             self.assertIn("teacherFeedbackUpdatedBy", home)
         finally:
             db.close()
 
+    def test_teacher_class_and_name_never_replace_trusted_roster(self):
+        with self.SessionLocal() as db:
+            created = self.create_project(db, {"id": "roster-bound", "members": ["leader", "member"],
+                                          "className": "shared-class", "teacherId": "unassigned"},
+                                          actor={"username": "leader", "role": "student"})
+            self.assertEqual(created["project"]["teacherId"], "")
+            assigned = {"username": "teacher-a", "role": "teacher", "className": "shared-class"}
+            self.assertEqual(get_collaboration_project(db, created["id"], actor=assigned)["id"], created["id"])
+            settings.TEACHER_STUDENT_ASSIGNMENTS = json.dumps({"teacher-a": ["leader"]})
+            for actor in (assigned, "teacher-a", {"username": "unassigned", "role": "teacher", "className": "shared-class"}):
+                with self.subTest(actor=actor), self.assertRaises(PermissionError):
+                    get_collaboration_project(db, created["id"], actor=actor)
+            with self.assertRaises(PermissionError):
+                evaluate_team_contribution(db, created["id"], {"scores": [{"memberId": "member", "score": 99}]},
+                                           actor={"username": "leader", "role": "student"})
+            self.assertEqual(len(JsonStore(db).get_payload("team_collaboration_git", "project", created["id"])["memberProgress"]), 2)
+
     def test_teacher_feedback_records_updated_by_and_updated_at(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "教师反馈演示",
@@ -1562,7 +1728,7 @@ class TeamGitServiceTest(unittest.TestCase):
                     "members": ["张华", "李明"],
                     "className": "计科 2301",
                 },
-                actor="张华",
+                actor={"username": "张华", "role": "student"},
             )
 
             updated = update_repository_feedback(
@@ -1582,15 +1748,15 @@ class TeamGitServiceTest(unittest.TestCase):
     def test_student_scope_filters_to_joined_projects_even_if_viewer_claims_teacher(self):
         db = self.SessionLocal()
         try:
-            mine = create_collaboration_project(
+            mine = self.create_project(
                 db,
                 {"title": "我的项目", "teamName": "Mine", "members": ["李明"], "course": "数据结构"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_collaboration_project(
+            self.create_project(
                 db,
                 {"title": "其他项目", "teamName": "Other", "members": ["王磊"], "course": "数据结构"},
-                actor="王磊",
+                actor={"username": "王磊", "role": "student"},
             )
 
             projects = list_collaboration_projects(
@@ -1604,7 +1770,7 @@ class TeamGitServiceTest(unittest.TestCase):
         finally:
             db.close()
 
-    def test_member_search_prefers_same_class_real_users_then_mock_fallback(self):
+    def test_member_search_uses_trusted_roster_and_never_mock_fallback(self):
         db = self.SessionLocal()
         try:
             db.add(
@@ -1629,6 +1795,7 @@ class TeamGitServiceTest(unittest.TestCase):
             )
             db.commit()
 
+            settings.TEACHER_STUDENT_ASSIGNMENTS = json.dumps({"teacher-a": ["liming"]})
             real_results = search_team_members(
                 db,
                 "20230001",
@@ -1644,18 +1811,18 @@ class TeamGitServiceTest(unittest.TestCase):
                 actor={"username": "teacher-a", "role": "teacher", "className": "计科 2301"},
                 class_name="计科 2301",
             )
-            self.assertTrue(mock_results)
-            self.assertTrue(all(item["source"] == "mock" for item in mock_results))
+            self.assertEqual(mock_results, [])
+            self.assertEqual(search_team_members(db, "外班", actor={"username": "teacher-a", "role": "teacher"}), [])
         finally:
             db.close()
 
     def test_backfill_repository_home_updates_existing_records(self):
         db = self.SessionLocal()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "旧数据", "teamName": "Legacy", "members": ["李明"], "course": "软件工程"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
             with self.engine.begin() as conn:
                 conn.execute(
@@ -1666,7 +1833,7 @@ class TeamGitServiceTest(unittest.TestCase):
                             '{"id":"%s","project":{"title":"旧数据","course":"软件工程","teamName":"Legacy",'
                             '"description":"旧数据"},"repository":{"repoName":"legacy",'
                             '"cloneUrl":"https://git.gezhi.local/campus/legacy.git","status":"created"},'
-                            '"memberProgress":[{"name":"李明"}],"pullRequests":[],"recentCommits":[],"gitEvents":[]}'
+                            '"memberProgress":[{"id":"李明","username":"李明","name":"李明"}],"pullRequests":[],"recentCommits":[],"gitEvents":[]}'
                         )
                         % created["id"]
                     )
@@ -1690,12 +1857,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "李明", "role": "student", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "团队文件浏览", "teamName": "Team A", "members": ["李明"], "repoName": "team-files"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.contents["campus/team-files:"] = [
                 {"name": "README.md", "path": "README.md", "type": "file", "sha": "abc", "size": 120},
                 {"name": "src", "path": "src", "type": "dir", "sha": "def", "size": 0},
@@ -1718,12 +1885,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "李明", "role": "student", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "团队文件预览", "teamName": "Team B", "members": ["李明"], "repoName": "team-preview"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.files["campus/team-preview:README.md"] = {
                 "path": "README.md",
                 "name": "README.md",
@@ -1746,12 +1913,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "李明", "role": "student", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "团队语言统计", "teamName": "Team C", "members": ["李明"], "repoName": "team-lang"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.languages["campus/team-lang"] = {"Python": 60.0, "Markdown": 40.0}
 
             result = get_team_repository_languages(db, created["id"], actor=actor, gitea=gitea)
@@ -1766,12 +1933,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "真实 README 演示", "teamName": "Readme Team", "members": ["李明"], "repoName": "team-readme", "className": "计科 2301"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.readmes["campus/team-readme"] = "# 真实 README\n\n来自 Gitea 的内容。"
 
             home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
@@ -1787,17 +1954,23 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea.enabled = False
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "Fallback 演示", "teamName": "Fallback Team", "members": ["李明"], "repoName": "team-fallback", "className": "计科 2301"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            with self.assertRaises(RuntimeError):
+                create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
 
+            empty_home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
+            self.assertEqual(empty_home["readme"], "")
+            stored = JsonStore(db).get_payload("team_collaboration_git", "project", created["id"])
+            stored["repositoryHome"]["readme"] = '# Archived course README'
+            JsonStore(db).upsert("team_collaboration_git", "project", created["id"], stored, owner_id="李明", status="active")
             home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
 
-            # Gitea 未启用时应回退到存储的 mock 值
-            self.assertTrue(home["readme"])
+            # Provider failure preserves actual stored legacy content without fabricating it.
+            self.assertEqual(home["readme"], '# Archived course README')
             self.assertNotIn("来自 Gitea", home["readme"])
         finally:
             db.close()
@@ -1807,12 +1980,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "类图文件演示", "teamName": "Diagram Team", "members": ["李明"], "repoName": "team-diagram", "className": "计科 2301"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.files["campus/team-diagram:class-diagram.md"] = {
                 "path": "class-diagram.md",
                 "name": "class-diagram.md",
@@ -1833,18 +2006,23 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "类图回退演示", "teamName": "Diagram Fallback", "members": ["李明"], "repoName": "team-diagram-fb", "className": "计科 2301"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             # 不设置任何类图文件，应回退到存储值
 
+            empty_home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
+            self.assertEqual(empty_home["classDiagram"], "")
+            stored = JsonStore(db).get_payload("team_collaboration_git", "project", created["id"])
+            stored["repositoryHome"]["classDiagram"] = 'ArchivedNode -> ArchivedEdge'
+            JsonStore(db).upsert("team_collaboration_git", "project", created["id"], stored, owner_id="李明", status="active")
             home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
 
-            # 存储的默认类图
-            self.assertTrue(home["classDiagram"])
+            # Explicitly stored historical content is retained.
+            self.assertEqual(home["classDiagram"], 'ArchivedNode -> ArchivedEdge')
             self.assertNotEqual(home["classDiagram"], "User -> Order -> Product")
         finally:
             db.close()
@@ -1854,12 +2032,12 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {"title": "Clone 地址演示", "teamName": "Clone Team", "members": ["李明"], "repoName": "team-clone", "className": "计科 2301"},
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
 
             home = get_repository_home(db, created["id"], actor=actor, gitea=gitea)
 
@@ -1874,7 +2052,7 @@ class TeamGitServiceTest(unittest.TestCase):
         gitea = FakeGiteaService()
         actor = {"username": "teacher-a", "role": "teacher", "className": "计科 2301"}
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "同步对账项目",
@@ -1884,9 +2062,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "team-sync",
                     "className": "计科 2301",
                 },
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             gitea.pull_requests = [
                 {
                     "number": 9,
@@ -1920,27 +2098,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     "assignees": ["liming"],
                 }
             ]
-            db.add(
-                UserAccount(
-                    username="liming",
-                    password_hash=hash_password("x"),
-                    role="student",
-                    real_name="李明",
-                    student_id="20230002",
-                    class_name="计科 2301",
-                )
-            )
-            db.add(
-                GiteaAccountBinding(
-                    campus_user_id="liming",
-                    gitea_username="liming",
-                    gitea_email="liming@example.com",
-                    role="student",
-                    student_id="20230002",
-                    class_name="计科 2301",
-                    sync_status="active",
-                )
-            )
+            binding = db.query(GiteaAccountBinding).filter_by(campus_user_id="李明").one()
+            binding.gitea_username = "liming"
+            binding.gitea_email = "liming@example.com"
+            binding.sync_status = "synced"
+            binding.gitea_user_id = 71
             db.commit()
 
             synced = sync_project_from_gitea(db, created["id"], actor=actor, gitea=gitea)
@@ -1961,7 +2123,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "任务 Issue 项目",
@@ -1971,15 +2133,15 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "team-issue",
                     "className": "计科 2301",
                 },
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             result = assign_member_task(
                 db,
                 created["id"],
                 "李明",
                 {"task": "完成 Huffman 编码", "branch": "feature/huffman"},
-                actor="teacher-a",
+                actor={"username": "teacher-a", "role": "teacher"},
                 gitea=gitea,
             )
             liming = next(item for item in result["memberProgress"] if item["name"] == "李明")
@@ -1994,7 +2156,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "Merge 项目",
@@ -2004,9 +2166,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "team-merge",
                     "className": "计科 2301",
                 },
-                actor="李明",
+                actor={"username": "李明", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="teacher-a", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "teacher-a", "role": "teacher"}, gitea=gitea)
             apply_gitea_webhook(
                 db,
                 created["id"],
@@ -2014,11 +2176,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     "hook_name": "pull_request",
                     "action": "opened",
                     "number": 5,
-                    "sender": "liming",
+                    "sender": "李明",
                     "pull_request": {
                         "number": 5,
                         "title": "feat: merge me",
-                        "user": {"login": "liming"},
+                        "user": {"login": "李明"},
                         "head": {"ref": "feature/x"},
                         "base": {"ref": "main"},
                         "merged": False,
@@ -2031,7 +2193,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 5,
                 {"action": "teacher_approve", "comment": "LGTM"},
-                actor="teacher-a",
+                actor={"username": "teacher-a", "role": "teacher"},
                 gitea=gitea,
             )
             self.assertEqual(len(gitea.merged_prs), 1)
@@ -2046,11 +2208,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     "hook_name": "pull_request",
                     "action": "opened",
                     "number": 6,
-                    "sender": "liming",
+                    "sender": "李明",
                     "pull_request": {
                         "number": 6,
                         "title": "feat: fail merge",
-                        "user": {"login": "liming"},
+                        "user": {"login": "李明"},
                         "head": {"ref": "feature/y"},
                         "base": {"ref": "main"},
                         "merged": False,
@@ -2063,10 +2225,10 @@ class TeamGitServiceTest(unittest.TestCase):
                     created["id"],
                     6,
                     {"action": "teacher_approve", "comment": "should fail"},
-                    actor="teacher-a",
+                    actor={"username": "teacher-a", "role": "teacher"},
                     gitea=gitea,
                 )
-            after = get_collaboration_project(db, created["id"], actor="李明")
+            after = get_collaboration_project(db, created["id"], actor={"username": "李明", "role": "student"})
             pr6 = next(item for item in after["pullRequests"] if item["number"] == 6)
             self.assertNotEqual(pr6.get("status"), "merged")
         finally:
@@ -2076,7 +2238,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "队长合并项目",
@@ -2086,9 +2248,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "leader-merge",
                     "className": "计科 2301",
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="队长", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
             apply_gitea_webhook(
                 db,
                 created["id"],
@@ -2096,11 +2258,11 @@ class TeamGitServiceTest(unittest.TestCase):
                     "hook_name": "pull_request",
                     "action": "opened",
                     "number": 9,
-                    "sender": "member-a",
+                    "sender": "成员A",
                     "pull_request": {
                         "number": 9,
                         "title": "feat: member implementation",
-                        "user": {"login": "member-a"},
+                        "user": {"login": "成员A"},
                         "head": {"ref": "feature/member-a"},
                         "base": {"ref": "main"},
                         "merged": False,
@@ -2114,7 +2276,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 9,
                 {"action": "approve_merge", "comment": "队长审核通过。"},
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
                 gitea=gitea,
             )
 
@@ -2132,7 +2294,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "成员越权合并项目",
@@ -2142,9 +2304,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "member-no-merge",
                     "className": "计科 2301",
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="队长", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
             apply_gitea_webhook(
                 db,
                 created["id"],
@@ -2156,6 +2318,20 @@ class TeamGitServiceTest(unittest.TestCase):
                     "title": "feat: protected branch update",
                     "sourceBranch": "feature/member-a",
                     "targetBranch": "main",
+                    "pull_request": {
+                        "number": 10,
+                        "user": {
+                            "login": "成员A"
+                        },
+                        "title": "feat: protected branch update",
+                        "head": {
+                            "ref": "feature/member-a"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": False
+                    },
                 },
             )
 
@@ -2165,12 +2341,12 @@ class TeamGitServiceTest(unittest.TestCase):
                     created["id"],
                     10,
                     {"action": "approve_merge", "comment": "我自己合并。"},
-                    actor="成员A",
+                    actor={"username": "成员A", "role": "student"},
                     gitea=gitea,
                 )
 
             self.assertEqual(gitea.merged_prs, [])
-            after = get_collaboration_project(db, created["id"], actor="队长")
+            after = get_collaboration_project(db, created["id"], actor={"username": "队长", "role": "student"})
             pr = next(item for item in after["pullRequests"] if item["number"] == 10)
             self.assertEqual(pr["status"], "open")
         finally:
@@ -2180,7 +2356,7 @@ class TeamGitServiceTest(unittest.TestCase):
         db = self.SessionLocal()
         gitea = FakeGiteaService()
         try:
-            created = create_collaboration_project(
+            created = self.create_project(
                 db,
                 {
                     "title": "超时回查合并项目",
@@ -2190,9 +2366,9 @@ class TeamGitServiceTest(unittest.TestCase):
                     "repoName": "timeout-merge",
                     "className": "计科 2301",
                 },
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
             )
-            create_project_repository(db, created["id"], actor="队长", gitea=gitea)
+            create_project_repository(db, created["id"], actor={"username": "队长", "role": "student"}, gitea=gitea)
             apply_gitea_webhook(
                 db,
                 created["id"],
@@ -2204,6 +2380,20 @@ class TeamGitServiceTest(unittest.TestCase):
                     "title": "feat: timeout merged branch",
                     "sourceBranch": "feature/member-a",
                     "targetBranch": "main",
+                    "pull_request": {
+                        "number": 11,
+                        "user": {
+                            "login": "成员A"
+                        },
+                        "title": "feat: timeout merged branch",
+                        "head": {
+                            "ref": "feature/member-a"
+                        },
+                        "base": {
+                            "ref": "main"
+                        },
+                        "merged": False
+                    },
                 },
             )
             gitea.pull_requests = [{"number": 11, "status": "open", "merged": False, "state": "open"}]
@@ -2214,7 +2404,7 @@ class TeamGitServiceTest(unittest.TestCase):
                 created["id"],
                 11,
                 {"action": "approve_merge", "comment": "Gitea 已合并但响应超时。"},
-                actor="队长",
+                actor={"username": "队长", "role": "student"},
                 gitea=gitea,
             )
 

@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -21,6 +22,9 @@ from app.schemas.learning_diagnosis import CreateDiagnosisGoalRequest, CreateDia
 
 class LearningDiagnosisApiTest(unittest.TestCase):
     def setUp(self):
+        offline = patch("app.services.learning_diagnosis.goal_orchestrator.get_cached_chat_model", side_effect=RuntimeError("offline unit test"))
+        offline.start()
+        self.addCleanup(offline.stop)
         engine = create_engine("sqlite:///:memory:")
         DomainRecord.__table__.create(bind=engine)
         self.db = sessionmaker(bind=engine)()
@@ -83,13 +87,27 @@ class LearningDiagnosisApiTest(unittest.TestCase):
         result = asyncio.run(request_task_hint(task_id, session_id, HintRequest(requested_level=5, assessment_mode=True), "student-1", self.db, self.auth()))
         self.assertEqual(result["data"]["approved_level"], 1)
 
-    def test_submit_task_returns_traceable_execution(self):
+    def test_coding_submit_unavailable_preserves_evidence_and_snapshot(self):
         created = asyncio.run(create_diagnosis_session(CreateDiagnosisSessionRequest(student_id="student-1", course="数据结构"), self.auth(), self.db))
         session_id = created["data"]["session"]["id"]
-        task_id = created["data"]["path"]["tasks"][2]["task_id"]
+        task_id = next(task["task_id"] for task in created["data"]["path"]["tasks"] if task["task_type"] == "CODING_PRACTICE")
         result = asyncio.run(submit_diagnosis_task(task_id, SubmitTaskRequest(student_id="student-1", session_id=session_id, code="print('ok')"), self.db, self.auth()))
+        self.assertEqual(result["data"]["status"], "EXECUTION_UNAVAILABLE")
+        self.assertFalse(result["data"]["available"])
+        self.assertNotIn("evidence_id", result["data"])
+        latest = asyncio.run(get_latest_diagnosis_session("student-1", self.db, self.auth()))
+        self.assertEqual(latest["data"]["evidence"], [])
+        self.assertEqual(latest["data"]["snapshot"]["version"], created["data"]["snapshot"]["version"])
+
+    def test_text_submit_records_traceable_evidence_without_code_execution(self):
+        created = asyncio.run(create_diagnosis_session(CreateDiagnosisSessionRequest(student_id="student-1", course="数据结构"), self.auth(), self.db))
+        session_id = created["data"]["session"]["id"]
+        task_id = next(task["task_id"] for task in created["data"]["path"]["tasks"] if task["task_type"] == "KNOWLEDGE_REVIEW")
+        with patch("app.services.learning_diagnosis.workflow.AnswerEvaluator.evaluate", new=AsyncMock(return_value={"score": 80, "status": "EVALUATED", "provider": "test", "feedback": "test"})):
+            result = asyncio.run(submit_diagnosis_task(task_id, SubmitTaskRequest(student_id="student-1", session_id=session_id, answer="二叉树的先序遍历依次访问根、左子树、右子树。"), self.db, self.auth()))
         self.assertEqual(result["data"]["status"], "RECORDED")
-        self.assertTrue(result["data"]["execution_id"])
+        self.assertTrue(result["data"]["evidence_id"])
+        self.assertIsNone(result["data"]["execution_id"])
         self.assertEqual(result["data"]["snapshot"]["session_id"], session_id)
 
     def test_path_endpoint_scopes_result_to_requested_session(self):

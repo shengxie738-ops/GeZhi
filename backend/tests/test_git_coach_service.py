@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models.domain_record import DomainRecord
+from app.models.git_coach import TeamProjectIdentity
 from app.models.gitea_account_binding import GiteaAccountBinding
 from app.models.user_account import UserAccount
 from app.services.team_git_service import create_collaboration_project
@@ -76,6 +77,7 @@ _COMMIT_META = {
 
 def _fresh_db():
     db = SessionLocal()
+    db.query(TeamProjectIdentity).delete()
     db.query(DomainRecord).delete()
     db.commit()
     return db
@@ -206,7 +208,7 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         fake_llm.invoke.return_value = fake_resp
 
         fake_gitea = MagicMock()
-        fake_gitea.get_commit_diff.return_value = "diff --git a/main.py ..."
+        fake_gitea.get_commit_diff.return_value = {"status": "available", "source": "gitea", "content": "diff --git a/main.py ...", "truncated": False}
 
         with patch("app.services.git_coach_service.build_chat_model", return_value=fake_llm):
             result = generate_commit_coach_feedback(
@@ -220,8 +222,9 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         self.assertGreater(len(feedback), 0)
         entry = feedback[0]
         self.assertEqual(entry["status"], "ready")
-        self.assertEqual(entry["summary"], "好的提交！")
-        self.assertEqual(entry["mistakes"], [])
+        self.assertEqual(entry["analysisMode"], "llm")
+        self.assertTrue(entry["providerInvoked"])
+        self.assertTrue(entry["evidence"]["complete"])
 
     def test_llm_error_returns_fallback(self):
         """Fake LLM 抛出异常 → status=fallback，mistakes 非空。"""
@@ -229,7 +232,7 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         fake_llm.invoke.side_effect = RuntimeError("LLM 超时")
 
         fake_gitea = MagicMock()
-        fake_gitea.get_commit_diff.return_value = ""
+        fake_gitea.get_commit_diff.return_value = {"status": "available", "source": "gitea", "content": "diff --git a/a b/a", "truncated": False}
 
         # 使用错误分支名让规则产生 violation，从而 fallback 有内容
         with patch("app.services.git_coach_service.build_chat_model", return_value=fake_llm):
@@ -247,22 +250,23 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         # mistakes 应包含规则诊断（BRANCH_NAME_INVALID）或兜底提示
         self.assertIsInstance(entry["mistakes"], list)
 
-    def test_sha_dedup(self):
-        """同一 sha 的 commit 多次触发 → 只写入一条记录。"""
+    def test_read_only_computation_returns_stable_identity(self):
+        """Computation returns stable identity without writing project state."""
         same_sha = "dedup123456789abc"
         fake_resp = MagicMock()
         fake_resp.content = '{"summary": "OK", "mistakes": [], "suggestions": []}'
         fake_llm = MagicMock()
         fake_llm.invoke.return_value = fake_resp
         fake_gitea = MagicMock()
-        fake_gitea.get_commit_diff.return_value = ""
+        fake_gitea.get_commit_diff.return_value = {"status": "available", "source": "gitea", "content": "diff --git a/a b/a", "truncated": False}
 
         payload1 = self._push_payload(sha=same_sha)
         payload2 = self._push_payload(sha=same_sha)
 
         with patch("app.services.git_coach_service.build_chat_model", return_value=fake_llm):
-            generate_commit_coach_feedback(self.db, "test-project", payload=payload1, gitea=fake_gitea)
-            generate_commit_coach_feedback(self.db, "test-project", payload=payload2, gitea=fake_gitea)
+            first = generate_commit_coach_feedback(self.db, "test-project", payload=payload1, gitea=fake_gitea)
+            second = generate_commit_coach_feedback(self.db, "test-project", payload=payload2, gitea=fake_gitea)
+        self.assertEqual(first["aiGitCoachFeedback"][0]["contextKey"], second["aiGitCoachFeedback"][0]["contextKey"])
 
         # 重新加载项目，确认去重
         from app.repositories.json_store import JsonStore
@@ -271,7 +275,28 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         project = store.get_payload(MODULE, PROJECT, "test-project")
         feedbacks = project.get("aiGitCoachFeedback") or []
         sha_entries = [f for f in feedbacks if f.get("sha") == same_sha]
-        self.assertEqual(len(sha_entries), 1, "同一 sha 不应重复写入")
+        self.assertEqual(len(sha_entries), 0, "Computation must not write project JSON")
+
+    def test_inference_cannot_overwrite_concurrent_sqlite_project_edit(self):
+        from app.repositories.json_store import JsonStore
+        from app.services.team_git_service import MODULE, PROJECT
+        fake_gitea = MagicMock()
+        fake_gitea.get_commit_diff.return_value = {"status": "available", "source": "gitea", "content": "diff --git a/a b/a", "truncated": False}
+        def concurrent_edit(messages):
+            store = JsonStore(self.db)
+            project = store.get_payload(MODULE, PROJECT, "test-project")
+            project["concurrentTeacherTask"] = "must survive inference"
+            store.upsert(MODULE, PROJECT, "test-project", project, owner_id="teacher", status="active")
+            response = MagicMock()
+            response.content = '{"summary":"OK","mistakes":[],"suggestions":[]}'
+            return response
+        llm = MagicMock()
+        llm.invoke.side_effect = concurrent_edit
+        with patch("app.services.git_coach_service.build_chat_model", return_value=llm):
+            result = generate_commit_coach_feedback(self.db, "test-project", payload=self._push_payload(), gitea=fake_gitea)
+        self.assertTrue(result["aiGitCoachFeedback"])
+        project = JsonStore(self.db).get_payload(MODULE, PROJECT, "test-project")
+        self.assertEqual(project["concurrentTeacherTask"], "must survive inference")
 
     def test_pr_event_no_commits(self):
         """PR 事件（无 commits）也生成一条 sha='' 的反馈。"""
@@ -297,7 +322,7 @@ class TestGenerateCommitCoachFeedback(unittest.TestCase):
         self.assertGreater(len(feedback), 0)
         entry = feedback[0]
         self.assertEqual(entry["sha"], "")
-        self.assertIn(entry["status"], ("ready", "fallback"))
+        self.assertEqual(entry["status"], "incomplete")
 
 
 if __name__ == "__main__":

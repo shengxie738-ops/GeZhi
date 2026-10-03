@@ -7,31 +7,25 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_auth_payload, require_teacher, ensure_self_or_teacher, ensure_content_teacher, ensure_content_student, student_can_access_content, teacher_student_ids
 from app.core.database import get_db
 from app.core.responses import ok
-from app.core.security import decode_access_token
+from app.services.current_identity import resolve_current_account
 from app.repositories.json_store import JsonStore, make_record_key
 from app.core.config import Settings
+from app.services.assessment_policy import student_assessment_view, parse_time
+from datetime import datetime, timezone
 from app.services.model_registry import build_chat_model
 from app.services.learning_diagnosis.activity_listener import publish_learning_activity_safely
 from app.utils.datetime import utc_now_iso
 
 
-def _require_auth_user(authorization: str | None) -> str:
-    """Extract and validate user from JWT token. Returns username."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="not authenticated")
-    payload = decode_access_token(authorization.split(" ", 1)[1])
-    if not payload:
-        raise HTTPException(status_code=401, detail="invalid token")
-    username = payload.get("sub")
-    if not username:
-        raise HTTPException(status_code=401, detail="invalid token payload")
-    return username
+def _require_auth_user(authorization: str | None, db: Session) -> str:
+    account = resolve_current_account(authorization, db)
+    return account.username
 
 router = APIRouter()
 
-CLASS_SIZE = 48
 
 
 def _blocks_to_questions(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -157,12 +151,8 @@ def _compute_question_results(homework: dict[str, Any] | None, submission: dict[
                         break
                 results[qid] = all_correct
         elif qtype == "programming":
-            code = str(answers.get(qid, ""))
-            correct_keywords = q.get("correctAnswers") or []
-            if correct_keywords:
-                results[qid] = all(kw.lower() in code.lower() for kw in correct_keywords)
-            else:
-                results[qid] = bool(code.strip())
+            # Non-empty code or keyword presence cannot establish correctness.
+            results[qid] = None
         else:
             results[qid] = None
     return results
@@ -259,6 +249,7 @@ def _build_thought_genealogy(
 
 
 def _analysis(homework: dict[str, Any] | None, submissions: list[dict[str, Any]]) -> dict[str, Any]:
+    class_size = len([student for student in teacher_student_ids(str((homework or {}).get("teacherId") or "")) if student_can_access_content(homework or {}, student)])
     scores = [_ai_score(item) for item in submissions]
     scores = [score for score in scores if score is not None]
     submitted_count = len(submissions)
@@ -298,8 +289,8 @@ def _analysis(homework: dict[str, Any] | None, submissions: list[dict[str, Any]]
         "homeworkId": (homework or {}).get("id"),
         "homeworkTitle": (homework or {}).get("title", ""),
         "submittedCount": submitted_count,
-        "classSize": CLASS_SIZE,
-        "submitRate": round(submitted_count / CLASS_SIZE * 100) if CLASS_SIZE else 0,
+        "classSize": class_size,
+        "submitRate": round(submitted_count / class_size * 100) if class_size else 0,
         "gradedCount": len([item for item in submissions if item.get("status") == "graded"]),
         "pendingCount": pending_count,
         "averageAiScore": average_score,
@@ -316,14 +307,16 @@ def _analysis(homework: dict[str, Any] | None, submissions: list[dict[str, Any]]
 
 @router.get("/homework/student/list")
 async def get_student_homework_list(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    userId = _require_auth_user(authorization)
+    userId = _require_auth_user(authorization, db)
     store = JsonStore(db)
     homeworks = store.list_payloads("homework", "homework")
     submissions = store.list_payloads("homework", "submission", owner_id=userId)
     by_homework = {item.get("homeworkId"): item for item in submissions}
     result = []
     for homework in homeworks:
-        item = dict(homework)
+        if not student_can_access_content(homework, userId):
+            continue
+        item = student_assessment_view(homework)
         submission = by_homework.get(homework.get("id"))
         if submission:
             item["status"] = submission.get("status", "submitted")
@@ -339,10 +332,10 @@ async def get_student_homework_list(authorization: str | None = Header(default=N
 
 
 @router.get("/homework/teacher/overview")
-async def get_teacher_homework_overview(db: Session = Depends(get_db)):
+async def get_teacher_homework_overview(auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
-    homeworks = store.list_payloads("homework", "homework")
-    submissions = store.list_payloads("homework", "submission")
+    homeworks = [item for item in store.list_payloads("homework", "homework") if item.get("teacherId") == auth["sub"]]
+    submissions = [item for item in store.list_payloads("homework", "submission") if item.get("studentId") in teacher_student_ids(auth["sub"]) and item.get("homeworkId") in {hw["id"] for hw in homeworks}]
     views = []
     for homework in homeworks:
         related = [item for item in submissions if item.get("homeworkId") == homework.get("id")]
@@ -359,7 +352,7 @@ async def get_teacher_homework_overview(db: Session = Depends(get_db)):
                 "gradedCount": analysis["gradedCount"],
                 "pendingCount": analysis["pendingCount"],
                 "totalCount": len(related),
-                "classSize": CLASS_SIZE,
+                "classSize": analysis["classSize"],
                 "averageAiScore": analysis["averageAiScore"],
                 "topErrorQuestion": analysis["topErrorQuestion"],
                 "weakKnowledgePoints": analysis["weakKnowledgePoints"],
@@ -382,32 +375,35 @@ async def get_teacher_homework_overview(db: Session = Depends(get_db)):
 
 
 @router.get("/homework/teacher/submissions")
-async def get_homework_submissions(homeworkId: str, db: Session = Depends(get_db)):
+async def get_homework_submissions(homeworkId: str, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
     homework = store.get_payload("homework", "homework", homeworkId)
+    ensure_content_teacher(homework, auth)
     submissions = [
         _submission_view(homework, item)
-        for item in store.list_payloads("homework", "submission")
+        for item in [item for item in store.list_payloads("homework", "submission") if item.get("studentId") in teacher_student_ids(auth["sub"])]
         if item.get("homeworkId") == homeworkId
     ]
     return ok(submissions)
 
 
 @router.get("/homework/teacher/analysis")
-async def get_homework_analysis(homeworkId: str, db: Session = Depends(get_db)):
+async def get_homework_analysis(homeworkId: str, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
     homework = store.get_payload("homework", "homework", homeworkId)
-    submissions = [item for item in store.list_payloads("homework", "submission") if item.get("homeworkId") == homeworkId]
+    ensure_content_teacher(homework, auth)
+    submissions = [item for item in [item for item in store.list_payloads("homework", "submission") if item.get("studentId") in teacher_student_ids(auth["sub"])] if item.get("homeworkId") == homeworkId]
     return ok(_analysis(homework, submissions))
 
 
 @router.post("/homework/teacher/report")
-async def generate_homework_report(payload: FreePayload, db: Session = Depends(get_db)):
+async def generate_homework_report(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     homework_id = data.get("homeworkId")
     store = JsonStore(db)
-    homework = store.get_payload("homework", "homework", homework_id) if homework_id else None
-    submissions = [item for item in store.list_payloads("homework", "submission") if item.get("homeworkId") == homework_id]
+    homework = store.get_payload("homework", "homework", homework_id)
+    ensure_content_teacher(homework, auth)
+    submissions = [item for item in [item for item in store.list_payloads("homework", "submission") if item.get("studentId") in teacher_student_ids(auth["sub"])] if item.get("homeworkId") == homework_id]
     analysis = _analysis(homework, submissions)
 
     # 兜底报告内容
@@ -420,6 +416,7 @@ async def generate_homework_report(payload: FreePayload, db: Session = Depends(g
     }
 
     # 尝试调用 AI 生成报告
+    report_source = "fallback"
     teacher_suggestions = default_suggestions
     student_insight = default_student_insight
     layered_adv = default_layered_adv
@@ -444,6 +441,7 @@ async def generate_homework_report(payload: FreePayload, db: Session = Depends(g
         match = re.search(r'\{.*\}', content, re.DOTALL)
         if match:
             parsed = json.loads(match.group())
+            report_source = "ai"
             if "teacherSuggestions" in parsed:
                 teacher_suggestions = parsed["teacherSuggestions"]
             if "studentInsight" in parsed:
@@ -454,6 +452,7 @@ async def generate_homework_report(payload: FreePayload, db: Session = Depends(g
         pass  # 使用兜底内容
 
     report = {
+        "source": report_source,
         "homeworkId": homework_id,
         "title": f"{(homework or {}).get('title', 'Homework')} AI Report",
         "generatedAt": utc_now_iso(),
@@ -476,9 +475,17 @@ async def generate_homework_report(payload: FreePayload, db: Session = Depends(g
 
 
 @router.post("/homework/attempts/{attempt_id}/grade")
-async def grade_homework(attempt_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def grade_homework(attempt_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     store = JsonStore(db)
+    submission = store.get_payload("homework", "submission", attempt_id)
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    ensure_self_or_teacher(submission.get("studentId"), auth)
+    ensure_content_teacher(store.get_payload("homework", "homework", submission.get("homeworkId")), auth)
     patch = payload.model_dump()
+    grade = patch.get("grade")
+    if not isinstance(grade, (int, float)) or isinstance(grade, bool) or not 0 <= grade <= 100:
+        raise HTTPException(status_code=422, detail="Grade must be a number between 0 and 100")
     updated = store.patch(
         "homework",
         "submission",
@@ -495,15 +502,19 @@ async def grade_homework(attempt_id: str, payload: FreePayload, db: Session = De
 
 
 @router.post("/homework")
-async def create_homework(payload: FreePayload, db: Session = Depends(get_db)):
+async def create_homework(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
     data = payload.model_dump()
     homework_id = str(data.get("id") or make_record_key("hw"))
+    existing = JsonStore(db).get_payload("homework", "homework", homework_id)
+    if existing:
+        ensure_content_teacher(existing, auth)
     blocks = data.get("blocks") or []
     questions_from_blocks = _blocks_to_questions(blocks) if blocks else []
     questions = data.get("questions") or questions_from_blocks
     homework = {
         **{k: v for k, v in data.items() if k not in ("questions", "blocks", "id", "status", "grade", "teacherComment", "diagnosis", "submittedAnswers", "submittedFile")},
         "id": homework_id,
+        "teacherId": auth["sub"],
         "subjectId": data.get("subjectId") or "GENERAL",
         "subjectName": data.get("subject") or data.get("subjectName") or "General",
         "type": data.get("type") or "daily",
@@ -523,14 +534,16 @@ async def create_homework(payload: FreePayload, db: Session = Depends(get_db)):
 
 
 @router.get("/homework/{homework_id}")
-async def get_homework_details(homework_id: str, userId: str = "guest_user", db: Session = Depends(get_db)):
+async def get_homework_details(homework_id: str, userId: str = "guest_user", auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     store = JsonStore(db)
-    homework = store.get_payload("homework", "homework", homework_id) or {
-        "id": homework_id,
-        "title": "Homework not found",
-        "questions": [],
-        "status": "unsubmitted",
-    }
+    userId = auth["sub"] if userId == "guest_user" else userId
+    ensure_self_or_teacher(userId, auth)
+    homework = store.get_payload("homework", "homework", homework_id)
+    if auth.get("role") == "teacher":
+        ensure_content_teacher(homework, auth)
+    else:
+        ensure_content_student(homework, userId)
+        homework = student_assessment_view(homework)
     submission = store.get_payload("homework", "submission", f"{homework_id}:{userId}", owner_id=userId)
     if submission:
         homework.update(
@@ -548,12 +561,20 @@ async def get_homework_details(homework_id: str, userId: str = "guest_user", db:
 
 @router.post("/homework/{homework_id}/submit")
 async def submit_homework(homework_id: str, payload: FreePayload, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    auth_username = _require_auth_user(authorization)
+    auth_username = _require_auth_user(authorization, db)
     data = payload.model_dump()
     # Use authenticated user's ID, ignore client-provided identity
     student_id = auth_username
-    homework = JsonStore(db).get_payload("homework", "homework", homework_id) or {}
-    submission_id = str(data.get("id") or f"{homework_id}:{student_id}")
+    homework = ensure_content_student(JsonStore(db).get_payload("homework", "homework", homework_id), student_id)
+    submission_id = f"{homework_id}:{student_id}"
+    existing = JsonStore(db).get_payload("homework", "submission", submission_id, owner_id=student_id)
+    if existing and existing.get("status") == "graded":
+        raise HTTPException(status_code=409, detail="Graded homework cannot be resubmitted")
+    end = parse_time(homework.get("deadline"))
+    if end and datetime.now(timezone.utc) >= end:
+        raise HTTPException(status_code=403, detail="Homework deadline has passed")
+    if not isinstance(data.get("answers", {}), dict):
+        raise HTTPException(status_code=422, detail="answers must be an object")
     submission = {
         "id": submission_id,
         "studentId": student_id,
@@ -567,7 +588,7 @@ async def submit_homework(homework_id: str, payload: FreePayload, authorization:
         "status": "pending",
         "grade": None,
         "teacherComment": "",
-        "diagnosis": data.get("diagnosis"),
+        "diagnosis": None,
     }
     JsonStore(db).upsert("homework", "submission", submission_id, submission, owner_id=str(student_id), status="pending")
     try:
@@ -583,25 +604,14 @@ async def submit_homework(homework_id: str, payload: FreePayload, authorization:
 
 
 @router.post("/homework/{homework_id}/diagnose")
-async def diagnose_homework(homework_id: str, payload: FreePayload, db: Session = Depends(get_db)):
+async def diagnose_homework(homework_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     data = payload.model_dump()
-    student_id = data.get("userId") or data.get("studentId") or data.get("username") or "guest_user"
+    student_id = data.get("userId") or data.get("studentId") or data.get("username") or auth["sub"]
+    ensure_self_or_teacher(student_id, auth)
     answers = data.get("answers", {})
     store = JsonStore(db)
-    homework = store.get_payload("homework", "homework", homework_id) or {}
+    homework = ensure_content_student(store.get_payload("homework", "homework", homework_id), student_id)
     questions = homework.get("questions") or []
-
-    # 兜底诊断逻辑
-    text = " ".join(str(value) for value in answers.values()) if isinstance(answers, dict) else str(answers)
-    base = min(95, max(55, 60 + len(text) // 20))
-    fallback_diagnosis = {
-        "scores": {"alina": base, "codeninja": min(100, base + 3), "profx": max(0, base - 2)},
-        "alinaMsg": "学习路线诊断已生成（兜底）。",
-        "codeninjaMsg": "代码质量信号已记录（兜底）。",
-        "profxMsg": "概念复习建议已生成（兜底）。",
-        "generatedAt": utc_now_iso(),
-        "source": "fallback",
-    }
 
     # 构建 AI prompt
     prompt_parts = ["你是多智能体协同作业诊断系统。请基于以下学生作业作答数据生成三维度诊断。\n"]
@@ -621,7 +631,7 @@ async def diagnose_homework(homework_id: str, payload: FreePayload, db: Session 
     prompt = "\n".join(prompt_parts)
 
     # 尝试调用真实 AI
-    diagnosis = fallback_diagnosis
+    diagnosis = None
     try:
         model_id = Settings().LLM_MODEL_DEFAULT
         response = build_chat_model(model_id, temperature=0.3).invoke(prompt)
@@ -641,6 +651,9 @@ async def diagnose_homework(homework_id: str, payload: FreePayload, db: Session 
     except Exception as e:
         import logging
         logging.exception("AI call failed: %s", e)  # 使用兜底诊断
+
+    if diagnosis is None:
+        raise HTTPException(status_code=503, detail="AI diagnosis is unavailable; no score was generated")
 
     # 持久化诊断记录
     record_id = make_record_key("diag")

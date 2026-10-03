@@ -1,7 +1,4 @@
 import os
-import subprocess
-import sys
-import tempfile
 import uuid
 from typing import Annotated, Sequence
 from typing_extensions import TypedDict
@@ -20,46 +17,16 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import MemorySaver
 
 from app.services.model_registry import build_chat_model, has_model
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
+from app.services.code_sandbox import EXECUTION_UNAVAILABLE_MESSAGE
+
 @tool
 def execute_python_code(code: str) -> str:
-    """
-    在隔离的子进程中安全执行一段 Python 代码，并返回标准输出(stdout)或错误信息(stderr)。
-    适用于运行 Python 算法片段、测试 Vue 数据结构原理或验证执行结果。
-    """
-    malicious_keywords = ["os.system", "subprocess", "rmtree", "shutil", "socket", "sys.exit"]
-    for keyword in malicious_keywords:
-        if keyword in code:
-            return f"Error: 触发安全规则拦截。代码中禁止使用 '{keyword}'。"
-            
-    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as temp_file:
-        temp_file.write(code)
-        temp_path = temp_file.name
-        
-    try:
-        result = subprocess.run(
-            [sys.executable, temp_path],
-            capture_output=True,
-            text=True,
-            timeout=5.0
-        )
-        output = ""
-        if result.stdout:
-            output += f"[Stdout]:\n{result.stdout}\n"
-        if result.stderr:
-            output += f"[Stderr]:\n{result.stderr}\n"
-        return output or "代码运行成功，无输出内容。"
-    except subprocess.TimeoutExpired:
-        return "Error: 代码执行超时 (超过 5 秒限时)，可能是由于无限循环导致。"
-    except Exception as e:
-        return f"Error: 执行异常: {str(e)}"
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+    """Report execution unavailability; do not claim code was run or verified."""
+    return EXECUTION_UNAVAILABLE_MESSAGE
 
 class State(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -177,6 +144,7 @@ def resolve_runtime_model_id(config: RunnableConfig | dict | None, last_user_mes
 
 
 from app.services.default_agents import DEFAULT_AGENTS
+from app.services.chat_context import SOURCE_CONTEXT_POLICY
 
 
 def get_agent_default_prompt(agent_id: str) -> str:
@@ -218,7 +186,7 @@ def build_system_prompt(
         "   - 阶段一（概念引入）：由 Alina 明确目标，Prof. X 用通俗类比（费曼技巧）介绍概念核心，并以一个概念思考题收尾。严禁在此时提供任何代码或拓扑图解！\n"
         "   - 阶段二（直观图解）：在学生对概念作答后，你判定对错。如正确，提供直观图解（调用 `generate_algorithm_diagram` 或 Mermaid 代码块），并抛出一个涉及指针或空间流转的逻辑问题，引导学生写出关键伪代码步骤。\n"
         "   - 阶段三（代码实战）：在学生逻辑明确后，由 CodeNinja 介入，提供一个“挖空（挖去核心代码）”的不完整代码框架，让学生去右侧代码沙箱中补全并测试。严禁在此阶段给正确的完整代码！\n"
-        "   - 阶段四（纠错与通关）：根据代码沙箱在后台执行的报错信息（调用 `execute_python_code`），由 CodeNinja 启发式引导学生定位 Bug（如：“看看第 5 行的 next 是否可能为空？”）。运行全部通过后，Alina 祝贺通关并更新路径。\n"
+        "   - 阶段四（纠错与通关）：根据代码沙箱在后台执行的报错信息（调用 `execute_python_code`），由 CodeNinja 启发式引导学生定位 Bug（如：“看看第 5 行的 next 是否可能为空？”）。仅在实际隔离执行确认全部通过后才能祝贺通关；若工具返回执行不可用，必须说明未运行，不得声称验证通过或更新通关状态。\n"
         "4. 【工具使用】：\n"
         "   - 调试/运行代码调用 `execute_python_code`。\n"
         "   - 查阅官方大纲与课件调用 `query_data_structure_knowledge`。\n"
@@ -239,7 +207,7 @@ def call_model(state: State, config: RunnableConfig | None = None):
         agent_id=agent_id,
         agent_mode=agent_mode,
     )
-    messages = [system_prompt] + list(state["messages"])
+    messages = [system_prompt, SystemMessage(content=SOURCE_CONTEXT_POLICY)] + list(state["messages"])
     
     # 智能分流路由：根据输入内容的复杂度及特征选择大模型底座
     last_user_message = ""
@@ -293,5 +261,5 @@ workflow.add_edge(START, "agent")
 workflow.add_conditional_edges("agent", tools_condition)
 workflow.add_edge("tools", "agent")
 
-memory = MemorySaver()
-agent_graph = workflow.compile(checkpointer=memory)
+# SQL is the canonical inter-request transcript; tool state lasts within one invocation.
+agent_graph = workflow.compile()

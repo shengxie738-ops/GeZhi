@@ -11,54 +11,13 @@ const addDays = (days) => {
     return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
 
-async function requestJson(path, options = {}, mockFallback) {
-    const useMockFirst = localStorage.getItem('homeworkMockFirst') === 'true';
-
-    // 将原始数据包装为前后端约定的标准 DTO 格式
-    const wrapStandardDTO = (data) => ({
-        code: 200,
-        message: 'ok',
-        data: data
+async function requestJson(path, options = {}) {
+    const json = await request(`${API_BASE}${path}`, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
     });
-
-    // 核心的拦截器解包逻辑
-    const handleResponseDTO = (json) => {
-        if (json && json.code === 200) {
-            return json.data; // 只向组件返回纯净的业务数据
-        } else {
-            console.error('[API 业务异常]', json?.message || '未知错误');
-            // 后续可以在此接入全局 Toast
-            throw new Error(json?.message || 'API 请求失败');
-        }
-    };
-
-    if (useMockFirst && typeof mockFallback === 'function') {
-        // Mock 模式：打包成 DTO 后再解包，保证执行链路完全一致
-        const mockData = await mockFallback();
-        const mockDTO = wrapStandardDTO(mockData);
-        return handleResponseDTO(mockDTO);
-    }
-
-    const headers = {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-    };
-
-    try {
-        const json = await request(`${API_BASE}${path}`, {
-            ...options,
-            headers
-        });
-        // 真实请求：校验契约并解包
-        return handleResponseDTO(json);
-    } catch (error) {
-        if (typeof mockFallback === 'function') {
-            const mockData = await mockFallback(error);
-            const mockDTO = wrapStandardDTO(mockData);
-            return handleResponseDTO(mockDTO);
-        }
-        throw error;
-    }
+    if (json?.code === 200) return json.data;
+    throw new Error(json?.message || 'API 请求失败');
 }
 
 // 预设科目卡片墙数据

@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("RAGFLOW_API_KEY", "test")
 os.environ.setdefault("RAGFLOW_BASE_URL", "http://localhost")
@@ -36,8 +37,10 @@ from app.api.endpoints.teacher_lesson_prep import (
     summarize_lesson_prep_resources,
 )
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.security import create_access_token
 from app.models.domain_record import DomainRecord
+from app.models.user_account import UserAccount
 from app.schemas.teacher_lesson_prep import (
     AILessonPlanResponse,
     AILessonSummaryResponse,
@@ -81,24 +84,50 @@ class FakeAsyncClient:
         return FakeResponse(FakeAsyncClient.response_payload)
 
 
-class TeacherLessonPrepApiTest(unittest.TestCase):
+class SyntheticLessonAccounts:
+    """Existing assertions use current canonical accounts, never token authority."""
+
     def setUp(self):
-        engine = create_engine("sqlite:///:memory:")
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         DomainRecord.__table__.create(bind=engine)
+        UserAccount.__table__.create(bind=engine)
         self.db = sessionmaker(bind=engine)()
+        self.addCleanup(engine.dispose)
+        self.addCleanup(self.db.close)
+        self.db.add_all([
+            UserAccount(username="teacher-1", role="teacher", password_hash=""),
+            UserAccount(username="teacher-2", role="teacher", password_hash=""),
+            UserAccount(username="student-1", role="student", password_hash=""),
+        ])
+        self.db.commit()
         self.teacher_auth = f"Bearer {create_access_token('teacher-1', 'teacher')}"
         self.student_auth = f"Bearer {create_access_token('student-1', 'student')}"
+        # Synthetic configuration only. Actual upstream calls remain mocked.
+        for name, value in {
+            "AI_LESSON_PREP_API_KEY": "lesson-test-key",
+            "AI_LESSON_PREP_BASE_URL": "https://example.test/chat/completions",
+            "AI_LESSON_PREP_MODEL": "glm-4.5-air",
+        }.items():
+            setting = patch.object(settings, name, value)
+            setting.start()
+            self.addCleanup(setting.stop)
+        service = patch("app.api.endpoints.teacher_lesson_prep.lesson_prep_service", TeacherLessonPrepService())
+        service.start()
+        self.addCleanup(service.stop)
 
-    def tearDown(self):
-        self.db.close()
+    def override_get_db(self):
+        yield self.db
+
+
+class TeacherLessonPrepApiTest(SyntheticLessonAccounts, unittest.TestCase):
 
     def test_student_cannot_access_teacher_lesson_prep(self):
         with self.assertRaises(HTTPException) as ctx:
-            asyncio.run(get_lesson_prep_config(self.student_auth))
+            asyncio.run(get_lesson_prep_config(self.student_auth, self.db))
         self.assertEqual(ctx.exception.status_code, 403)
 
     def test_config_exposes_limits_but_not_credentials(self):
-        result = asyncio.run(get_lesson_prep_config(self.teacher_auth))
+        result = asyncio.run(get_lesson_prep_config(self.teacher_auth, self.db))
 
         self.assertEqual(result["data"]["model"], "glm-4.5-air")
         self.assertTrue(result["data"]["ai_ready"])
@@ -121,11 +150,12 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
         with patch("app.api.endpoints.teacher_lesson_prep.lesson_prep_service.list_resources", return_value=fake_catalog), patch(
             "app.api.endpoints.teacher_lesson_prep.lesson_prep_service.search", return_value=fake_search
         ):
-            catalog_result = asyncio.run(list_lesson_prep_resources(self.teacher_auth, None, None, None))
+            catalog_result = asyncio.run(list_lesson_prep_resources(self.teacher_auth, None, None, None, self.db))
             search_result = asyncio.run(
                 search_lesson_prep_resources(
                     LessonPrepSearchRequest(query="linear list", resource_ids=["courseware-1"]),
                     self.teacher_auth,
+                    self.db,
                 )
             )
 
@@ -162,6 +192,7 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
                 summarize_lesson_prep_resources(
                     LessonPrepSummaryRequest(resource_ids=["courseware-1"], query="线性表"),
                     self.teacher_auth,
+                    self.db,
                 )
             )
             plan_result = asyncio.run(
@@ -172,6 +203,7 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
                         resource_ids=["courseware-1"],
                     ),
                     self.teacher_auth,
+                    self.db,
                 )
             )
 
@@ -261,7 +293,7 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
     def test_unknown_resource_id_becomes_unprocessable_request(self):
         payload = LessonPrepSearchRequest(query="线性表", resource_ids=["missing-resource"])
         with self.assertRaises(HTTPException) as ctx:
-            asyncio.run(search_lesson_prep_resources(payload, self.teacher_auth))
+            asyncio.run(search_lesson_prep_resources(payload, self.teacher_auth, self.db))
         self.assertEqual(ctx.exception.status_code, 422)
 
     def test_ai_client_uses_dedicated_full_endpoint_and_credentials(self):
@@ -365,6 +397,7 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
 
         app = FastAPI()
         app.include_router(router, prefix="/api")
+        app.dependency_overrides[get_db] = self.override_get_db
         client = TestClient(app)
         response = client.post(
             "/api/teacher/lesson-prep/search",
@@ -382,16 +415,16 @@ class TeacherLessonPrepApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
 
 
-class TeacherLessonPlanExportDocxTest(unittest.TestCase):
+class TeacherLessonPlanExportDocxTest(SyntheticLessonAccounts, unittest.TestCase):
     EXPORT_URL = "/api/teacher/lesson-prep/export-docx"
     DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     def setUp(self):
+        super().setUp()
         app = FastAPI()
         app.include_router(router, prefix="/api")
+        app.dependency_overrides[get_db] = self.override_get_db
         self.client = TestClient(app)
-        self.teacher_auth = f"Bearer {create_access_token('teacher-1', 'teacher')}"
-        self.student_auth = f"Bearer {create_access_token('student-1', 'student')}"
 
     @staticmethod
     def _payload(**overrides):

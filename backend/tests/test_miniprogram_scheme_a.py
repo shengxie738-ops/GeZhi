@@ -52,7 +52,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.core.security import create_access_token, get_password_hash
-from app.main import app
+from fastapi import FastAPI
+from app.api.api import api_router
+from app.core.config import settings
+
+app = FastAPI()
+app.include_router(api_router, prefix="/api")
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 from app.models.domain_record import DomainRecord
@@ -440,13 +445,16 @@ class MiniprogramExistingEndpointWrapperTest(unittest.TestCase):
         self.assertIn("nextCursor", mp["data"])
 
     def test_analytics_interactions_pc_shape_and_miniprogram_shape(self):
+        roster = patch.object(settings, "TEACHER_STUDENT_ASSIGNMENTS", '{"24001020106":["student-recipient"]}')
+        roster.start()
+        self.addCleanup(roster.stop)
         db = self.SessionLocal()
         JsonStore(db).upsert(
             "analytics",
             "interaction",
             "interaction_1",
-            {"id": "interaction_1", "title": "Review task", "status": "running"},
-            status="running",
+            {"id": "interaction_1", "title": "Review task", "status": "running", "teacherId": "24001020106", "studentIds": ["student-recipient"]},
+            owner_id="24001020106", status="running",
         )
         db.close()
 

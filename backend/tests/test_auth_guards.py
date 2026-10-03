@@ -9,6 +9,8 @@
 
 import os
 import unittest
+import json
+from unittest.mock import patch
 
 os.environ.setdefault("RAGFLOW_API_KEY", "test")
 os.environ.setdefault("RAGFLOW_BASE_URL", "http://localhost")
@@ -26,7 +28,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.core.security import create_access_token
-from app.main import app
+from fastapi import FastAPI
+from app.api.api import api_router
+from app.core.config import settings
+
+app = FastAPI()
+app.include_router(api_router, prefix="/api")
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 
@@ -37,6 +44,9 @@ TEACHER = "teacher_chen"
 
 class AuthGuardTest(unittest.TestCase):
     def setUp(self):
+        self.roster = patch.object(settings, "TEACHER_STUDENT_ASSIGNMENTS", json.dumps({TEACHER: [STUDENT]}))
+        self.roster.start()
+        self.addCleanup(self.roster.stop)
         self.engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -129,6 +139,10 @@ class AuthGuardTest(unittest.TestCase):
         ]:
             with self.subTest(endpoint=ep):
                 self.assertEqual(self.client.get(ep, headers=headers).status_code, 200, ep)
+
+    def test_teacher_cannot_read_unassigned_student(self):
+        response = self.client.get("/api/profile/" + OTHER, headers=self._auth(TEACHER, "teacher"))
+        self.assertEqual(response.status_code, 403)
 
     def test_teacher_can_read_student_and_teacher_views(self):
         headers = self._auth(TEACHER, "teacher")

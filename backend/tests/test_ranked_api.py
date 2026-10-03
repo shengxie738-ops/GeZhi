@@ -5,7 +5,7 @@ import os
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("RAGFLOW_API_KEY", "test")
 os.environ.setdefault("RAGFLOW_BASE_URL", "http://localhost")
@@ -305,11 +305,17 @@ class RankedApiTest(unittest.TestCase):
                 testResults=[{"label": "case commit", "status": "failed", "expected": 1, "actual": 0}],
             )
 
-            with patch.object(db, "commit", wraps=db.commit) as commit:
-                response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-legacy", "role": "student"}, db))["data"]
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as denied:
+                asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-legacy", "role": "student"}, db))
+            self.assertEqual(denied.exception.status_code, 403)
+
+            with patch.object(db, "commit", wraps=db.commit) as commit, patch("app.api.endpoints.ranked.publish_learning_activity_safely", new=AsyncMock(return_value={"status": "IGNORED"})) as publisher:
+                response = asyncio.run(submit_ranked_match(match["id"], payload, {"sub": "student-1", "role": "student"}, db))["data"]
 
             self.assertEqual(response["match"]["status"], "settled")
             self.assertEqual(commit.call_count, 1)
+            publisher.assert_awaited_once()
         finally:
             db.close()
 

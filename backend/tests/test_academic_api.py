@@ -13,7 +13,10 @@ os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("OPENAI_API_BASE", "http://localhost")
 
 from fastapi.testclient import TestClient
-from app.main import app
+from fastapi import FastAPI
+from app.api.endpoints.academic import router
+app = FastAPI()
+app.include_router(router, prefix="/api")
 from app.core.security import create_access_token
 from app.services.academic_sources import (
     extract_arxiv_id,
@@ -27,6 +30,12 @@ from app.core.config import settings
 client = TestClient(app)
 VALID_TOKEN = create_access_token(subject="test_user", role="student")
 AUTH_HEADERS = {"Authorization": f"Bearer {VALID_TOKEN}"}
+
+@pytest.fixture(autouse=True)
+def isolated_academic_state(monkeypatch):
+    monkeypatch.setattr(academic_sources, "_provider_gates", {})
+    academic_cache.clear()
+
 
 # 1. arXiv ID 解析单测
 @pytest.mark.parametrize(("url", "expected"), [
@@ -76,8 +85,8 @@ def test_parse_arxiv_atom_extracts_fields_correctly():
     assert first["year"] == 2017
     assert "dominant sequence" in first["abstract"]
     assert first["doi"] == "10.48550/arxiv.1706.03762"
-    assert first["officialUrl"] == "https://arxiv.org/abs/1706.03762"
-    assert first["openAccessUrl"] == "https://arxiv.org/pdf/1706.03762"
+    assert first["officialUrl"] == "https://arxiv.org/abs/1706.03762v7"
+    assert first["openAccessUrl"] == "https://arxiv.org/pdf/1706.03762v7"
     assert first["isOpenAccess"] is True
 
     second = items[1]
@@ -88,7 +97,7 @@ def test_parse_arxiv_atom_extracts_fields_correctly():
 
 def test_normalize_doi_query():
     assert normalize_doi_query("10.1000/182") == "10.1000/182"
-    assert normalize_doi_query("https://doi.org/10.1000/182.") == "10.1000/182"
+    assert normalize_doi_query("https://doi.org/10.1000/182.") == "10.1000/182."
     assert normalize_doi_query("doi: 10.48550/arXiv.1706.03762") == "10.48550/arxiv.1706.03762"
     assert normalize_doi_query("regular text query") == ""
 
@@ -113,7 +122,7 @@ def test_academic_endpoints_require_auth(path):
 @pytest.mark.parametrize("query_param,limit_param,expected_status", [
     ("", 10, 422), # 空查询
     ("   ", 10, 422), # 纯空白
-    ("a" * 301, 10, 422), # 超长 300 字符
+    ("a" * 4097, 10, 422), # 超长 300 字符
     ("transformer", 0, 422), # limit < 1
     ("transformer", 21, 422), # limit > 20
 ])
@@ -227,40 +236,40 @@ async def test_crossref_proxy_doi_and_keyword_routing():
 
 @pytest.mark.asyncio
 async def test_crossref_sends_polite_pool_identity_and_enforces_gate():
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
+    from tests.test_academic_search_repairs import Clock
+    clock = Clock()
+    gate = academic_sources._ProviderGate()
+    gate.next_start = 101.0
+    mock_resp = MagicMock(status_code=200)
     mock_resp.json.return_value = {"message": {"items": []}}
-    academic_sources._last_crossref_time = 100.0
-
     with patch.object(settings, "CROSSREF_MAILTO", "research@example.edu"), \
-            patch.object(academic_sources.time, "time", side_effect=[100.25, 101.0]), \
-            patch.object(academic_sources.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep, \
+            patch.object(academic_sources, "_provider_gates", {"crossref": gate}), \
+            patch.object(academic_sources, "_monotonic", clock.monotonic), \
+            patch.object(academic_sources, "_sleep", clock.sleep), \
             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_resp
         await academic_sources.fetch_crossref("transformer", 5)
-
-    mock_sleep.assert_awaited_once_with(0.75)
+    assert clock.waits == [1.0]
     assert mock_get.call_args.kwargs["params"]["mailto"] == "research@example.edu"
     assert "mailto:research@example.edu" in mock_get.call_args.kwargs["headers"]["User-Agent"]
-    academic_sources._last_crossref_time = 0.0
 
 
 @pytest.mark.asyncio
 async def test_arxiv_enforces_configured_gate():
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.text = ""
-    academic_sources._last_arxiv_time = 100.0
-
+    from tests.test_academic_search_repairs import Clock, EMPTY_ATOM
+    clock = Clock()
+    gate = academic_sources._ProviderGate()
+    gate.next_start = 102.0
+    mock_resp = MagicMock(status_code=200, text=EMPTY_ATOM)
     with patch.object(settings, "ARXIV_MIN_INTERVAL_SECONDS", 3.0), \
-            patch.object(academic_sources.time, "time", side_effect=[101.0, 104.0]), \
-            patch.object(academic_sources.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep, \
+            patch.object(academic_sources, "_provider_gates", {"arxiv": gate}), \
+            patch.object(academic_sources, "_monotonic", clock.monotonic), \
+            patch.object(academic_sources, "_sleep", clock.sleep), \
             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_resp
         await academic_sources.fetch_arxiv("transformer", 5)
-
-    mock_sleep.assert_awaited_once_with(2.0)
-    academic_sources._last_arxiv_time = 0.0
+    assert clock.waits == [2.0]
+    assert gate.next_start == 105.0
 
 
 # 6. 异常映射测试 (429, 504, 502)
@@ -291,8 +300,8 @@ async def test_academic_error_mappings():
         mock_get.side_effect = httpx.TimeoutException("Connect timeout")
         res = client.get("/api/academic/arxiv/search?query=timeout_diagnostic", headers=AUTH_HEADERS)
         assert res.status_code == 504
-        assert "arXiv" in res.json()["detail"]
-        assert "export.arxiv.org" in res.json()["detail"]
+        assert "arXiv" in res.json()["detail"]["message"]
+        assert "export.arxiv.org" in res.json()["detail"]["message"]
 
     # 502 上游 500 错误或网络错误
     mock_500 = MagicMock()

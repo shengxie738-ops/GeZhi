@@ -1,14 +1,28 @@
+import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.config import settings
+from app.api.deps import get_auth_payload, require_teacher
 from app.repositories.json_store import JsonStore
 from app.services.default_agents import get_default_agents
 
 router = APIRouter()
+
+
+def require_agent_config_writer(auth: dict = Depends(require_teacher)) -> dict:
+    """Global configuration is restricted to operator-approved existing teachers."""
+    try:
+        writers = json.loads(settings.AGENT_CONFIG_WRITERS)
+    except (TypeError, ValueError):
+        writers = []
+    if not isinstance(writers, list) or auth.get("sub") not in writers:
+        raise HTTPException(status_code=403, detail="approved global agent configuration writer required")
+    return auth
 
 
 class AgentConfigPayload(BaseModel):
@@ -59,12 +73,12 @@ def _merge_agent_configs(db: Session) -> list[dict]:
 
 
 @router.get("/agents")
-async def get_agents(db: Session = Depends(get_db)):
+async def get_agents(db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
     return {"status": "success", "data": _merge_agent_configs(db)}
 
 
 @router.put("/agents/{agent_id}")
-async def save_agent_config(agent_id: str, payload: AgentConfigPayload, db: Session = Depends(get_db)):
+async def save_agent_config(agent_id: str, payload: AgentConfigPayload, db: Session = Depends(get_db), auth: dict = Depends(require_agent_config_writer)):
     store = JsonStore(db)
     current = next((agent for agent in _merge_agent_configs(db) if agent["id"] == agent_id), {"id": agent_id})
     updated = {**current, **_clean_payload(payload), "id": agent_id}
@@ -73,7 +87,7 @@ async def save_agent_config(agent_id: str, payload: AgentConfigPayload, db: Sess
 
 
 @router.delete("/agents/{agent_id}")
-async def delete_agent_config(agent_id: str, db: Session = Depends(get_db)):
+async def delete_agent_config(agent_id: str, db: Session = Depends(get_db), auth: dict = Depends(require_agent_config_writer)):
     store = JsonStore(db)
     defaults = {agent["id"] for agent in get_default_agents()}
     if agent_id in defaults:

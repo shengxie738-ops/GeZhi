@@ -1,11 +1,10 @@
 import { ref, reactive, computed } from 'vue';
-import { agents as mockAgents } from '../data/mockData.js';
 import { DEFAULT_AGENT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_OMNI_MODEL, DISABLED_MODEL_IDS, IMAGE_MODEL_OPTIONS, OMNI_MODEL_OPTIONS, TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
 import { agentApi } from '../api/agents.js';
 import request from '../utils/request.js';
 
 export function useAgents(showToast) {
-    const agents = mockAgents;
+    const agents = ref([]);
     const textModelOptions = ref([...TEXT_MODEL_OPTIONS]);
     const imageModelOptions = ref([...IMAGE_MODEL_OPTIONS]);
     const omniModelOptions = ref([...OMNI_MODEL_OPTIONS]);
@@ -78,7 +77,7 @@ export function useAgents(showToast) {
     const loadBackendAgents = async () => {
         try {
             const payload = await agentApi.getAgents();
-            if (Array.isArray(payload?.data) && payload.data.length) {
+            if (Array.isArray(payload?.data)) {
                 agents.value = payload.data.map(agent => {
                     if (!agent.model || DISABLED_MODEL_IDS.has(agent.model)) {
                         return {
@@ -90,7 +89,7 @@ export function useAgents(showToast) {
                 });
             }
         } catch (error) {
-            console.info('[Agents] Backend agent config unavailable, using local agents.', error);
+            showToast?.('智能体配置加载失败，请重试', 'error');
         }
     };
 
@@ -131,14 +130,12 @@ export function useAgents(showToast) {
         if (!agent || !options.some((model) => model.id === modelId)) {
             return;
         }
-        agent.model = modelId;
         try {
-            await agentApi.saveAgentConfig(agent.id, agent);
+            await agentApi.saveAgentConfig(agent.id, { ...agent, model: modelId });
+            agent.model = modelId;
+            showToast?.(`Agent [${agent.name}] 已保存为 ${modelId}`, 'success');
         } catch (error) {
-            console.info('[Agents] Failed to persist model switch, kept local state.', error);
-        }
-        if (showToast) {
-            showToast(`Agent [${agent.name}] 已切换至 ${modelId}`, 'success');
+            showToast?.('模型切换未保存，请重试', 'error');
         }
     };
 
@@ -147,21 +144,16 @@ export function useAgents(showToast) {
             return showToast('Agent名称和核心指令不能为空', 'error');
         }
         const nextAgent = { ...agentForm };
-        if (isEditingAgent.value) {
-            const index = agents.value.findIndex(a => a.id === nextAgent.id);
-            if (index !== -1) {
-                agents.value[index] = nextAgent;
-            }
-            showToast(`Agent [${agentForm.name}] 配置已更新`);
-        } else {
-            agents.value.push(nextAgent);
-            showToast(`新 Agent [${agentForm.name}] 部署成功`);
-        }
         try {
             await agentApi.saveAgentConfig(nextAgent.id, nextAgent);
         } catch (error) {
-            console.info('[Agents] Failed to persist agent config, kept local state.', error);
+            showToast('配置未保存，请检查连接后重试', 'error');
+            return;
         }
+        const index = agents.value.findIndex(a => a.id === nextAgent.id);
+        if (index >= 0) agents.value[index] = nextAgent;
+        else agents.value.push(nextAgent);
+        showToast(`Agent [${agentForm.name}] 配置已保存`, 'success');
         closeAgentModal();
     };
 
@@ -170,7 +162,8 @@ export function useAgents(showToast) {
             try {
                 await agentApi.deleteAgentConfig(agentForm.id);
             } catch (error) {
-                console.info('[Agents] Failed to delete backend agent config, removing locally.', error);
+                showToast('删除失败，配置已保留', 'error');
+                return;
             }
             agents.value = agents.value.filter(a => a.id !== agentForm.id);
             showToast('Agent 节点已成功下线');
@@ -178,12 +171,13 @@ export function useAgents(showToast) {
         }
     };
 
+    const unavailableAgent = Object.freeze({ name: '智能体配置不可用', role: '未加载', icon: 'ph-warning', colorClass: 'bg-slate-400', isActive: false, model: '', prompt: '' });
     const getAgentInfo = (id) => {
-        return agents.value.find(a => a.id === id) || agents.value[0];
+        return agents.value.find(a => a.id === id) || unavailableAgent;
     };
 
     const getAgentInfoBySource = (source) => {
-        return agents.value.find(a => a.name.toLowerCase() === (source || '').toLowerCase()) || agents.value[0];
+        return agents.value.find(a => (a.name || '').toLowerCase() === (source || '').toLowerCase()) || unavailableAgent;
     };
 
     return {

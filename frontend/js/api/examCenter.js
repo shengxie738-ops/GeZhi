@@ -336,25 +336,11 @@ function createTeacherMistakeTask(payload = {}) {
     return mistake;
 }
 
-async function requestJson(path, options = {}, fallback) {
-    const useMockFirst = localStorage.getItem('examMockFirst') === 'true';
-
-    if (useMockFirst && fallback !== undefined) {
-        return typeof fallback === 'function' ? await fallback() : fallback;
-    }
-
-    try {
-        return await apiRequest(path, {
-            ...options,
-            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
-        });
-    } catch (error) {
-        console.info('[ExamCenter] Backend unavailable, using mock fallback:', path, error.message);
-        if (fallback !== undefined) {
-            return typeof fallback === 'function' ? await fallback(error) : fallback;
-        }
-        throw error;
-    }
+async function requestJson(path, options = {}) {
+    return apiRequest(path, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    });
 }
 
 export const examCenterApi = {

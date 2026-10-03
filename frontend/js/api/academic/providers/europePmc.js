@@ -1,3 +1,4 @@
+import {validateProviderRecords} from '../recordValidation.js';
 /**
  * europePmc.js - Europe PMC 学术数据源前端 Provider
  * 浏览器直连官方 REST API，遵循可验证字段映射与真实性契约
@@ -6,7 +7,9 @@
 import {
     createAcademicPaper,
     normalizeDoi,
-    normalizeArxivId,
+    buildDoiUrl,
+    arxivIdFromDoi,
+    normalizePmid,
     normalizeHttpUrl,
     normalizeWorkType
 } from '../paperModel.js';
@@ -85,8 +88,10 @@ export async function searchEuropePmc(query, options = {}) {
         const text = await response.text();
         data = text ? JSON.parse(text) : {};
     }
-    const items = data?.resultList?.result || [];
+    const items = data?.resultList?.result;
+    if (!Array.isArray(items) || data?.error) { const error=new Error('Europe PMC 返回了无效的文献响应');error.source='europepmc';error.code='invalid_response';throw error; }
 
+    validateProviderRecords(items, 'europepmc');
     return items.map(item => {
         const title = String(item.title || '').trim();
 
@@ -111,16 +116,18 @@ export async function searchEuropePmc(query, options = {}) {
         }
 
         const venue = item.journalTitle || item.journalInfo?.journal?.title || '';
-        const workType = normalizeWorkType(item.pubTypeList?.pubType?.[0] || '');
+        const publicationTypes = Array.isArray(item.pubTypeList?.pubType) ? item.pubTypeList.pubType : [];
+        const mappedTypes = publicationTypes.map(normalizeWorkType);
+        const workType = ['preprint','journal-article','conference-paper','thesis','book'].find(t=>mappedTypes.includes(t)) || 'other';
         const abstract = item.abstractText ? String(item.abstractText).replace(/<[^>]+>/g, '').trim() : '';
 
         const doi = normalizeDoi(item.doi);
-        const arxivId = normalizeArxivId(item.doi || '');
-        const pmid = String(item.pmid || '').trim();
+        const arxivId = arxivIdFromDoi(doi);
+        const pmid = normalizePmid(item.pmid || (item.source === 'MED' ? item.id : ''));
 
-        let officialUrl = doi ? `https://doi.org/${doi}` : '';
+        let officialUrl = doi ? buildDoiUrl(doi) : '';
         if (!officialUrl && item.source && item.id) {
-            officialUrl = `https://europepmc.org/article/${item.source}/${item.id}`;
+            officialUrl = `https://europepmc.org/article/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}`;
         }
         officialUrl = normalizeHttpUrl(officialUrl);
 
@@ -144,12 +151,13 @@ export async function searchEuropePmc(query, options = {}) {
             officialUrl,
             openAccessUrl,
             isOpenAccess,
+            license: '',
             citationCount,
             citationCountSource: citationCount !== null ? 'europepmc' : ''
         }, {
             key: 'europepmc',
             label: 'Europe PMC',
-            recordId: String(item.id || item.pmid || '')
+            recordId: item.id || item.pmid ? `${String(item.source || 'unknown')}:${String(item.id || item.pmid)}` : ''
         });
     });
 }

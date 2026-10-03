@@ -40,10 +40,20 @@ export function flattenModeMessageBuckets(buckets = {}) {
     return CHAT_TASK_MODES.flatMap(mode => Array.isArray(buckets?.[mode]) ? buckets[mode] : []);
 }
 
-export function reconcileModeHistory(localMessages = [], remoteMessages = []) {
+export function isConfirmedHistoryMessage(message) {
+    return /^db-\d+$/.test(String(message?.id || '')) || message?.syncState === 'saved';
+}
+
+export function normalizePaperSnapshotSummary(results = [], summary = {}) {
+    const count = Array.isArray(results) ? results.length : 0;
+    const total = Number.isFinite(Number(summary.totalAfterMerge)) ? Number(summary.totalAfterMerge) : count;
+    return { ...summary, totalAfterMerge: total, snapshotCount: count, snapshotComplete: summary.snapshotComplete !== false && count >= total };
+}
+
+export function reconcileModeHistory(localMessages = [], remoteMessages = [], { complete = false, preserveIds = [] } = {}) {
     const local = Array.isArray(localMessages) ? localMessages : [];
     const remote = Array.isArray(remoteMessages) ? remoteMessages : [];
-    if (remote.length === 0) return local.length > 0 ? local : [];
+    if (remote.length === 0) return complete ? local.filter(message => (!isConfirmedHistoryMessage(message) || preserveIds.includes(message.id))) : local;
     if (local.length === 0) return remote;
 
     const signatureFor = message => {
@@ -71,7 +81,7 @@ export function reconcileModeHistory(localMessages = [], remoteMessages = []) {
         const matchingBySigList = remoteSignatureMap.get(signature);
         const matchedBySig = matchingBySigList && matchingBySigList.length > 0 ? matchingBySigList.shift() : null;
         const matchedById = message?.id ? remoteIdMap.get(String(message.id)) : null;
-        const matchedRemote = matchedById || matchedBySig;
+        const matchedRemote = matchedById || (!isConfirmedHistoryMessage(message) ? matchedBySig : null);
 
         if (matchedRemote) {
             // 保留本地独有的学术文献快照与扩展字段，防止云端覆写导致丢失
@@ -83,7 +93,7 @@ export function reconcileModeHistory(localMessages = [], remoteMessages = []) {
             }
             return;
         }
-        merged.push(message);
+        if (!complete || !isConfirmedHistoryMessage(message) || preserveIds.includes(message.id)) merged.push(message);
     });
     return merged;
 }
@@ -118,7 +128,7 @@ export function resolvePaperHistoryState(conversation = null) {
                 query: String(snapshot.query || userQuery),
                 status: String(snapshot.status || (snapshot.results.length > 0 ? 'success' : 'empty')),
                 results: snapshot.results,
-                summary: snapshot.summary && typeof snapshot.summary === 'object' ? snapshot.summary : {},
+                summary: normalizePaperSnapshotSummary(snapshot.results, snapshot.summary && typeof snapshot.summary === 'object' ? snapshot.summary : {}),
                 statuses: Array.isArray(snapshot.statuses) ? snapshot.statuses : []
             }
         };
@@ -328,4 +338,23 @@ export function findConversationForMessage(conversations = [], messageId = null)
     return conversations.find(conversation =>
         conversation.messages.some(message => String(message.id) === target)
     ) || null;
+}
+
+// Use one comparable recency domain for the whole list. Missing timestamps are
+// unknown, not epoch zero: hydrating one old row must never promote its task.
+export function sortConversationsByRecency(conversations = [], messages = []) {
+    const positions = new Map(messages.map((message, index) => [message.id, index]));
+    const ranked = conversations.map((conversation, index) => {
+        const dates = conversation.messages.map(message => Date.parse(message.createdAt || message.time || '')).filter(Number.isFinite);
+        const ids = conversation.messages.map(message => /^db-(\d+)$/.exec(String(message.id))?.[1]).filter(Boolean).map(Number);
+        return {
+            conversation, index,
+            date: dates.length ? Math.max(...dates) : null,
+            id: ids.length === conversation.messages.length && ids.length ? Math.max(...ids) : null,
+            position: Math.max(index, ...conversation.messages.map(message => positions.get(message.id) ?? index))
+        };
+    });
+    const key = ranked.every(item => item.date !== null) ? 'date'
+        : ranked.every(item => item.id !== null) ? 'id' : 'position';
+    return ranked.sort((a, b) => b[key] - a[key] || b.index - a.index).map(item => item.conversation);
 }

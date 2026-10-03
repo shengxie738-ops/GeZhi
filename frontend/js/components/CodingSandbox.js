@@ -1,3 +1,4 @@
+import { renderMarkdown } from '../utils/safeRendering.js';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { codingProblems } from '../data/mockData.js?v=20260620';
 import { problemReviews } from '../data/aiTemplates.js?v=20260620';
@@ -10,11 +11,14 @@ import { rankedApi } from '../api/ranked.js';
 import request from '../utils/request.js';
 import { formatDisplayDateTime } from '../utils/timeFormat.js';
 import RadarChart from './RadarChart.js';
+import TeamCoachFeedback from './TeamCoachFeedback.js';
+import { isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning } from '../utils/teamProvenance.js';
+import { createTeamRequestScope } from '../utils/teamCoachFeed.js';
 
 export default {
     name: 'CodingSandbox',
     components: {
-        RadarChart
+        RadarChart, TeamCoachFeedback
     },
     props: {
         currentUser: { type: Object, default: null },
@@ -99,7 +103,7 @@ export default {
         ]);
         const isPairBotThinking = ref(false);
         const selectedCollabTaskId = ref(3); // 默认选中李明正在编写的任务
-        const collabProjectId = ref('huffman-coding-team');
+        const collabProjectId = ref('');
         const collabData = ref(null);
         const collabLoading = ref(false);
         const collabError = ref('');
@@ -119,7 +123,7 @@ export default {
             repoName: 'campus-algorithm-collab',
             teamName: '极客先锋队',
             description: '参考 GitHub flow 完成多人分支开发、Pull Request 初审与教师端合并评价。',
-            members: '张华, 李明, 王磊'
+            members: ''
         });
         const assigningMemberName = ref('');
         const assignTaskForm = ref({ task: '', branch: '' });
@@ -270,43 +274,20 @@ export default {
             '本赛季目标：冲击「铂金」段位，稳定胜率到 65% 以上即可稳步晋级。'
         ]);
 
-        const normalizeCollabIdentity = (value) => String(value || '').replace(' (你)', '').trim();
-        const isLeaderRole = (role) => {
-            const text = String(role || '').toLowerCase();
-            return text.includes('队长') || text.includes('leader') || text.includes('captain');
-        };
-        const collabViewerName = computed(() => props.currentUser?.username || '李明');
-        const currentCollabIdentities = computed(() => {
-            return new Set([
-                props.currentUser?.username,
-                props.currentUser?.real_name,
-                props.currentUser?.name,
-                props.currentUser?.student_id,
-                props.currentUser?.studentId,
-                collabViewerName.value
-            ].map(normalizeCollabIdentity).filter(Boolean));
-        });
-        const getProjectLeaderIdentities = (project) => {
-            const info = project?.project || {};
-            const leaders = [
-                info.leaderId,
-                info.createdBy,
-                project?.repositoryCard?.leader
-            ];
-            (project?.memberProgress || []).forEach((member) => {
-                if (isLeaderRole(member.role)) {
-                    leaders.push(member.id, member.name, member.username, member.studentId, member.student_id);
-                }
-            });
-            return new Set(leaders.map(normalizeCollabIdentity).filter(Boolean));
-        };
-        const canManageCollabProject = (project) => {
-            if (props.currentUser?.role === 'teacher') return true;
-            const userIds = currentCollabIdentities.value;
-            const leaderIds = getProjectLeaderIdentities(project);
-            return Array.from(userIds).some((id) => leaderIds.has(id));
-        };
+        const collabViewerName = computed(() => props.currentUser?.username || '');
+        const canManageCollabProject = project => project?.permissions?.manage === true;
         const canManageCollab = computed(() => canManageCollabProject(collabData.value));
+        const teamScope = createTeamRequestScope(teamGitApi);
+        const teamApi = teamScope.api;
+        watch([collabProjectId, collabViewMode, codingMode], () => {
+            teamScope.invalidate();
+            collabData.value = null; repositoryHome.value = null;
+            collabLoading.value = false; collabError.value = ''; collabActionLoading.value = '';
+            teamRepoBrowserEntries.value = []; teamRepoBrowserBlob.value = null;
+            teamRepoBrowserLanguages.value = []; teamRepoBranches.value = [];
+            teamGeneratedToken.value = ''; chatMessages.value = [];
+        }, {flush:'sync'});
+        onBeforeUnmount(() => teamScope.invalidate());
         const contributionRanking = computed(() => {
             const ranking = teamSummary.value?.contributionRanking;
             if (Array.isArray(ranking) && ranking.length > 0) return ranking;
@@ -320,8 +301,8 @@ export default {
         const isDemoFallback = computed(() => repositoryPrSource.value === 'demo_fallback');
         const isGiteaEmptyPr = computed(() => repositoryPrSource.value === 'gitea_empty' && pullRequests.value.length === 0);
         const syncErrorMessage = computed(() => {
-            if (!isDemoFallback.value && !repositoryInfo.value?.lastSyncError) return '';
-            return repositoryInfo.value?.demoFallbackReason || '同步异常，已显示演示数据';
+            if (!isDemoFallback.value && !repositoryInfo.value?.lastSyncError && !repositoryInfo.value?.syncError) return '';
+            return repositoryInfo.value?.lastSyncError || repositoryInfo.value?.syncError || '同步异常，未能验证远端状态';
         });
         const workflowSteps = computed(() => collabData.value?.workflowSteps || []);
         const memberProgress = computed(() => collabData.value?.memberProgress || []);
@@ -337,8 +318,8 @@ export default {
         const repositoryHomeFiles = computed(() => repositoryHome.value?.files || []);
         const repositoryHomeLanguages = computed(() => repositoryHome.value?.languageStats || []);
         const repositoryHomePullRequests = computed(() => repositoryHome.value?.pullRequests || collabData.value?.pullRequests || []);
-        const repositoryHomeOpenPrCount = computed(() => repositoryHomePullRequests.value.filter((item) => item.status === 'open').length);
-        const repositoryHomeMergedPrCount = computed(() => repositoryHomePullRequests.value.filter((item) => item.status === 'merged').length);
+        const repositoryHomeOpenPrCount = computed(() => repositoryHomePullRequests.value.filter((item) => isVerifiedPullRequest(item) && item.status === 'open').length);
+        const repositoryHomeMergedPrCount = computed(() => repositoryHomePullRequests.value.filter((item) => isVerifiedPullRequest(item) && item.status === 'merged').length);
         const canManageRepositoryHome = computed(() => canManageCollab.value || canManageCollabProject(repositoryHome.value));
         const teamAuthenticatedCloneUrl = computed(() => {
             const cloneUrl = repositoryHomeInfo.value.cloneUrl || repositoryHomeRepo.value.cloneUrl || repositoryInfo.value.cloneUrl || '';
@@ -389,45 +370,53 @@ export default {
         };
 
         const loadTeamRepoLanguages = async (projectId = collabProjectId.value) => {
+            const requestGeneration = teamScope.generation;
             if (!projectId) return;
             try {
-                teamRepoBrowserLanguages.value = await teamGitApi.getRepositoryLanguages(projectId);
+                teamRepoBrowserLanguages.value = await teamApi.getRepositoryLanguages(projectId);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamRepoBrowserLanguages.value = [];
+                teamRepoBrowserError.value = err?.message || '语言统计读取失败';
             }
         };
 
         const loadTeamRepoBrowser = async (path = '', projectId = collabProjectId.value) => {
+            const requestGeneration = teamScope.generation;
             if (!projectId) return;
             teamRepoBrowserLoading.value = true;
             teamRepoBrowserError.value = '';
             teamRepoBrowserBlob.value = null;
             try {
                 const ref = teamRepoSelectedBranch.value || repositoryHomeInfo.value.defaultBranch || repositoryHomeRepo.value.defaultBranch || 'main';
-                const data = await teamGitApi.getRepositoryTree(projectId, {
+                const data = await teamApi.getRepositoryTree(projectId, {
                     path,
                     ref
                 });
                 teamRepoBrowserPath.value = data.path || '';
                 teamRepoBrowserEntries.value = data.entries || [];
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamRepoBrowserEntries.value = [];
                 teamRepoBrowserError.value = err?.message || '文件目录加载失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teamRepoBrowserLoading.value = false;
             }
         };
 
         const loadTeamBranches = async (projectId = collabProjectId.value) => {
+            const requestGeneration = teamScope.generation;
             if (!projectId) return;
             try {
-                const branches = await teamGitApi.getBranches(projectId);
+                const branches = await teamApi.getBranches(projectId);
                 teamRepoBranches.value = branches || [];
                 if (!teamRepoSelectedBranch.value) {
                     const defaultBranch = branches.find((b) => b.default);
                     teamRepoSelectedBranch.value = defaultBranch?.name || branches[0]?.name || repositoryHomeInfo.value.defaultBranch || 'main';
                 }
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamRepoBranches.value = [];
                 teamRepoBrowserError.value = err?.message || '分支列表加载失败，请检查 Gitea 连接';
                 console.error('[loadTeamBranches] 分支列表加载失败:', err);
@@ -435,6 +424,7 @@ export default {
         };
 
         const switchTeamBranch = async (branchName) => {
+            const requestGeneration = teamScope.generation;
             teamRepoSelectedBranch.value = branchName;
             teamBranchDropdownOpen.value = false;
             teamRepoBrowserPath.value = '';
@@ -442,29 +432,34 @@ export default {
             try {
                 await loadTeamRepoBrowser('');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamRepoBrowserError.value = err?.message || '切换分支失败';
                 console.error('[switchTeamBranch] 切换分支失败:', err);
             }
         };
 
         const loadTeamRepoBlob = async (path, projectId = collabProjectId.value) => {
+            const requestGeneration = teamScope.generation;
             if (!projectId || !path) return;
             teamRepoBrowserLoading.value = true;
             teamRepoBrowserError.value = '';
             try {
-                teamRepoBrowserBlob.value = await teamGitApi.getRepositoryBlob(projectId, {
+                teamRepoBrowserBlob.value = await teamApi.getRepositoryBlob(projectId, {
                     path,
                     ref: teamRepoSelectedBranch.value || repositoryHomeInfo.value.defaultBranch || repositoryHomeRepo.value.defaultBranch || 'main'
                 });
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamRepoBrowserBlob.value = null;
                 teamRepoBrowserError.value = err?.message || '文件预览失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teamRepoBrowserLoading.value = false;
             }
         };
 
         const openTeamRepoEntry = async (entry) => {
+            const requestGeneration = teamScope.generation;
             if (!entry) return;
             if (entry.type === 'dir') {
                 await loadTeamRepoBrowser(entry.path || entry.name);
@@ -486,80 +481,99 @@ export default {
         });
 
         const loadCollabProjects = async () => {
+            const requestGeneration = teamScope.generation;
             collabLoading.value = true;
             collabError.value = '';
             try {
-                const projects = await teamGitApi.listProjects({ viewer: collabViewerName.value, scope: 'my' });
+                const projects = await teamApi.listProjects({ viewer: collabViewerName.value, scope: 'my' });
                 collabProjects.value = projects || [];
                 if (!collabProjectId.value && collabProjects.value[0]) {
                     collabProjectId.value = collabProjects.value[0].id;
                 }
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 console.error('加载团队仓库列表失败:', err);
                 collabError.value = err?.message || '团队仓库列表加载失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabLoading.value = false;
             }
         };
 
         const loadCollabProject = async () => {
+            const requestGeneration = teamScope.generation;
             collabLoading.value = true;
             collabError.value = '';
+            collabData.value = null;
             try {
-                const detail = await teamGitApi.getProjectDetail(collabProjectId.value, {
+                const detail = await teamApi.getProjectDetail(collabProjectId.value, {
                     viewer: collabViewerName.value,
-                    sync: 1
+                    sync: 0
                 });
                 collabData.value = detail;
                 if (Array.isArray(detail.chatMessages)) {
                     chatMessages.value = detail.chatMessages;
                 }
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 console.error('加载团队 Git 协作数据失败:', err);
                 collabError.value = err?.message || '团队协作 Git 数据加载失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabLoading.value = false;
             }
         };
 
         const loadRepositoryHome = async (projectId = collabProjectId.value) => {
+            const requestGeneration = teamScope.generation;
             collabLoading.value = true;
             collabError.value = '';
+            repositoryHome.value = null;
             resetTeamRepoBrowser();
             teamRepoSelectedBranch.value = '';
             try {
-                repositoryHome.value = await teamGitApi.getRepositoryHome(projectId);
+                repositoryHome.value = await teamApi.getRepositoryHome(projectId);
                 await loadTeamBranches(projectId);
+                if (requestGeneration !== teamScope.generation) return;
                 await Promise.all([
                     loadTeamRepoBrowser('', projectId),
                     loadTeamRepoLanguages(projectId)
                 ]);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 console.error('加载团队仓库主页失败:', err);
                 collabError.value = err?.message || '团队仓库主页加载失败';
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabLoading.value = false;
             }
         };
 
         const openCollabManagement = async (project) => {
+            const requestGeneration = teamScope.generation;
             collabProjectId.value = project?.id || collabProjectId.value;
             collabViewMode.value = 'manage';
             await loadCollabProject();
         };
 
         const openCollabRepositoryHome = async (project) => {
+            const requestGeneration = teamScope.generation;
             collabProjectId.value = project?.id || collabProjectId.value;
             collabViewMode.value = 'home';
             repositoryHomeTab.value = 'code';
+            const selectedGeneration = teamScope.generation;
             await loadCollabProject();
+            if (selectedGeneration !== teamScope.generation) return;
             await loadRepositoryHome(collabProjectId.value);
         };
 
         const openRepositoryHomePullRequests = async () => {
+            const requestGeneration = teamScope.generation;
             collabViewMode.value = 'home';
             repositoryHomeTab.value = 'pulls';
+            const selectedGeneration = teamScope.generation;
             await loadCollabProject();
+            if (selectedGeneration !== teamScope.generation) return;
             await loadRepositoryHome(collabProjectId.value);
         };
 
@@ -572,21 +586,25 @@ export default {
         };
 
         const refreshRepositoryHomePullRequests = async ({ showToast = false } = {}) => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'sync-repository-prs';
             try {
-                const detail = await teamGitApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value, stage: 'pull_request' });
+                const detail = await teamApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value, stage: 'pull_request' });
                 collabData.value = detail;
-                repositoryHome.value = await teamGitApi.getRepositoryHome(collabProjectId.value);
+                repositoryHome.value = await teamApi.getRepositoryHome(collabProjectId.value);
                 if (showToast) emit('show-toast', '已从 Gitea 同步 Pull Request 状态', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '同步 Pull Request 失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const selectRepositoryHomeTab = async (tabId) => {
+            const requestGeneration = teamScope.generation;
             repositoryHomeTab.value = tabId;
             if (tabId === 'code') {
                 if (!teamRepoBranches.value.length) {
@@ -597,20 +615,24 @@ export default {
                 }
             }
             if (tabId === 'pulls') {
-                await refreshRepositoryHomePullRequests();
+                await loadRepositoryHome();
             }
         };
 
         const copyGitCommand = async (command) => {
+            const requestGeneration = teamScope.generation;
+            if (!command) { emit('show-toast', '尚无已验证的操作命令', 'info'); return; }
             try {
                 await navigator.clipboard.writeText(command || '');
                 emit('show-toast', '复制成功，请到终端执行。', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', '复制失败，请手动选择命令复制', 'error');
             }
         };
 
         const copyTeamAuthClone = async () => {
+            const requestGeneration = teamScope.generation;
             if (!teamAuthenticatedCloneUrl.value) return;
             const command = `git clone ${teamAuthenticatedCloneUrl.value}`;
             try {
@@ -619,6 +641,7 @@ export default {
                 emit('show-toast', '带 Token 的 Clone 命令已复制', 'success');
                 setTimeout(() => { copiedTeamAuthClone.value = false; }, 1400);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', command, 'info');
             }
         };
@@ -626,10 +649,12 @@ export default {
         const formatTeamGitConfigCommands = (commands) => (commands || []).join('\n');
 
         const loadTeamGiteaIdentity = async () => {
+            const requestGeneration = teamScope.generation;
             teamIdentityLoading.value = true;
             try {
                 teamGiteaIdentity.value = await fetchGiteaIdentity();
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 teamGiteaIdentity.value = {
                     giteaUsername: '',
                     giteaEmail: '',
@@ -637,11 +662,13 @@ export default {
                     gitConfigCommands: []
                 };
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 teamIdentityLoading.value = false;
             }
         };
 
         const handleTeamRotateGiteaToken = async () => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'team-gitea-token';
             try {
@@ -651,13 +678,16 @@ export default {
                 await loadTeamGiteaIdentity();
                 emit('show-toast', 'Gitea Token 已生成，只显示一次', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || 'Gitea Token 生成失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const copyTeamSecretText = async (text, successMessage, onCopied, resetCopied) => {
+            const requestGeneration = teamScope.generation;
             if (!text) {
                 emit('show-toast', '暂无可复制内容', 'info');
                 return;
@@ -668,11 +698,13 @@ export default {
                 emit('show-toast', successMessage, 'success');
                 if (resetCopied) setTimeout(resetCopied, 1400);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', '复制失败，请手动选择内容复制', 'error');
             }
         };
 
         const copyTeamGeneratedToken = async () => {
+            const requestGeneration = teamScope.generation;
             await copyTeamSecretText(
                 teamGeneratedToken.value,
                 'Token 已复制',
@@ -682,6 +714,7 @@ export default {
         };
 
         const copyTeamGitConfig = async () => {
+            const requestGeneration = teamScope.generation;
             await copyTeamSecretText(
                 formatTeamGitConfigCommands(teamGiteaIdentity.value?.gitConfigCommands),
                 'Git 配置已复制',
@@ -691,6 +724,7 @@ export default {
         };
 
         const copyTeamGitConfigLine = async (command) => {
+            const requestGeneration = teamScope.generation;
             await copyTeamSecretText(
                 command,
                 '命令已复制',
@@ -715,41 +749,48 @@ export default {
         });
 
         const createGiteaRepository = async () => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'create-repo';
             try {
-                const detail = await teamGitApi.createRepository(collabProjectId.value, { actor: collabViewerName.value });
+                const detail = await teamApi.createRepository(collabProjectId.value, { actor: collabViewerName.value });
                 collabData.value = detail;
                 collabProjects.value = [detail, ...collabProjects.value.filter((item) => item.id !== detail.id)];
-                emit('show-toast', '团队仓库已接入本机 Gitea，Webhook 状态已同步', 'success');
+                emit('show-toast', detail.repository?.externalVerified === true ? '远端仓库已验证；请查看 Webhook 的独立状态' : '配置已保存，远端状态尚未验证', detail.repository?.externalVerified === true ? 'success' : 'info');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '创建仓库失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const bindExistingRepository = async () => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'bind-repo';
             try {
-                const detail = await teamGitApi.bindRepository(collabProjectId.value, {
-                    actor: collabViewerName.value,
-                    repoName: repositoryInfo.value.repoName || 'huffman-coding-team',
-                    htmlUrl: repositoryInfo.value.htmlUrl || 'https://gezhisystem.com/gitea/campus/huffman-coding-team',
-                    cloneUrl: repositoryInfo.value.cloneUrl || 'https://gezhisystem.com/gitea/campus/huffman-coding-team.git',
-                    sshUrl: repositoryInfo.value.sshUrl || 'ssh://git@gezhisystem.com:2222/campus/huffman-coding-team.git'
+                const repoName = window.prompt('已有仓库名称（需要后端验证权限和远端状态）', repositoryInfo.value.repoName || '');
+                if (!repoName?.trim()) return;
+                const giteaOwner = window.prompt('Gitea 仓库所有者 / 组织', repositoryInfo.value.giteaOwner || '');
+                if (!giteaOwner?.trim()) return;
+                const detail = await teamApi.bindRepository(collabProjectId.value, {
+                    actor: collabViewerName.value, repoName: repoName.trim(), giteaOwner: giteaOwner.trim()
                 });
                 collabData.value = detail;
-                emit('show-toast', '已绑定已有仓库', 'success');
+                emit('show-toast', detail.repository?.externalVerified === true ? '已绑定并验证远端仓库' : '绑定配置已保存，远端状态尚未验证', detail.repository?.externalVerified === true ? 'success' : 'info');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '绑定仓库失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const createCollabProject = async () => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             const title = collabCreateForm.value.title.trim();
             const description = collabCreateForm.value.description.trim();
@@ -759,64 +800,53 @@ export default {
             }
             collabActionLoading.value = 'create-project';
             try {
-                const members = collabCreateForm.value.members
-                    .replace(/，/g, ',')
-                    .split(',')
-                    .map((item) => item.trim())
-                    .filter(Boolean);
-                collabSelectedMembers.value.forEach((member) => {
-                    if (member.name && !members.includes(member.name)) members.push(member.name);
-                });
-                const detail = await teamGitApi.createProject({
+                const members = [...new Set([collabViewerName.value, ...collabSelectedMembers.value.map(m => m.username || m.id)].filter(Boolean))];
+                const detail = await teamApi.createProject({
                     ...collabCreateForm.value,
                     title,
                     description,
                     members,
+                    leaderId: collabViewerName.value,
                     actor: collabViewerName.value
                 });
                 collabProjectId.value = detail.id;
+                collabViewMode.value = 'manage';
                 collabData.value = detail;
                 collabProjects.value = [detail, ...collabProjects.value.filter((item) => item.id !== detail.id)];
                 collabCreateOpen.value = false;
                 collabViewMode.value = 'manage';
                 emit('show-toast', '团队项目已创建，下一步可分配成员任务并创建仓库', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '团队项目创建失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const searchCollabMembers = async () => {
+            const requestGeneration = teamScope.generation;
             const keyword = collabMemberKeyword.value.trim();
             if (!keyword) {
                 collabMemberSearchResults.value = [];
                 return;
             }
             try {
-                collabMemberSearchResults.value = await teamGitApi.searchMembers({
+                collabMemberSearchResults.value = await teamApi.searchMembers({
                     keyword,
                     course: collabCreateForm.value.course
                 });
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '成员搜索失败', 'error');
             }
         };
 
         const addCollabMember = (member) => {
-            if (!member?.name) return;
-            if (!collabSelectedMembers.value.some((item) => item.studentId === member.studentId || item.name === member.name)) {
-                collabSelectedMembers.value.push(member);
-            }
-            const names = collabCreateForm.value.members
-                .replace(/，/g, ',')
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean);
-            if (!names.includes(member.name)) {
-                names.push(member.name);
-                collabCreateForm.value.members = names.join(', ');
-            }
+            const id = member?.username || member?.id;
+            if (!id) return;
+            if (!collabSelectedMembers.value.some(item => (item.username || item.id) === id)) collabSelectedMembers.value.push(member);
         };
 
         const removeCollabMember = (member) => {
@@ -824,17 +854,18 @@ export default {
         };
 
         const deleteCollabProject = async (project) => {
+            const requestGeneration = teamScope.generation;
             if (!project?.id || collabActionLoading.value) return;
             if (!canManageCollabProject(project)) {
                 emit('show-toast', '只有队长可以删除团队仓库', 'error');
                 return;
             }
             const repoName = project.repositoryCard?.repoName || project.repository?.repoName || project.id;
-            const confirmed = window.confirm(`确认删除团队仓库「${repoName}」？删除后团队协作记录将不可在列表中继续访问。`);
+            const confirmed = window.confirm(`确认删除本系统项目「${repoName}」？仅删除本系统协作记录；不会删除远端 Gitea 仓库、Webhook 或权限。`);
             if (!confirmed) return;
             collabActionLoading.value = `delete-project-${project.id}`;
             try {
-                await teamGitApi.deleteProject(project.id, { actor: collabViewerName.value });
+                await teamApi.deleteProject(project.id, { actor: collabViewerName.value });
                 collabProjects.value = collabProjects.value.filter((item) => item.id !== project.id);
                 if (collabProjectId.value === project.id) {
                     collabProjectId.value = collabProjects.value[0]?.id || '';
@@ -842,16 +873,18 @@ export default {
                     repositoryHome.value = null;
                     collabViewMode.value = 'list';
                 }
-                emit('show-toast', '团队仓库已删除', 'success');
+                emit('show-toast', '本系统项目已删除；远端仓库未删除', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '团队仓库删除失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const startAssignTask = (member) => {
-            assigningMemberName.value = member.name;
+            assigningMemberName.value = member.username || member.id;
             assignTaskForm.value = {
                 task: member.task || '',
                 branch: member.branch || `feature/${member.id || 'task'}`
@@ -859,6 +892,7 @@ export default {
         };
 
         const submitAssignTask = async () => {
+            const requestGeneration = teamScope.generation;
             if (!assigningMemberName.value || collabActionLoading.value) return;
             if (!assignTaskForm.value.task.trim() || !assignTaskForm.value.branch.trim()) {
                 emit('show-toast', '请填写任务说明和分支名', 'error');
@@ -866,7 +900,7 @@ export default {
             }
             collabActionLoading.value = 'assign-task';
             try {
-                const detail = await teamGitApi.assignMemberTask(collabProjectId.value, {
+                const detail = await teamApi.assignMemberTask(collabProjectId.value, {
                     memberId: assigningMemberName.value,
                     task: assignTaskForm.value.task.trim(),
                     branch: assignTaskForm.value.branch.trim(),
@@ -876,42 +910,48 @@ export default {
                 assigningMemberName.value = '';
                 emit('show-toast', '成员任务已分配并同步到后端', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '任务分配失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const remindCollabMembers = async (member = null) => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'remind-members';
             try {
-                const detail = await teamGitApi.remindMembers(collabProjectId.value, {
-                    memberIds: member ? [member.name] : [],
+                const detail = await teamApi.remindMembers(collabProjectId.value, {
+                    memberIds: member ? [member.username || member.id] : [],
                     message: reminderMessage.value,
                     actor: collabViewerName.value
                 });
                 collabData.value = detail;
-                emit('show-toast', member ? `已提醒 ${member.name}` : '已提醒所有未提交成员', 'success');
+                emit('show-toast', member ? `已保存给 ${member.name} 的站内提醒` : '已保存站内提醒（未发送邮件或短信）', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '提醒发送失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const reviewCollabPr = async (pr, action) => {
-            if (!pr || collabActionLoading.value) return;
+            const requestGeneration = teamScope.generation;
+            if (!canReviewPullRequest(pr) || collabActionLoading.value) return;
             collabActionLoading.value = `review-pr-${pr.number}`;
             try {
-                const detail = await teamGitApi.reviewPullRequest(collabProjectId.value, pr.number, {
+                const detail = await teamApi.reviewPullRequest(collabProjectId.value, pr.number, {
                     action,
                     comment: prReviewComment.value,
                     actor: collabViewerName.value
                 });
                 collabData.value = detail;
                 if (collabViewMode.value === 'home') {
-                    repositoryHome.value = await teamGitApi.getRepositoryHome(collabProjectId.value);
+                    repositoryHome.value = await teamApi.getRepositoryHome(collabProjectId.value);
                 }
                 const message = action === 'approve_merge' || action === 'leader_merge' || action === 'merge' || action === 'teacher_approve'
                     ? `已合并 PR #${pr.number}`
@@ -920,39 +960,47 @@ export default {
                         : `已要求 PR #${pr.number} 修改`;
                 emit('show-toast', message, 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || 'PR 审核失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const confirmCloneDone = async () => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'confirm-clone';
             try {
-                const detail = await teamGitApi.confirmClone(collabProjectId.value, { userId: collabViewerName.value });
+                const detail = await teamApi.confirmClone(collabProjectId.value, { userId: collabViewerName.value });
                 collabData.value = detail;
-                emit('show-toast', '已确认 clone，后续 push/PR 将由后端 Webhook 同步', 'success');
+                emit('show-toast', '已保存本人拉取确认；这不是远端验证记录', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '确认 clone 失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
 
         const refreshCollabStatus = async (stage = 'push') => {
+            const requestGeneration = teamScope.generation;
             if (collabActionLoading.value) return;
             collabActionLoading.value = `refresh-${stage}`;
             try {
-                const detail = await teamGitApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value });
+                const detail = await teamApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value });
                 collabData.value = detail;
                 if (collabViewMode.value === 'home') {
                     await loadRepositoryHome(collabProjectId.value);
                 }
                 emit('show-toast', stage === 'merged' ? '已同步合并状态，任务进度已更新' : '状态已刷新，等待系统检测结果已展示', 'success');
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '刷新状态失败', 'error');
             } finally {
+                if (requestGeneration !== teamScope.generation) return;
                 collabActionLoading.value = '';
             }
         };
@@ -1014,37 +1062,8 @@ export default {
 
         const runCollabTesting = ref(false);
         const runCollabTest = () => {
-            if (runCollabTesting.value) return;
-            runCollabTesting.value = true;
-            emit('show-toast', '正在执行协同模块测试...', 'info');
-            setTimeout(() => {
-                runCollabTesting.value = false;
-                const task = selectedCollabTask.value;
-                if (task && task.assignee === '李明 (你)') {
-                    task.status = 'completed';
-                    collabLogs.value.unshift({
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        text: `李明 成功跑通了「${task.title}」测试用例，完成率 100%！`
-                    });
-                    chatMessages.value.push({
-                        id: Date.now(),
-                        sender: 'PairBot',
-                        content: `恭喜李明同学！您提交的「${task.title}」模块测试用例全数跑通，且时空效率优异。这极大地推进了「基于哈夫曼树的文本压缩系统」项目的总体进度！`,
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    });
-                    emit('show-toast', '恭喜！当前协同开发模块全数跑通！', 'success');
-
-                    if (window.dispatchEvent) {
-                        window.dispatchEvent(new CustomEvent('agent-log', {
-                            detail: {
-                                agent: 'Alina',
-                                content: `李明完成了协作模块「${task.title}」，团队总进度已提升至 90%！`,
-                                time: new Date().toLocaleTimeString()
-                            }
-                        }));
-                    }
-                }
-            }, 1500);
+            runCollabTesting.value = false;
+            emit('show-toast', '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。', 'error');
         };
 
         const sendCollabMessage = () => {
@@ -1659,64 +1678,14 @@ export default {
 
         // 运行测试用例
         const runRankedCode = async () => {
-            if (isRankedRunning.value) return;
-            isRankedRunning.value = true;
-            rankedActiveTab.value = 'cases';
-            rankedConsoleLogs.value = [];
-
-            rankedTestCaseResults.value = rankedTestCaseResults.value.map(item => ({
-                ...item,
-                status: 'running',
-                actual: null,
-                error: null
-            }));
-            await nextTick();
-
-            const code = getRankedEditorCode();
-            rankedAnswers.value[rankedProblem.value.id] = code;
-
-            const logs = [];
-            const fakeConsole = {
-                log: (...items) => logs.push(items.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(' '))
-            };
-
-            rankedTestCaseResults.value = rankedTestCaseResults.value.map((item) => {
-                try {
-                    // BUG 1 修复：不再使用 arguments[1] 硬编码传参，改为展开 item.input 数组以支持多参数题目
-                    const funcName = rankedProblem.value.funcName;
-                    const funcExtractBody = `${code}; return typeof ${funcName} === 'function' ? ${funcName} : undefined;`;
-                    const extractor = new Function('console', funcExtractBody);
-                    const userFunc = extractor(fakeConsole);
-                    if (typeof userFunc !== 'function') {
-                        throw new Error(`函数 "${funcName}" 未定义，请确保不要修改模板中的函数名称`);
-                    }
-                    // 将 input 数组展开为多参数传入，兼容单参数和多参数题目
-                    const inputArgs = Array.isArray(item.input) ? item.input : [item.input];
-                    const actual = userFunc(...inputArgs);
-
-                    const isPassed = rankedDeepEqual(actual, item.expected);
-
-                    return {
-                        ...item,
-                        actual,
-                        status: isPassed ? 'passed' : 'failed',
-                        error: isPassed ? '' : `期望: ${JSON.stringify(item.expected)}, 实际: ${JSON.stringify(actual)}`
-                    };
-                } catch (error) {
-                    return {
-                        ...item,
-                        actual: null,
-                        status: 'error',
-                        error: error.toString()
-                    };
-                }
-            });
-
-            rankedConsoleLogs.value = logs.length ? logs : ['运行完成。公开测试用例已评估完毕。'];
             isRankedRunning.value = false;
-
-            const passed = rankedTestCaseResults.value.filter(item => item.status === 'passed').length;
-            emit('show-toast', `测试用例通过 ${passed}/${rankedTestCaseResults.value.length}`, passed === rankedTestCaseResults.value.length ? 'success' : 'error');
+            rankedActiveTab.value = 'cases';
+            rankedConsoleLogs.value = ['代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。'];
+            rankedTestCaseResults.value = rankedTestCaseResults.value.map(item => ({
+                ...item, status: 'unavailable', actual: null, error: '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。'
+            }));
+            emit('show-toast', '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。', 'error');
+            return { status: 'unavailable', available: false };
         };
 
         const formatDuration = (seconds) => {
@@ -1772,10 +1741,8 @@ export default {
 
         // 答卷提交与结算
         const submitRankedMatch = async () => {
+            // No trusted execution result exists: never settle a win or loss.
             await runRankedCode();
-            const allPassed = rankedTestCaseResults.value.every(item => item.status === 'passed');
-            const resultType = allPassed ? 'win' : 'lose';
-            resolveRankedMatch(resultType);
         };
 
         const resolveRankedMatch = async (resultType, cheatReason = '') => {
@@ -1955,42 +1922,9 @@ export default {
         };
 
         const runHomeworkTest = () => {
-            if (runHomeworkTesting.value) return;
-            runHomeworkTesting.value = true;
-            activeHomeworkConsoleLogs.value = [];
-            activeHomeworkConsoleLogs.value.push('[Compiler] 启动 JavaScript 作业编译器...', '[Console] 挂接测试用例中...');
-
-            setTimeout(() => {
-                runHomeworkTesting.value = false;
-                const code = homeworkCode.value;
-                const hw = selectedHomework.value;
-                if (!hw) return;
-
-                try {
-                    if (hw.id === 'hw-daily-01') {
-                        const hasProxy = code.includes('Proxy');
-                        const hasReflect = code.includes('Reflect');
-                        if (hasProxy) {
-                            activeHomeworkConsoleLogs.value.push('[Console] Success: 用例 reactive({a:1}).a 运行拦截成功！');
-                            if (hasReflect) {
-                                activeHomeworkConsoleLogs.value.push('[Console] Success: 包含 Reflect 拦截，this 防重定位测试通过。');
-                                emit('show-toast', '作业算法用例全部跑通！', 'success');
-                            } else {
-                                activeHomeworkConsoleLogs.value.push('[Console] Warn: 未检测到 Reflect，原型链继承测试失败！');
-                                emit('show-toast', '测试通过，但存在安全警告', 'error');
-                            }
-                        } else {
-                            activeHomeworkConsoleLogs.value.push('[Console] Error: 未发现 Proxy 拦截。');
-                            emit('show-toast', '用例测试未通过', 'error');
-                        }
-                    } else {
-                        activeHomeworkConsoleLogs.value.push('[Console] Success: 所有本地用例跑通，时空消耗符合 O(1) 原地要求！');
-                        emit('show-toast', '用例测试全部跑通！', 'success');
-                    }
-                } catch (e) {
-                    activeHomeworkConsoleLogs.value.push(`[Console] Error: \${e.message}`);
-                }
-            }, 1200);
+            runHomeworkTesting.value = false;
+            activeHomeworkConsoleLogs.value = ['代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。'];
+            emit('show-toast', '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。', 'error');
         };
 
         const handleHomeworkDiagnose = async () => {
@@ -2312,12 +2246,7 @@ export default {
         });
 
         // 格式化题目描述的 Markdown
-        const parsedDesc = computed(() => {
-            if (window.marked && typeof window.marked.parse === 'function') {
-                return window.marked.parse(currentProblem.value.desc);
-            }
-            return currentProblem.value.desc;
-        });
+        const parsedDesc = computed(() => renderMarkdown(currentProblem.value.desc));
 
         // 保存各个题目的用户编写代码，防止切换题目丢失
         const userCodes = ref({});
@@ -2484,307 +2413,15 @@ export default {
             }
         };
 
-        // 运行测试用例（Web Worker 安全沙箱）
+        // A same-origin worker is not an isolation boundary.
         const runTests = () => {
-            if (isRunning.value) return;
-            if (isEditorLoading.value || !monacoEditor) return;
-
-            isRunning.value = true;
-            consoleLogs.value = [];
+            isRunning.value = false;
             activeTab.value = 'cases';
-
-            // 标记所有用例为运行中
-            testCaseResults.value.forEach(tc => {
-                tc.status = 'running';
-                tc.actual = null;
-                tc.error = null;
-            });
-
-            const userCode = monacoEditor.getValue();
-            const funcName = currentProblem.value.funcName;
-            const dsType = currentProblem.value.ds || '';
-
-            // 构造 Web Worker 执行代码，内置链表和二叉树转换辅助逻辑
-            const workerBlobCode = `
-                // === 链表辅助方法 ===
-                function arrayToLinklist(arr) {
-                    if (!arr || arr.length === 0) return null;
-                    let head = { val: arr[0], next: null };
-                    let curr = head;
-                    for (let i = 1; i < arr.length; i++) {
-                        curr.next = { val: arr[i], next: null };
-                        curr = curr.next;
-                    }
-                    return head;
-                }
-                
-                function linklistToArray(head) {
-                    let arr = [];
-                    let curr = head;
-                    while (curr) {
-                        arr.push(curr.val);
-                        curr = curr.next;
-                    }
-                    return arr;
-                }
-
-                function arrayToCycleList(arr, pos) {
-                    if (!arr || arr.length === 0) return null;
-                    let nodes = arr.map(v => ({ val: v, next: null }));
-                    for (let i = 0; i < nodes.length - 1; i++) {
-                        nodes[i].next = nodes[i + 1];
-                    }
-                    if (pos >= 0 && pos < nodes.length) {
-                        nodes[nodes.length - 1].next = nodes[pos];
-                    }
-                    return nodes[0];
-                }
-
-                // === 二叉树辅助方法 ===
-                function arrayToTree(arr) {
-                    if (!arr || arr.length === 0) return null;
-                    let root = { val: arr[0], left: null, right: null };
-                    let queue = [root];
-                    let i = 1;
-                    while (queue.length > 0 && i < arr.length) {
-                        let curr = queue.shift();
-                        if (arr[i] !== null && arr[i] !== undefined) {
-                            curr.left = { val: arr[i], left: null, right: null };
-                            queue.push(curr.left);
-                        }
-                        i++;
-                        if (i < arr.length && arr[i] !== null && arr[i] !== undefined) {
-                            curr.right = { val: arr[i], left: null, right: null };
-                            queue.push(curr.right);
-                        }
-                        i++;
-                    }
-                    return root;
-                }
-
-                function treeToArray(root) {
-                    if (!root) return [];
-                    let arr = [];
-                    let queue = [root];
-                    while (queue.length > 0) {
-                        let curr = queue.shift();
-                        if (curr) {
-                            arr.push(curr.val);
-                            queue.push(curr.left);
-                            queue.push(curr.right);
-                        } else {
-                            arr.push(null);
-                        }
-                    }
-                    while (arr.length > 0 && arr[arr.length - 1] === null) {
-                        arr.pop();
-                    }
-                    return arr;
-                }
-
-                self.onmessage = function(e) {
-                    const { userCode, funcName, testCases, dsType } = e.data;
-                    try {
-                        const logs = [];
-                        const originalLog = console.log;
-                        console.log = function(...args) {
-                            logs.push(args.map(x => {
-                                if (x === null) return 'null';
-                                if (x === undefined) return 'undefined';
-                                return typeof x === 'object' ? JSON.stringify(x) : String(x);
-                            }).join(' '));
-                        };
-
-                        const userFunc = new Function(userCode + "; return " + funcName + ";")();
-                        if (typeof userFunc !== 'function') {
-                            throw new Error("找不到入口函数 " + funcName + "，请确保不要修改模板中的函数名称。");
-                        }
-
-                        const results = testCases.map((tc, idx) => {
-                            let passed = false;
-                            let actual = null;
-                            let error = null;
-                            let caseLogs = [];
-                            
-                            const caseLogHandler = function(...args) {
-                                caseLogs.push(args.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' '));
-                            };
-                            console.log = caseLogHandler;
-
-                            try {
-                                const inputClone = JSON.parse(JSON.stringify(tc.input));
-                                
-                                // 根据数据结构类型进行输入隐式打包
-                                let args = [];
-                                if (dsType === 'linkedlist') {
-                                    args = [arrayToLinklist(inputClone[0])];
-                                } else if (dsType === 'linkedlist_two') {
-                                    args = [arrayToLinklist(inputClone[0]), arrayToLinklist(inputClone[1])];
-                                } else if (dsType === 'linkedlist_cycle') {
-                                    args = [arrayToCycleList(inputClone[0], inputClone[1])];
-                                } else if (dsType === 'linkedlist_num') {
-                                    args = [arrayToLinklist(inputClone[0]), inputClone[1]];
-                                } else if (dsType === 'linkedlist_array') {
-                                    args = [inputClone[0].map(arr => arrayToLinklist(arr))];
-                                } else if (dsType === 'binarytree' || dsType === 'binarytree_node') {
-                                    args = [arrayToTree(inputClone[0])];
-                                } else {
-                                    args = inputClone;
-                                }
-
-                                // 执行用户函数
-                                let res = userFunc.apply(null, args);
-
-                                // 根据数据结构进行输出反序列化，便于与 expected 比较
-                                if (dsType === 'linkedlist' || dsType === 'linkedlist_two' || dsType === 'linkedlist_num' || dsType === 'linkedlist_array') {
-                                    actual = linklistToArray(res);
-                                } else if (dsType === 'binarytree_node') {
-                                    actual = treeToArray(res);
-                                } else {
-                                    actual = res;
-                                }
-                            } catch(err) {
-                                error = err.message;
-                            }
-                            
-                            return {
-                                index: idx,
-                                actual: actual,
-                                error: error,
-                                caseLogs: caseLogs
-                            };
-                        });
-
-                        console.log = originalLog;
-                        self.postMessage({ status: 'success', results: results, logs: logs });
-                    } catch(err) {
-                        self.postMessage({ status: 'error', error: err.message });
-                    }
-                };
-            `;
-
-            const blob = new Blob([workerBlobCode], { type: 'application/javascript' });
-            worker = new Worker(URL.createObjectURL(blob));
-
-            // 发送任务，通过 JSON 序列化脱壳 Proxy 响应式对象
-            worker.postMessage({
-                userCode: userCode,
-                funcName: funcName,
-                testCases: JSON.parse(JSON.stringify(currentProblem.value.testCases)),
-                dsType: dsType
-            });
-
-            // 1.5 秒超时控制，防死循环卡住主线程
-            const timeoutId = setTimeout(() => {
-                if (worker) {
-                    worker.terminate();
-                    worker = null;
-                    testCaseResults.value.forEach(tc => {
-                        tc.status = 'error';
-                        tc.error = '执行超时 (限制 1.5秒)，可能存在死循环，请检查代码结构！';
-                    });
-                    localStorage.setItem(`coding_status_${currentProblem.value.id}`, 'failed');
-                    updateStatuses();
-                    isRunning.value = false;
-                    emit('show-toast', '代码执行超时，已强制中断', 'error');
-                }
-            }, 1500);
-
-            worker.onmessage = function (e) {
-                clearTimeout(timeoutId);
-                isRunning.value = false;
-                if (!worker) return;
-                worker.terminate();
-                worker = null;
-
-                const data = e.data;
-                if (data.status === 'success') {
-                    data.results.forEach(res => {
-                        const tc = testCaseResults.value[res.index];
-                        const origTestCase = currentProblem.value.testCases[res.index];
-                        tc.actual = res.actual;
-                        tc.error = res.error;
-
-                        if (res.error) {
-                            tc.status = 'error';
-                        } else if (deepEqual(res.actual, origTestCase.expected)) {
-                            tc.status = 'passed';
-                        } else {
-                            tc.status = 'failed';
-                        }
-
-                        if (res.caseLogs && res.caseLogs.length > 0) {
-                            consoleLogs.value.push(...res.caseLogs.map(log => `[用例 ${res.index + 1}] ${log}`));
-                        }
-                    });
-
-                    // 检查是否全部通过，并存盘状态以打破缓存
-                    const allPassed = testCaseResults.value.every(tc => tc.status === 'passed');
-                    if (allPassed) {
-                        localStorage.setItem(`coding_status_${currentProblem.value.id}`, 'passed');
-                        emit('show-toast', '恭喜！所有测试用例均通过！', 'success');
-                    } else {
-                        localStorage.setItem(`coding_status_${currentProblem.value.id}`, 'failed');
-                        emit('show-toast', '部分测试用例未通过，请检查代码逻辑', 'error');
-                    }
-                    updateStatuses();
-
-                    // 异步上报评测结果至后端数据库以实时驱动学情画像更新
-                    const firstFailedCase = testCaseResults.value.find(tc => tc.status !== 'passed');
-                    const errorMsg = firstFailedCase ? (firstFailedCase.error || '测试输出与预期不匹配') : null;
-                    const username = props.currentUser?.username || 'guest_user';
-
-                    profileApi.recordTest({
-                        user_id: username,
-                        problem_id: currentProblem.value.id,
-                        category: currentProblem.value.category,
-                        status: allPassed ? 'passed' : 'failed',
-                        difficulty: currentProblem.value.difficulty,
-                        error_msg: errorMsg
-                    }).then(() => {
-                        if (window.dispatchEvent) {
-                            window.dispatchEvent(new CustomEvent('agent-log', {
-                                detail: {
-                                    agent: 'CodeNinja',
-                                    content: allPassed
-                                        ? `完成了题目「${currentProblem.value.title}」的测试，所有用例全部通过！正在为您增加代码能力与步调分值。`
-                                        : `在题目「${currentProblem.value.title}」的测试中发现用例不通过（错误: ${errorMsg}）。已记录薄弱点。`,
-                                    time: new Date().toLocaleTimeString()
-                                }
-                            }));
-                        }
-                    }).catch(err => console.error("上报测试结果失败:", err));
-                } else {
-                    // 全局语法/结构错误
-                    testCaseResults.value.forEach(tc => {
-                        tc.status = 'error';
-                        tc.error = data.error;
-                    });
-                    consoleLogs.value.push(`[编译错误] ${data.error}`);
-                    emit('show-toast', '编译或执行发生异常', 'error');
-
-                    // 上报编译异常
-                    const username = props.currentUser?.username || 'guest_user';
-                    profileApi.recordTest({
-                        user_id: username,
-                        problem_id: currentProblem.value.id,
-                        category: currentProblem.value.category,
-                        status: 'failed',
-                        difficulty: currentProblem.value.difficulty,
-                        error_msg: `编译错误: ${data.error}`
-                    }).then(() => {
-                        if (window.dispatchEvent) {
-                            window.dispatchEvent(new CustomEvent('agent-log', {
-                                detail: {
-                                    agent: 'CodeNinja',
-                                    content: `在运行题目「${currentProblem.value.title}」时遇到编译或语法异常: ${data.error}。已通知首席规划师 Alina。`,
-                                    time: new Date().toLocaleTimeString()
-                                }
-                            }));
-                        }
-                    }).catch(err => console.error("上报编译错误失败:", err));
-                }
-            };
+            consoleLogs.value = ['代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。'];
+            testCaseResults.value = testCaseResults.value.map(item => ({
+                ...item, status: 'unavailable', actual: null, error: '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。'
+            }));
+            emit('show-toast', '代码执行不可用：尚未部署隔离执行服务，未运行代码，也未判定正确性。', 'error');
         };
 
         // 获取 AI 智能代码Review诊断 (与 CodeNinja 对话)
@@ -2970,12 +2607,7 @@ ${review.code}
         });
 
         // 渲染 Markdown 的计算属性 (用于AI诊断解析)
-        const renderedAiReview = computed(() => {
-            if (window.marked && typeof window.marked.parse === 'function') {
-                return window.marked.parse(aiReviewText.value);
-            }
-            return aiReviewText.value;
-        });
+        const renderedAiReview = computed(() => renderMarkdown(aiReviewText.value));
 
         const handleImportCodeEvent = (e) => {
             if (monacoEditor) {
@@ -3056,6 +2688,8 @@ ${review.code}
         });
 
         return {
+            isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning,
+            renderMarkdown,
             problems,
             selectedProblemId,
             currentProblem,
@@ -4796,12 +4430,12 @@ ${review.code}
                                 <div v-if="collabMemberSearchResults.length" class="grid gap-2">
                                     <button v-for="member in collabMemberSearchResults" :key="member.studentId || member.username" type="button" @click="addCollabMember(member)" class="text-left rounded-lg bg-white border border-slate-100 px-3 py-2 hover:bg-slate-50">
                                         <span class="block text-xs font-bold text-slate-800">{{ member.name }} · {{ member.studentId }}</span>
-                                        <span class="block text-[10px] text-slate-400">{{ member.className }} · {{ member.source === 'mock' ? '演示名单' : '用户表' }}</span>
+                                        <span class="block text-[10px] text-slate-400">{{ member.className }} · 真实账号</span>
                                     </button>
                                 </div>
-                                <label class="grid gap-1 text-[10px] font-bold text-slate-500">队员<input v-model="collabCreateForm.members" class="liquid-glass-input px-3 py-2 text-xs outline-none font-normal text-slate-800"></label>
+                                <label class="grid gap-1 text-[10px] font-bold text-slate-500">队员<input :value="collabSelectedMembers.map(m => m.name + ' (' + (m.username || m.id) + ')').join(', ')" readonly class="liquid-glass-input px-3 py-2 text-xs outline-none font-normal text-slate-800"></label>
                                 <div v-if="collabSelectedMembers.length" class="flex flex-wrap gap-2">
-                                    <button v-for="member in collabSelectedMembers" :key="member.studentId || member.name" type="button" @click="removeCollabMember(member)" class="px-2 py-1 rounded-full bg-teal-50 border border-teal-100 text-[10px] font-bold text-teal-700">{{ member.name }} ×</button>
+                                    <button v-for="member in collabSelectedMembers" :key="member.username || member.id" type="button" @click="removeCollabMember(member)" class="px-2 py-1 rounded-full bg-teal-50 border border-teal-100 text-[10px] font-bold text-teal-700">{{ member.name }} ×</button>
                                 </div>
                                 <button type="submit" :disabled="!!collabActionLoading" class="min-h-[40px] rounded-xl bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 disabled:opacity-50">创建团队仓库</button>
                             </form>
@@ -4835,6 +4469,7 @@ ${review.code}
                             </div>
                         </div>
                         <div class="max-w-6xl mx-auto px-5 py-5">
+                            <p v-if="repositoryContentWarning(repositoryHomeInfo)" role="alert" class="mb-4 p-3 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">{{ repositoryContentWarning(repositoryHomeInfo) }}</p>
                             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-5">
                                 <div class="min-w-0">
                                     <p class="text-xs text-slate-500"><span class="font-bold text-slate-700">{{ repositoryHomeInfo.namespace || 'campus' }}</span> /</p>
@@ -4977,11 +4612,13 @@ ${review.code}
 
                                     <section v-if="repositoryHomeTab === 'code'" class="mt-5 border border-slate-200 rounded-xl overflow-hidden">
                                         <h3 class="px-4 py-3 bg-slate-50 border-b border-slate-200 text-sm font-extrabold text-slate-900">README.md</h3>
+                                        <p v-if="repositoryContentWarning(repositoryHomeInfo, 'readme')" role="status" class="p-4 text-xs text-amber-700">{{ repositoryContentWarning(repositoryHomeInfo, 'readme') }}</p>
                                         <pre class="p-5 text-sm leading-relaxed whitespace-pre-wrap text-slate-700 bg-white">{{ repositoryHomeInfo.readme }}</pre>
                                     </section>
                                     <section v-if="repositoryHomeTab === 'code'" class="mt-5 border border-slate-200 rounded-xl overflow-hidden">
                                         <h3 class="px-4 py-3 bg-slate-50 border-b border-slate-200 text-sm font-extrabold text-slate-900">项目类图</h3>
                                         <div class="p-5 bg-white">
+                                            <p v-if="repositoryContentWarning(repositoryHomeInfo, 'classDiagram')" role="status" class="mb-3 text-xs text-amber-700">{{ repositoryContentWarning(repositoryHomeInfo, 'classDiagram') }}</p>
                                             <div class="rounded-xl bg-slate-950 text-slate-100 p-4 font-mono text-sm whitespace-pre-wrap">{{ repositoryHomeInfo.classDiagram }}</div>
                                         </div>
                                     </section>
@@ -4989,7 +4626,7 @@ ${review.code}
                                         <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                             <div>
                                                 <h3 class="text-sm font-extrabold text-slate-900">Pull requests</h3>
-                                                <p class="text-[10px] text-slate-400 mt-1">系统后端实时同步真实 Gitea PR，队长可在此完成审核和合并。</p>
+                                                <p class="text-[10px] text-slate-400 mt-1">仅已验证的真实 Gitea PR 可审核或合并；历史未验证记录仅供参考。</p>
                                             </div>
                                             <button
                                                 type="button"
@@ -5020,8 +4657,8 @@ ${review.code}
                                                         <div class="min-w-0">
                                                             <div class="flex flex-wrap items-center gap-2">
                                                                 <span class="text-xs font-extrabold text-slate-900">#{{ pr.number }}</span>
-                                                                <span class="text-[10px] px-2 py-0.5 rounded-full border font-bold" :class="prStatusClass(pr.status)">{{ pr.statusLabel || pr.status }}</span>
-                                                                <span v-if="pr.source === 'gitea' || pr.source === 'gitea_webhook'" class="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-100 font-bold">Gitea</span>
+                                                                <span class="text-[10px] px-2 py-0.5 rounded-full border font-bold" :class="prStatusClass(isVerifiedPullRequest(pr) ? pr.status : 'unverified')">{{ pullRequestLabel(pr) }}</span>
+                                                                <span v-if="isVerifiedPullRequest(pr)" class="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-100 font-bold">Gitea</span>
                                                             </div>
                                                             <h4 class="mt-2 text-sm font-extrabold text-slate-900 break-words">{{ pr.title }}</h4>
                                                             <p class="mt-1 text-[11px] text-slate-500">
@@ -5033,7 +4670,7 @@ ${review.code}
                                                             <p class="mt-1 text-[10px] text-slate-400">更新：{{ formatDisplayDateTime(pr.updatedAt) }}</p>
                                                         </div>
                                                     </div>
-                                                    <div v-if="canManageRepositoryHome && pr.status === 'open'" class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+                                                    <div v-if="canManageRepositoryHome && canReviewPullRequest(pr)" class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
                                                         <button
                                                             type="button"
                                                             @click="reviewCollabPr(pr, 'request_changes')"
@@ -5051,7 +4688,7 @@ ${review.code}
                                                             同意合并
                                                         </button>
                                                     </div>
-                                                    <p v-if="pr.reviewComment" class="mt-3 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
+                                                    <p v-if="isVerifiedPullRequest(pr) && pr.reviewComment" class="mt-3 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
                                                         审核意见：{{ pr.reviewComment }}
                                                     </p>
                                                 </article>
@@ -5159,7 +4796,7 @@ ${review.code}
                         <input v-model="collabCreateForm.title" class="liquid-glass-input px-4 py-2.5 text-xs outline-none" placeholder="项目名称">
                         <input v-model="collabCreateForm.teamName" class="liquid-glass-input px-4 py-2.5 text-xs outline-none" placeholder="团队名称">
                         <textarea v-model="collabCreateForm.description" rows="3" class="liquid-glass-input px-4 py-3 text-xs outline-none resize-none" placeholder="项目介绍"></textarea>
-                        <input v-model="collabCreateForm.members" class="liquid-glass-input px-4 py-2.5 text-xs outline-none" placeholder="成员，用逗号分隔">
+                        <input :value="collabSelectedMembers.map(m => m.name + ' (' + (m.username || m.id) + ')').join(', ')" readonly class="liquid-glass-input px-4 py-2.5 text-xs outline-none" placeholder="通过项目列表中的账号搜索选择成员；本人自动作为队长">
                         <button type="submit" :disabled="!!collabActionLoading" class="min-h-[40px] px-5 rounded-xl bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 disabled:opacity-50">创建并进入项目</button>
                     </form>
                 </div>
@@ -5206,7 +4843,7 @@ ${review.code}
                                     <input v-model="collabCreateForm.teamName" class="liquid-glass-input px-3 py-2 text-[11px] outline-none" placeholder="团队名称">
                                     <input v-model="collabCreateForm.course" class="liquid-glass-input px-3 py-2 text-[11px] outline-none" placeholder="关联课程">
                                     <textarea v-model="collabCreateForm.description" rows="3" class="liquid-glass-input px-3 py-2 text-[11px] outline-none resize-none" placeholder="项目介绍"></textarea>
-                                    <input v-model="collabCreateForm.members" class="liquid-glass-input px-3 py-2 text-[11px] outline-none" placeholder="成员，用逗号分隔">
+                                    <input :value="collabSelectedMembers.map(m => m.name + ' (' + (m.username || m.id) + ')').join(', ')" readonly class="liquid-glass-input px-3 py-2 text-[11px] outline-none" placeholder="通过项目列表中的账号搜索选择成员；本人自动作为队长">
                                     <button type="submit" :disabled="!!collabActionLoading" class="min-h-[36px] rounded-xl bg-teal-600 text-white text-[11px] font-bold hover:bg-teal-700 disabled:opacity-50">创建项目</button>
                                 </form>
                             </div>
@@ -5242,7 +4879,7 @@ ${review.code}
                                             提醒提交
                                         </button>
                                     </div>
-                                    <form v-if="canManageCollab && assigningMemberName === member.name" @submit.prevent="submitAssignTask" class="mt-3 grid grid-cols-1 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                                    <form v-if="canManageCollab && assigningMemberName === (member.username || member.id)" @submit.prevent="submitAssignTask" class="mt-3 grid grid-cols-1 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
                                         <input v-model="assignTaskForm.task" class="bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-[10px] outline-none focus:border-teal-500" placeholder="任务说明">
                                         <input v-model="assignTaskForm.branch" class="bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-[10px] outline-none focus:border-teal-500 font-mono" placeholder="feature/member-task">
                                         <div class="flex gap-2 justify-end">
@@ -5483,8 +5120,8 @@ ${review.code}
                                     <span class="text-[10px] text-teal-600 font-bold uppercase tracking-wider">Pull Request</span>
                                     <h4 class="text-base font-extrabold text-slate-900 mt-1">PR 状态区</h4>
                                     <div class="mt-2 flex flex-wrap gap-1.5">
-                                        <span v-if="isGiteaLive" class="text-[10px] px-2 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-100 font-bold">Gitea 实时同步</span>
-                                        <span v-if="isWebhookConnected" class="text-[10px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">Webhook 已接通</span>
+                                        <span v-if="isGiteaLive" class="text-[10px] px-2 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-100 font-bold">Gitea 远端快照</span>
+                                        <span v-if="isWebhookConnected" class="text-[10px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">Webhook 已配置（送达待验证）</span>
                                         <span v-if="isDemoFallback" class="text-[10px] px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">演示数据</span>
                                     </div>
                                 </div>
@@ -5506,7 +5143,7 @@ ${review.code}
                                         </div>
                                         <div class="flex items-center gap-1.5 shrink-0">
                                             <span v-if="pr.source === 'member_progress_backfill' || pr.source === 'demo_fallback'" class="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">演示数据</span>
-                                            <span class="text-[10px] px-2 py-1 rounded-full border font-bold" :class="prStatusClass(pr.status)">{{ pr.statusLabel }}</span>
+                                            <span class="text-[10px] px-2 py-1 rounded-full border font-bold" :class="prStatusClass(isVerifiedPullRequest(pr) ? pr.status : 'unverified')">{{ pullRequestLabel(pr) }}</span>
                                         </div>
                                     </div>
                                     <div class="mt-3 flex items-center justify-between text-[10px] text-slate-400">
@@ -5515,7 +5152,7 @@ ${review.code}
                                             <i class="ph ph-arrow-square-out"></i> 打开 PR
                                         </button>
                                     </div>
-                                    <div v-if="canManageCollab && pr.status === 'open'" class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+                                    <div v-if="canManageCollab && canReviewPullRequest(pr)" class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
                                         <button @click="reviewCollabPr(pr, 'request_changes')" :disabled="!!collabActionLoading" class="min-h-[32px] px-3 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                                             要求修改
                                         </button>
@@ -5523,65 +5160,14 @@ ${review.code}
                                             推荐合并
                                         </button>
                                     </div>
-                                    <p v-if="pr.reviewComment" class="mt-2 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
+                                    <p v-if="isVerifiedPullRequest(pr) && pr.reviewComment" class="mt-2 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
                                         审核意见：{{ pr.reviewComment }}
                                     </p>
                                 </article>
                             </div>
                         </section>
 
-                        <!-- AI Git 教练反馈 — 插入 PR 状态区与 Webhook 动态之间 -->
-                        <section class="glass-panel-liquid p-5 shrink-0">
-                            <div class="flex items-center justify-between mb-4">
-                                <div>
-                                    <span class="text-[10px] text-purple-600 font-bold uppercase tracking-wider">AI Git Coach</span>
-                                    <h4 class="text-base font-extrabold text-slate-900 mt-1">AI Git 教练反馈</h4>
-                                </div>
-                                <button @click="refreshCollabStatus()" class="min-h-[34px] px-3 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-700 hover:bg-slate-50">刷新同步</button>
-                            </div>
-                            <div v-if="aiGitCoachFeedback.length === 0" class="rounded-xl bg-slate-50 border border-slate-100 p-5 text-center text-xs text-slate-500">
-                                等待 push / PR 后生成教学反馈。
-                            </div>
-                            <div v-else class="flex flex-col gap-3">
-                                <article v-for="item in aiGitCoachFeedback.slice(0, 5)" :key="item.id || item.sha" class="bg-white/80 border border-white rounded-xl p-3">
-                                    <!-- 头部：状态徽章 + 分支 + 作者 -->
-                                    <div class="flex items-start justify-between gap-2 mb-2">
-                                        <div class="min-w-0">
-                                            <span class="text-[10px] font-extrabold mr-1.5 px-2 py-0.5 rounded-full border"
-                                                :class="item.status === 'ready'
-                                                    ? 'bg-teal-50 text-teal-700 border-teal-200'
-                                                    : item.status === 'fallback'
-                                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                                        : 'bg-slate-50 text-slate-500 border-slate-200'">
-                                                {{ item.status === 'ready' ? 'AI 教练' : item.status === 'fallback' ? '规则诊断' : 'AI Git 教练分析中' }}
-                                            </span>
-                                            <span class="text-[10px] text-slate-400">{{ item.branch }}</span>
-                                        </div>
-                                        <span class="text-[10px] text-slate-400 shrink-0">{{ item.author }}</span>
-                                    </div>
-                                    <!-- summary -->
-                                    <p class="text-xs font-semibold text-slate-800 leading-relaxed mb-2">{{ item.summary }}</p>
-                                    <!-- fallback 提示 -->
-                                    <p v-if="item.status === 'fallback'" class="text-[10px] text-amber-600 mb-2">规则诊断（AI 暂不可用）</p>
-                                    <!-- 哪里做错了 -->
-                                    <div v-if="item.mistakes && item.mistakes.length > 0" class="mb-2">
-                                        <p class="text-[10px] font-bold text-red-600 mb-1">❌ 哪里做错了</p>
-                                        <ul class="pl-3 space-y-0.5">
-                                            <li v-for="(m, idx) in item.mistakes" :key="idx" class="text-[10px] text-slate-600 leading-relaxed list-disc">{{ m }}</li>
-                                        </ul>
-                                    </div>
-                                    <!-- 怎么改 -->
-                                    <div v-if="item.suggestions && item.suggestions.length > 0">
-                                        <p class="text-[10px] font-bold text-teal-600 mb-1">💡 怎么改</p>
-                                        <ul class="pl-3 space-y-0.5">
-                                            <li v-for="(s, idx) in item.suggestions" :key="idx" class="text-[10px] text-slate-600 leading-relaxed list-disc">{{ s }}</li>
-                                        </ul>
-                                    </div>
-                                    <!-- 次要信息 -->
-                                    <p class="text-[10px] text-slate-400 mt-2">{{ formatDisplayDateTime(item.updatedAt || item.createdAt) }}</p>
-                                </article>
-                            </div>
-                        </section>
+                        <TeamCoachFeedback :key="collabProjectId" :project-id="collabProjectId" :can-retry="canManageCollab" />
 
                         <section class="glass-panel-liquid p-5 shrink-0">
                             <div class="flex items-center justify-between mb-4">
@@ -5641,7 +5227,7 @@ ${review.code}
                                         <span class="font-normal text-slate-400">{{ formatDisplayDateTime(msg.time) }}</span>
                                     </div>
                                     <div class="p-2.5 rounded-xl text-xs max-w-[92%] leading-relaxed font-semibold" :class="msg.sender === 'PairBot' ? 'bg-indigo-50 border border-indigo-100 text-indigo-800' : msg.sender === collabViewerName ? 'bg-teal-50 border border-teal-100 text-teal-800 self-end' : 'bg-white border border-slate-100 text-slate-700'">
-                                        <p v-html="msg.content.replace(/\\n/g, '<br>')"></p>
+                                        <p v-html="renderMarkdown(msg.content)"></p>
                                     </div>
                                 </div>
                                 <div v-if="isPairBotThinking" class="flex items-start gap-1 p-1">

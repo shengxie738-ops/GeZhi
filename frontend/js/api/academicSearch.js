@@ -3,7 +3,7 @@
  * 汇聚多数据源聚合、学术论文模型与文献引用格式化
  */
 
-import { normalizeHttpUrl } from './academic/paperModel.js';
+import { createAcademicPaper, normalizeHttpUrl, normalizeDoi, buildDoiUrl } from './academic/paperModel.js';
 
 export {
     searchAcademicPapers,
@@ -17,7 +17,11 @@ export {
     getPaperIdentityKeys,
     getCanonicalPaperKey,
     normalizeDoi,
+    buildDoiUrl,
+    normalizeArxivIdentifier,
     normalizeArxivId,
+    normalizePmid,
+    groupAcademicPapers,
     normalizeHttpUrl,
     normalizeWorkType
 } from './academic/paperModel.js';
@@ -30,32 +34,20 @@ export {
     downloadCitation
 } from './academic/citations.js';
 
-/**
- * 兼容性方法：标准化旧格式论文项
- */
-export function normalizePaperItem(raw, source = 'Academic Source') {
-    const authors = Array.isArray(raw.authors)
-        ? raw.authors.map(a => String(a || '').trim()).filter(Boolean)
-        : (typeof raw.authors === 'string' ? raw.authors.split(',').map(s => s.trim()).filter(Boolean) : []);
-    
-    const doi = raw.doi || '';
-    const officialUrl = normalizeHttpUrl(raw.url || (doi ? `https://doi.org/${doi}` : ''));
-    const pdfUrl = normalizeHttpUrl(raw.pdfUrl || '');
-    const workType = raw.workType || (source === 'arXiv' ? 'journal-article' : 'journal-article');
+export { prepareAcademicSearchQuery, filterPapersForQuery, scorePaperForQuery, isValidArxivAdvancedQuery } from './academic/queryPlanner.js';
 
-    return {
-        id: raw.id || `paper-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: String(raw.title || '').replace(/\s+/g, ' ').trim(),
-        authors,
-        authorsText: authors.join(', '),
-        year: (raw.year && !isNaN(Number(raw.year))) ? Number(raw.year) : null,
-        venue: raw.venue || source,
-        workType,
-        abstract: String(raw.abstract || '').replace(/\s+/g, ' ').trim(),
-        pdfUrl,
-        doi,
-        url: officialUrl || pdfUrl,
-        source,
-        citationsCount: (raw.citationsCount !== undefined && raw.citationsCount !== null) ? Number(raw.citationsCount) : (raw.citation_count !== undefined ? Number(raw.citation_count) : 0)
-    };
+/** Normalize legacy fields while retaining its compatibility aliases. */
+export function normalizePaperItem(raw = {}, source = 'Academic Source') {
+    const doi = normalizeDoi(raw.doi);
+    const officialUrl = normalizeHttpUrl(raw.url || buildDoiUrl(doi));
+    const pdfUrl = normalizeHttpUrl(raw.pdfUrl);
+    const sourceKey = String(source).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const paper = createAcademicPaper({
+        ...raw, doi, officialUrl,
+        // A PDF URL alone is not evidence of a reusable open-access license.
+        openAccessUrl:raw.openAccessUrl || (raw.isOpenAccess ? pdfUrl : ''),
+        workType:raw.workType || 'journal-article',
+        citationCount:raw.citationsCount ?? raw.citation_count ?? raw.citationCount ?? null
+    }, { key:sourceKey || 'academic', label:source, recordId:String(raw.sourceId || raw.id || '') });
+    return {...paper, pdfUrl, url:officialUrl || pdfUrl, source, citationsCount:paper.citationCount ?? 0};
 }

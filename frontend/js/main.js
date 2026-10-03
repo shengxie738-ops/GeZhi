@@ -1,3 +1,5 @@
+import { createNavigationGuard } from './utils/navigationGuard.js';
+import { renderMarkdown, sanitizeHtml } from './utils/safeRendering.js';
 import { createApp, ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import RadarChart from './components/RadarChart.js';
 import LineChart from './components/LineChart.js';
@@ -81,7 +83,7 @@ const app = createApp({
                 const msg = `欢迎进入格至智能协同教育系统，**${username}**！我是您的主规划师 Alina。`;
                 const id = Date.now();
                 chat.messages.value.push({ id, senderType: 'agent', senderId: 'agent_planner', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), content: msg });
-                chat.parsedHtmlCache[id] = (window.marked && window.marked.parse) ? window.marked.parse(msg) : msg;
+                chat.parsedHtmlCache[id] = renderMarkdown(msg);
             }
             // 登录后加载仪表盘真实数据
             if (role === 'student') {
@@ -98,6 +100,15 @@ const app = createApp({
 
         // 4. 用户认证与导航 Hook
         const auth = useAuth(showToast, onLoginSuccess);
+        const examCenterRef = ref(null);
+        const navigateView = createNavigationGuard({
+            getCurrentView: () => auth.currentView.value,
+            getExam: () => examCenterRef.value,
+            setView: (view) => { auth.currentView.value = view; },
+            notify: showToast
+        });
+        const guardedView = computed({ get: () => auth.currentView.value, set: navigateView });
+
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)
         const profileRef = ref(null);
@@ -142,23 +153,26 @@ const app = createApp({
 
         // 11. 插件市场与 Codex 输入框联动 Hook
         const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
+        chat.setWorkspaceCancellationHandler(pluginsState.cancelPaperSearch);
 
         // 12. 工作台消息分流控制器 (论文检索与普通对话解耦)
         const workspaceSendMessage = createWorkspaceMessageSender({
             getMode: () => chat.agentMode.value,
             getInput: () => chat.inputText.value,
             getPaperTab: () => chat.paperActiveTab.value,
-            isPaperSearching: () => pluginsState.isSearchingPapers.value,
+            isPaperSearching: () => pluginsState.isSearchingPapers.value || chat.historyMutating.value,
+            getRouteGeneration: chat.getWorkspaceGeneration,
+            getInputRevision: chat.getInputRevision,
+            capturePaperTransaction: chat.capturePaperSearchTransaction,
+            getPaperSearchSnapshot: pluginsState.getPaperSearchSnapshot,
             sendChat: chat.sendMessage,
             searchPapers: pluginsState.searchFromPaperMode,
             clearInput: () => { chat.inputText.value = ''; },
             showPaperResults: chat.showPaperSearchResults,
-            recordPaperWork: async (query) => {
-                await chat.recordPaperSearchWork(query, {
-                    results: pluginsState.paperSearchResults.value,
-                    status: pluginsState.paperSearchStatus.value,
-                    summary: pluginsState.paperSearchSummary.value,
-                    statuses: pluginsState.paperSourceStatuses.value
+            recordPaperWork: async (query, options = {}) => {
+                return chat.recordPaperSearchWork(query, {
+                    ...(options.searchSnapshot || pluginsState.getPaperSearchSnapshot()),
+                    transaction: options.transaction
                 });
             }
         });
@@ -239,7 +253,7 @@ const app = createApp({
 
         const handleSwitchView = (e) => {
             if (e.detail) {
-                auth.currentView.value = e.detail;
+                navigateView(e.detail);
             }
         };
 
@@ -352,7 +366,7 @@ const app = createApp({
                     importBtn.onclick = (e) => {
                         e.stopPropagation();
                         const code = pre.querySelector('code')?.innerText || pre.innerText;
-                        auth.currentView.value = 'coding';
+                        navigateView('coding');
                         setTimeout(() => {
                             window.dispatchEvent(new CustomEvent('import-code', { detail: code }));
                         }, 150);
@@ -392,8 +406,9 @@ const app = createApp({
                     try {
                         if (window.mermaid) {
                             const svgContainer = wrapper.querySelector('.mermaid-svg-container');
-                            const { svg } = await window.mermaid.render(`${renderId}-svg`, rawCode);
-                            svgContainer.innerHTML = svg;
+                            // Untrusted diagram output cannot enter the application DOM.
+                            // Keep source visible until a locally audited SVG renderer exists.
+                            svgContainer.textContent = rawCode;
                         }
                     } catch (err) {
                         console.error('Mermaid 渲染报错:', err);
@@ -420,12 +435,12 @@ const app = createApp({
                                 // 隐藏标签以保持聊天流整洁
                                 lastMsg.content = lastMsg.content.replace(regex, '').trim();
                                 if (chat.parsedHtmlCache[lastMsg.id]) {
-                                    chat.parsedHtmlCache[lastMsg.id] = (window.marked && window.marked.parse) ? window.marked.parse(lastMsg.content) : lastMsg.content;
+                                    chat.parsedHtmlCache[lastMsg.id] = renderMarkdown(lastMsg.content);
                                 }
 
                                 if (type === 'tree') {
                                     // 自动将右侧视图切换到课程路径图 (courses/pathway)，实现可视化画布聚焦
-                                    auth.currentView.value = 'courses';
+                                    navigateView('courses');
                                     setTimeout(() => {
                                         const newOption = {
                                             tooltip: { trigger: 'item', triggerOn: 'mousemove' },
@@ -546,55 +561,44 @@ const app = createApp({
                 const msg = `欢迎进入格至智能协同教育系统，**${username}**！我是您的主规划师 Alina。`;
                 const id = Date.now();
                 chat.messages.value.push({ id, senderType: 'agent', senderId: 'agent_planner', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), content: msg });
-                chat.parsedHtmlCache[id] = (window.marked && window.marked.parse) ? window.marked.parse(msg) : msg;
+                chat.parsedHtmlCache[id] = renderMarkdown(msg);
             }
         }
 
+        const restoreActivePaperTask = () => {
+            const historyState = resolvePaperHistoryState(chat.activeConversation.value);
+            pluginsState.restorePaperSearch(historyState.snapshot);
+            return historyState;
+        };
         const handleSelectConversation = async (conversationId) => {
-            await chat.selectConversation(conversationId);
+            if (await chat.selectConversation(conversationId) === false) return;
             if (chat.agentMode.value === 'paper') {
-                const conv = chat.activeConversation.value;
-                const historyState = resolvePaperHistoryState(conv);
-                if (historyState.snapshot) {
-                    const snapshot = historyState.snapshot;
-                    pluginsState.paperSearchQuery.value = snapshot.query;
-                    pluginsState.paperSearchResults.value = snapshot.results;
-                    pluginsState.paperSearchStatus.value = snapshot.status;
-                    pluginsState.paperSearchSummary.value = snapshot.summary;
-                    pluginsState.paperSourceStatuses.value = snapshot.statuses;
-                    pluginsState.paperSearchError.value = '';
-                } else {
-                    pluginsState.paperSearchQuery.value = '';
-                    pluginsState.paperSearchResults.value = [];
-                    pluginsState.paperSearchStatus.value = 'idle';
-                    pluginsState.paperSourceStatuses.value = [];
-                    pluginsState.paperSearchError.value = '';
-                }
-                // 若用户当前已经处于研读对话视图，保持在研读对话视图；否则按照该任务历史状态建议的视图展示
-                if (chat.paperActiveTab.value !== 'dialog') {
-                    chat.paperActiveTab.value = historyState.tab;
-                }
+                const historyState = restoreActivePaperTask();
+                if (chat.paperActiveTab.value !== 'dialog') chat.paperActiveTab.value = historyState.tab;
             }
         };
-
+        const handleBackToCurrentConversation = async () => {
+            if (await chat.backToCurrentConversation() === false) return;
+            if (chat.agentMode.value === 'paper') restoreActivePaperTask();
+        };
         const handleOpenPaperTaskDialog = async (conversationId) => {
-            await chat.openPaperTaskDialog(conversationId);
-            const conv = chat.activeConversation.value;
-            const historyState = resolvePaperHistoryState(conv);
-            if (historyState.snapshot) {
-                const snapshot = historyState.snapshot;
-                pluginsState.paperSearchQuery.value = snapshot.query;
-                pluginsState.paperSearchResults.value = snapshot.results;
-                pluginsState.paperSearchStatus.value = snapshot.status;
-                pluginsState.paperSearchSummary.value = snapshot.summary;
-                pluginsState.paperSourceStatuses.value = snapshot.statuses;
-                pluginsState.paperSearchError.value = '';
-            }
+            if (await chat.openPaperTaskDialog(conversationId) === false) return;
+            restoreActivePaperTask();
             chat.paperActiveTab.value = 'dialog';
+        };
+        const restorePaperMessage = message => {
+            const historyState = resolvePaperHistoryState({ messages: [message] });
+            pluginsState.restorePaperSearch(historyState.snapshot);
+            chat.setPaperActiveTab('results');
         };
 
         // 整合返回供模板挂载
         return {
+            renderMarkdown,
+            sanitizeHtml,
+            authVerified: auth.authVerified,
+            authError: auth.authError,
+            verifySession: auth.verifySession,
             // Toast
             toast,
             showToast,
@@ -607,7 +611,8 @@ const app = createApp({
             authForm: auth.authForm,
             authLoading: auth.authLoading,
             currentRole: auth.currentRole,
-            currentView: auth.currentView,
+            currentView: guardedView,
+            examCenterRef,
             activeMenus: auth.activeMenus,
             currentMenuInfo: auth.currentMenuInfo,
             handleAuth: auth.handleAuth,
@@ -618,6 +623,10 @@ const app = createApp({
             workspaceMode,
             selectWorkspaceMode,
             paperActiveTab: chat.paperActiveTab,
+            setPaperActiveTab: chat.setPaperActiveTab,
+            paperWorkSyncStatus: chat.paperWorkSyncStatus,
+            retryPaperWorkSync: chat.retryPaperWorkSync,
+            restorePaperMessage,
 
             // Chat & Files
             inputText: chat.inputText,
@@ -748,7 +757,7 @@ const app = createApp({
             loadChatHistory: chat.loadChatHistory,
             startNewConversation: chat.startNewConversation,
             selectConversation: handleSelectConversation,
-            backToCurrentConversation: chat.backToCurrentConversation,
+            backToCurrentConversation: handleBackToCurrentConversation,
             deleteConversation: chat.deleteConversation,
             clearChatHistory: chat.clearChatHistory,
             fillInput: chat.fillInput,
@@ -924,4 +933,3 @@ const rootVm = app.mount('#app');
 if (typeof window !== 'undefined') {
     window.__app__ = rootVm;
 }
-
