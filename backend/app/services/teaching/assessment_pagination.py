@@ -1,7 +1,7 @@
-"""Pure bounded Task3 cursor positions. A cursor never conveys authority.
+"""Pure bounded Task3/Task4 cursor positions. A cursor never conveys authority.
 
-Only the two current catalog projections and immutable assignment versions are
-supported. Later assessment list kinds require a separate reviewed extension.
+Catalogs, immutable versions, releases and recipient pages are supported.
+Later submission list kinds require a separate reviewed extension.
 """
 import base64
 import binascii
@@ -12,7 +12,8 @@ from fastapi import HTTPException
 
 from app.services.teaching.types import exact_identifier
 
-_KINDS = frozenset({'assignment_catalog_author','assignment_catalog_release','assignment_versions'})
+_KINDS = frozenset({'assignment_catalog_author','assignment_catalog_release','assignment_versions',
+    'releases','preview_recipients','historical_recipients'})
 _ALPHABET = re.compile(r'[A-Za-z0-9_-]+\Z', re.ASCII)
 _MAX_POSITION = 9223372036854775807
 _MAX_DECODED_BYTES = 6144
@@ -31,13 +32,15 @@ def _bindings(kind, object_id, actor_id):
 
 def _position(payload, kind, object_id, actor_id):
     field = 'after_version_number' if kind == 'assignment_versions' else 'after_id'
+    if kind in {'preview_recipients','historical_recipients'}:
+        field = 'after_student_id'
     if (type(payload) is not dict or set(payload) != {'v','kind','object_id','actor_id',field}
             or type(payload['v']) is not int or payload['v'] != 1
             or payload['kind'] != kind or payload['object_id'] != object_id or payload['actor_id'] != actor_id):
         _invalid()
     value = payload[field]
-    if field == 'after_id':
-        if not exact_identifier(value,36):
+    if field in {'after_id','after_student_id'}:
+        if not exact_identifier(value,255 if field=='after_student_id' else 36):
             _invalid()
     elif type(value) is not int or not 1 <= value <= _MAX_POSITION:
         _invalid()

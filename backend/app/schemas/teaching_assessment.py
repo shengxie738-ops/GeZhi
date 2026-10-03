@@ -304,6 +304,17 @@ class ReleaseManagementDTO(ReleaseDTO):
     recipient_digest: Digest
 
 
+class ReleasePageDTO(AssessmentDTO):
+    items: list[ReleaseDTO | ReleaseManagementDTO]
+    next_cursor: _CURSOR | None
+    as_of: datetime
+
+
+class HistoricalRecipientPageDTO(RecipientPageDTO):
+    projection: Literal['historical_recipients'] = 'historical_recipients'
+    authorized_recipient_count: int = Field(ge=0,le=1000)
+
+
 class SubmissionHistoryItemDTO(AssessmentDTO):
     id: Id
     release_id: Id
