@@ -93,6 +93,17 @@ class Settings(BaseSettings):
     # Alibaba DashScope（语音识别 paraformer / Qwen-Audio）；Key 仅从 .env 注入
     DASHSCOPE_API_KEY: str = ""
 
+    # Teacher Work defaults: explicit schema, real transactions and private storage required.
+    # These declarations do not activate deployment or certify readiness.
+    TEACHER_WORK_ENABLED: bool = False
+    TEACHER_WORK_STORAGE_ROOT: str = ""
+    TEACHER_WORK_MAX_ACTIVE_RUNS: int = 4
+    TEACHER_WORK_PACKAGE_TIMEOUT_SECONDS: int = 300
+    TEACHER_WORK_REFERENCE_TIMEOUT_SECONDS: int = 45
+    TEACHER_WORK_FILE_TIMEOUT_SECONDS: int = 30
+    TEACHER_WORK_MAX_FILE_BYTES: int = 10485760
+    TEACHER_WORK_OWNER_QUOTA_BYTES: int = 209715200
+
     # Teacher AI lesson preparation
     AI_LESSON_PREP_API_KEY: str = ""
     # 模型广场（model_registry）使用的智谱 Key；为空时回落到 AI_LESSON_PREP_API_KEY
