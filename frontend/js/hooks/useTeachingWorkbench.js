@@ -26,8 +26,15 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
     const submissions=useTeachingSubmissions({context:teaching.context,active:submissionsActive,selection:submissionSelection,api:assignmentApi});
     let disposed=false,intent=0,loading=null,navigation,initialEntrySettled=false,initialEntryGeneration=0;
     const foregroundState=ref(null),foregroundReason=ref(null),foregroundDetailUnavailable=ref(false);
-    let foregroundGeneration=0,foregroundFlight=null,departure=null,suppressAuthHydration=false,requiresOfferingChoice=false,retryCandidate=null;
+    let foregroundGeneration=0,foregroundFlight=null,departure=null,suppressAuthHydration=false,requiresOfferingChoice=false,retryCandidate=null,pendingIdentityRecovery=null;
     const hidden=()=>documentTarget?.hidden===true||documentTarget?.visibilityState==='hidden';
+    const foregroundReadActive=ref(!hidden()),foregroundReadEpoch=ref(0);
+    // Read lifetime only: authentication remains owned by useAuth. Legacy
+    // helpers may read only for their visible, verified, mounted consumer.
+    const legacyReadLifetime=computed(()=>({active:!disposed&&foregroundReadActive.value&&!hidden()&&auth.authVerified.value===true&&auth.isLoggedIn?.value!==false&&!teachingView.value&&legacyRenderAllowed.value,
+        actorId:auth.authVerified.value===true?auth.currentUser.value?.username:null,authEpoch:auth.authEpoch.value,foregroundEpoch:foregroundReadEpoch.value}));
+    const departReads=()=>{if(foregroundReadActive.value){foregroundReadActive.value=false;++foregroundReadEpoch.value;}};
+    const returnReads=()=>{foregroundReadActive.value=!hidden();};
     const presentation=computed(()=>{
         const base=teaching.context.value;
         const state=foregroundState.value||(!base.authVerified?(auth.authVerified.value===true||auth.authError?.value?'identity-error':'checking'):null);
@@ -44,7 +51,15 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         return {actorId:c.actorId,locator:confirmed?{...confirmed}:{section:section.value},offeringId:requiresOfferingChoice?null:c.offeringId,courseId:requiresOfferingChoice?null:c.courseId||selectedCourseId.value,mode:requiresOfferingChoice?null:c.mode};
     };
     const cancelForeground=()=>{
+        const abandoned=pendingIdentityRecovery;pendingIdentityRecovery=null;
         ++foregroundGeneration;departure=null;retryCandidate=null;foregroundDetailUnavailable.value=false;
+        if(abandoned&&!disposed){
+            // Deliberate intent may cancel recovery while identity is unknown.
+            // Quarantine the old actor's confirmed/persisted offering intent,
+            // preserving the newer explicit hash for its own later validation.
+            requiresOfferingChoice=true;navigation.dispose();navigation=makeNavigation();
+            try {locatorStore?.removeItem?.('teaching-offering');}catch { /* optional intent only */ }
+        }
         if(foregroundFlight){foregroundFlight.cancel();teaching.clear();assignments.clear();submissions.clear();}
         foregroundState.value=null;foregroundReason.value=null;
     };
@@ -107,7 +122,7 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
             await teaching.loadOfferings({membership:'all',courseId:locator.courseId});
         }else if(locator.offeringId){
             if(foreground || refresh || reselect || teaching.context.value.offeringId!==locator.offeringId || !teaching.context.value.b1.readReady){
-                const selected=await teaching.selectOffering(locator.offeringId);
+                const selected=await teaching.selectOffering(locator.offeringId,foreground&&priorOffering===locator.offeringId?{restoreMode:priorMode}:{});
                 if(foreground&&!selected)return false;
             }
             if(foreground && currentRead() && (!teaching.context.value.b1.readReady || priorMode && !teaching.modes.value.includes(priorMode) || !priorMode && teaching.context.value.mode)){
@@ -286,10 +301,29 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         if(read)void Promise.resolve(read).then(()=>{inspect();if(auth.authEpoch.value===expectedEpoch&&!auth.authVerified.value)finish(false);},()=>finish(false));
         void flight.cancelled.then(()=>finish(false));
     });
+    const finishIdentityRecovery=()=>{
+        const recovery=pendingIdentityRecovery;
+        if(!recovery||disposed||!teachingView.value||recovery.generation!==foregroundGeneration||recovery.epoch!==auth.authEpoch.value)return false;
+        if(auth.authVerified.value!==true){
+            if(auth.authError?.value||auth.isLoggedIn?.value===false){pendingIdentityRecovery=null;retryCandidate=recovery.snapshot;foregroundState.value='identity-error';}
+            return false;
+        }
+        const actor=teaching.context.value.actorId;
+        if(!actor){pendingIdentityRecovery=null;retryCandidate=recovery.snapshot;foregroundState.value='identity-error';return false;}
+        // Latest identity may settle during a newer departure. Keep recovery
+        // quarantined until that departure has its own observed return.
+        if(hidden()||!foregroundReadActive.value)return false;
+        pendingIdentityRecovery=null;departure=null;suppressAuthHydration=false;
+        if(recovery.snapshot?.actorId!==actor){section.value='home';requireOfferingChoice();}
+        else retryCandidate=recovery.snapshot;
+        // Explicit bounded recovery: do not invent another auth transaction or
+        // automatically replay old navigation after the storage owner settles.
+        foregroundState.value='read-error';foregroundReason.value=null;return true;
+    };
     const startForeground=({retry=false}={})=>{
-        if(disposed||hidden()||!teachingView.value)return Promise.resolve(false);
+        if(disposed||hidden()||!teachingView.value||pendingIdentityRecovery)return Promise.resolve(false);
         if(foregroundFlight)return foregroundFlight.promise;
-        if(!retry&&!departure)return Promise.resolve(false);
+        if(!retry&&(!departure||!departure.returnObserved))return Promise.resolve(false);
         let candidate=departure?.snapshot||(requiresOfferingChoice?null:retryCandidate)||snapshotIntent();departure=null;
         let cancel;
         const flight={generation:foregroundGeneration,snapshot:candidate,cancelled:new Promise(resolve=>cancel=resolve),cancel:()=>cancel(false),promise:null};
@@ -343,34 +377,43 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
             foregroundFlight=null;
             // A canceled auth request can still settle. Keep its watcher from
             // replaying a discarded hash until that identity outcome arrives.
-            if(auth.authVerified.value||auth.authError?.value||auth.isLoggedIn?.value===false)suppressAuthHydration=false;
-            if(departure&&!hidden()&&!disposed&&teachingView.value)void startForeground();
+            if(!pendingIdentityRecovery&&(auth.authVerified.value||auth.authError?.value||auth.isLoggedIn?.value===false))suppressAuthHydration=false;
+            if(!pendingIdentityRecovery&&departure?.returnObserved&&!hidden()&&!disposed&&teachingView.value)void startForeground();
         });
         return flight.promise;
     };
     const armDeparture=()=>{
         if(disposed||!teachingView.value)return;
         const snapshot=departure?.snapshot||foregroundFlight?.snapshot||snapshotIntent();
-        if(!departure){++foregroundGeneration;departure={snapshot};}
+        if(!departure||departure.returnObserved){++foregroundGeneration;departure={snapshot,returnObserved:false};if(pendingIdentityRecovery)pendingIdentityRecovery.generation=foregroundGeneration;}
         if(foregroundFlight){foregroundFlight.cancel();teaching.clear();assignments.clear();submissions.clear();}
     };
     const windowEvent=event=>!event?.target||event.target===eventTarget;
-    const handleBlur=event=>{if(windowEvent(event))armDeparture();};
-    const handleFocus=event=>windowEvent(event)&&!hidden()?startForeground():Promise.resolve(false);
+    const handleBlur=event=>{if(windowEvent(event)){departReads();armDeparture();}};
+    const observeReturn=()=>{if(hidden())return Promise.resolve(false);returnReads();if(departure)departure.returnObserved=true;if(pendingIdentityRecovery){finishIdentityRecovery();return Promise.resolve(false);}return startForeground();};
+    const handleFocus=event=>windowEvent(event)?observeReturn():Promise.resolve(false);
     const handleVisibility=()=>{
         if(hidden()){
-            if(!teachingView.value)return;
+            departReads();if(!teachingView.value)return;
             armDeparture();foregroundState.value='hidden';foregroundReason.value=null;
             ++intent;loading=null;teaching.clear();assignments.clear();submissions.clear();selectedCourseId.value=null;offeringQueryCourseId.value=null;
             return;
         }
-        return startForeground();
+        return observeReturn();
     };
     // Future dirty write editors require a separate actor/offering-bound retained
     // draft owner, quarantined while blocked. These are read resources only;
     // foreground must never save, discard, or invoke the navigation leave seam.
     const stop=watch([()=>auth.authVerified.value,()=>auth.authEpoch.value],([available])=>{
         ++intent;++initialEntryGeneration;loading=null;teachingEntryPending.value=false;
+        // A newer independent identity owner supersedes a return queued behind
+        // cancellation; do not manufacture another verification in cleanup.
+        if(departure?.returnObserved&&foregroundFlight&&foregroundFlight.generation!==foregroundGeneration){
+            const snapshot=departure.snapshot||foregroundFlight.snapshot;cancelForeground();
+            pendingIdentityRecovery={snapshot,generation:foregroundGeneration,epoch:auth.authEpoch.value};
+            foregroundState.value='checking';suppressAuthHydration=true;
+        }
+        if(pendingIdentityRecovery){pendingIdentityRecovery.epoch=auth.authEpoch.value;return;}
         if(foregroundFlight||suppressAuthHydration){if(available&&!foregroundFlight)suppressAuthHydration=false;return;}
         selectedCourseId.value=null;offeringQueryCourseId.value=null;locationUnavailable.value=false;
         navigation.dispose();navigation=makeNavigation();
@@ -381,8 +424,9 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         else if(teachingView.value)void trackInitialEntry(openSection(viewSections[auth.currentView.value]));
         else {initialTeachingEntryPending.value=false;initialEntrySettled=true;}
     },{immediate:true,flush:'sync'});
+    const stopRecovery=watch([()=>auth.authVerified.value,()=>auth.authEpoch.value,()=>auth.authError?.value,()=>auth.isLoggedIn?.value,()=>foregroundReadActive.value,()=>foregroundReadEpoch.value],finishIdentityRecovery,{flush:'post'});
     const stopView=watch(()=>auth.currentView.value,view=>{
-        if(!isTeachingView(view)&&foregroundFlight?.generation===foregroundGeneration)cancelForeground();
+        if(!isTeachingView(view)&&(pendingIdentityRecovery||foregroundFlight?.generation===foregroundGeneration))cancelForeground();
     },{flush:'sync'});
     const stopSubmissionDenial=watch(()=>['head','ownHistory','teacherHeads','teacherHistory','detail'].some(kind=>{const r=submissions[kind];return r.status==='unavailable' && ([401,403,404].includes(r.error?.status)||['unauthenticated','permission_denied','not_found'].includes(r.error?.reason));}),denial=>{
         if(!denial)return;locationUnavailable.value=true;assignments.clear();
@@ -393,6 +437,6 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         eventTarget?.addEventListener('blur',handleBlur);eventTarget?.addEventListener('focus',handleFocus);
         documentTarget?.addEventListener?.('visibilitychange',handleVisibility);
     });
-    onScopeDispose(()=>{disposed=true;cancelForeground();++intent;teachingEntryPending.value=false;stop();stopView();stopSubmissionDenial();navigation.dispose();loading=null;eventTarget?.removeEventListener('hashchange',handleHashEvent);eventTarget?.removeEventListener('blur',handleBlur);eventTarget?.removeEventListener('focus',handleFocus);documentTarget?.removeEventListener?.('visibilitychange',handleVisibility);});
-    return {...teaching,context:readonly(presentation),assignments,submissions,assignmentNavigation,submissionNavigation,legacyRenderAllowed:readonly(legacyRenderAllowed),availability:readonly(availability),isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
+    onScopeDispose(()=>{disposed=true;cancelForeground();++intent;teachingEntryPending.value=false;stop();stopRecovery();stopView();stopSubmissionDenial();navigation.dispose();loading=null;eventTarget?.removeEventListener('hashchange',handleHashEvent);eventTarget?.removeEventListener('blur',handleBlur);eventTarget?.removeEventListener('focus',handleFocus);documentTarget?.removeEventListener?.('visibilitychange',handleVisibility);});
+    return {...teaching,context:readonly(presentation),assignments,submissions,assignmentNavigation,submissionNavigation,legacyRenderAllowed:readonly(legacyRenderAllowed),legacyReadLifetime:readonly(legacyReadLifetime),availability:readonly(availability),isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
 }

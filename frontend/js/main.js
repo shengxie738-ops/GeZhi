@@ -128,25 +128,35 @@ const app = createApp({
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)
         const profileRef = ref(null);
+        const legacyReadLifetime = teachingWorkbench.legacyReadLifetime;
         const {
             studentRadarOption, activeTaskReasonId, agentLogs,
             toggleTaskReason, loadMyRadar
-        } = useMonitor(auth.currentRole, auth.currentView, showToast, profileRef, auth.currentUser);
+        } = useMonitor(auth.currentRole, auth.currentView, showToast, profileRef, auth.currentUser, { readLifetime: legacyReadLifetime });
 
         // 6. 画像 Hook
-        const profileState = useProfile(auth.currentUser, showToast);
+        const profileState = useProfile(auth.currentUser, showToast, { readLifetime: legacyReadLifetime });
         watch(profileState.profile, (newVal) => {
             profileRef.value = newVal;
         }, { deep: true, immediate: true });
 
-        // 监听对话结束事件，延时拉取画像以实现“随学随新”
-        if (typeof window !== 'undefined') {
-            window.addEventListener('agent-log', () => {
-                setTimeout(() => {
-                    profileState.fetchProfile();
-                }, 2000);
-            });
-        }
+        // Delayed profile refresh belongs to the actor/epoch that observed it.
+        let profileRefreshTimer = null;
+        const onProfileAgentLog = () => {
+            const lifetime = legacyReadLifetime.value;
+            if (!lifetime.active) return;
+            clearTimeout(profileRefreshTimer);
+            profileRefreshTimer = setTimeout(() => {
+                profileRefreshTimer = null;
+                const current = legacyReadLifetime.value;
+                if (current.active && current.actorId === lifetime.actorId && current.authEpoch === lifetime.authEpoch && current.foregroundEpoch === lifetime.foregroundEpoch) void profileState.fetchProfile();
+            }, 2000);
+        };
+        if (typeof window !== 'undefined') window.addEventListener('agent-log', onProfileAgentLog);
+        onUnmounted(() => {
+            clearTimeout(profileRefreshTimer);
+            if (typeof window !== 'undefined') window.removeEventListener('agent-log', onProfileAgentLog);
+        });
 
         // 7. 智能体工坊 Hook
         const agentsState = useAgents(showToast);

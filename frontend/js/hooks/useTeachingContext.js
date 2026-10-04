@@ -195,7 +195,7 @@ export function useTeachingContext(auth, {api=teachingApi,locatorStore=null}={})
         }
         finally {task.finish();}
     };
-    const selectOffering=async(id)=>{
+    const selectOffering=async(id,{restoreMode=null}={})=>{
         if (!verified()) return false;
         const known=offerings.items.find(item=>item.id===id);
         invalidate();
@@ -210,7 +210,10 @@ export function useTeachingContext(auth, {api=teachingApi,locatorStore=null}={})
                 if (data?.id===id && data.access?.teaching===false && data.access?.learning===false) throw {reason:'permission_denied',status:403};
                 throw invalid();
             }
-            offering.data=clone(data);offering.status='ready';selectedMode.value=modes.value.length===1?modes.value[0]:null;
+            offering.data=clone(data);offering.status='ready';
+            // Foreground restores only a mode permitted by this fresh offering,
+            // before its single own read. Public setMode still invalidates epochs.
+            selectedMode.value=modes.value.includes(restoreMode)?restoreMode:modes.value.length===1?modes.value[0]:null;
             try {locatorStore?.setItem('teaching-offering',id);} catch { /* optional locator storage is never authority */ }
             if (data.access.learning) await readEnrollment();
             return task.current();
