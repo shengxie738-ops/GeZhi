@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/env.js';
 import { createTeachingError, safeTeachingHttpReason } from './teachingStatus.js';
+import { isAssessmentCursor, isAssessmentSubject } from './teachingAssessmentDTO.js';
 
 const B1_RECOVERY_SCOPES = Object.freeze({
     course_create: 'institution', course_update: 'course', offering_create: 'course',
@@ -33,6 +34,25 @@ function registeredTeachingRead(url) {
             && teachingIdentifier(query.get('scope_id'), scope === 'institution' ? 64 : 36)
             && /^[A-Za-z0-9._:-]{8,128}$/.test(query.get('key') || '');
     }
+    // Exactly the ten public B2 GET templates. B1 keeps its separate cursor
+    // grammar, and protected/private/preview/recipient routes remain closed.
+    const assessment = /^\/teaching\/(?:offerings\/([^/]+)\/(assignments|releases)|assignments\/([^/]+)\/(draft|versions)(?:\/([^/]+))?|releases\/([^/]+)(?:\/(my-submission-head|my-submissions|submissions))?|submissions\/([^/]+))$/.exec(path);
+    if (assessment) {
+        const ids = [assessment[1], assessment[3], assessment[5], assessment[6], assessment[8]].filter(value => value !== undefined);
+        if (ids.some(segment => {
+            try { const id = decodeURIComponent(segment); return !teachingIdentifier(id) || encodeURIComponent(id) !== segment; }
+            catch { return true; }
+        })) return false;
+        if (assessment[5] && assessment[4] !== 'versions') return false;
+        const paged = !!assessment[2] || assessment[4] === 'versions' && !assessment[5]
+            || ['my-submissions', 'submissions'].includes(assessment[7]);
+        if (!paged) return keys.length === 0;
+        const teacher = assessment[7] === 'submissions';
+        return only(['limit', 'cursor', ...(teacher ? ['student_id'] : [])])
+            && (!query.has('limit') || /^(?:[1-9]|[1-9][0-9]|100)$/.test(query.get('limit')))
+            && (!query.has('cursor') || isAssessmentCursor(query.get('cursor')))
+            && (!query.has('student_id') || isAssessmentSubject(query.get('student_id')));
+    }
     const match = /^\/teaching\/(courses|offerings|receipts)\/([^/]+)(?:\/(enrollment|roster|roles))?$/.exec(path);
     if (!match) return false;
     let id;
@@ -45,13 +65,17 @@ function registeredTeachingRead(url) {
 // This branch is deliberately before all legacy URL/error construction and
 // logging. It cannot accept public headers, bodies, foreign routes or writes.
 async function teachingGet(url, options) {
-    if (!registeredTeachingRead(url) || Object.keys(options).some(key => !['teachingTransport', 'method', 'signal'].includes(key))
+    if (!registeredTeachingRead(url) || ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+        || Reflect.ownKeys(options).some(key => !['teachingTransport', 'method', 'signal'].includes(key)
+            || !Object.hasOwn(Object.getOwnPropertyDescriptor(options, key), 'value'))
         || (options.method !== undefined && options.method !== 'GET')
         || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) {
         throw createTeachingError('validation_error');
     }
+    // Caller options are mutable; the validated signal is request-local.
+    const signal = options.signal;
     let token, status = 0, phase = 'session';
-    const current = () => !options.signal?.aborted && (localStorage.getItem('token') || '') === (token || '');
+    const current = () => !signal?.aborted && (localStorage.getItem('token') || '') === (token || '');
     const fence = () => { if (!current()) throw createTeachingError('request_aborted'); };
     try {
         token = localStorage.getItem('token');
@@ -59,7 +83,7 @@ async function teachingGet(url, options) {
         if (token) headers.Authorization = `Bearer ${token}`;
         fence();
         phase = 'fetch';
-        const response = await fetch(`${API_BASE_URL}${url}`, { method: 'GET', headers, ...(options.signal ? { signal: options.signal } : {}) });
+        const response = await fetch(`${API_BASE_URL}${url}`, { method: 'GET', headers, ...(signal ? { signal } : {}) });
         fence();
         status = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599 ? response.status : 0;
         phase = 'body';
@@ -72,15 +96,15 @@ async function teachingGet(url, options) {
             if (status === 401) {
                 const currentToken = localStorage.getItem('token') || '';
                 const currentAuthorization = currentToken ? `Bearer ${currentToken}` : '';
-                if (!options.signal?.aborted && (headers.Authorization || '') === currentAuthorization) {
+                if (!signal?.aborted && (headers.Authorization || '') === currentAuthorization) {
                     window.dispatchEvent(new CustomEvent('auth-expired'));
                 }
             }
             const consistent = object && envelope.code === status;
             const correlation = consistent ? envelope.data?.correlation_id : undefined;
             const queryValues = [...new URLSearchParams(url.split('?')[1] || '').values()];
-            const routeId = url.split('?')[0].split('/')[3];
-            const privateValues = [token, ...queryValues, ...(routeId ? [decodeURIComponent(routeId)] : [])];
+            const routeValues = url.split('?')[0].split('/').filter(Boolean).map(segment => decodeURIComponent(segment));
+            const privateValues = [token, ...queryValues, ...routeValues];
             // Shape validation alone is insufficient when a UUID-shaped
             // locator/key/token is reflected into the correlation field.
             throw createTeachingError(consistent ? safeTeachingHttpReason(envelope.message) : 'request_failed', status,
