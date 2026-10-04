@@ -24,7 +24,8 @@ export default {
         onScopeDispose(()=>toolsViewport?.dispose());
         const capabilityFailed=computed(()=>['error','unavailable'].includes(props.availability.resourceStatus));
         const skipToContent=()=>contentRef.value?.focus();
-        const verified=computed(()=>props.context.authVerified===true&&typeof props.context.actorId==='string'&&props.context.actorId.length>0);
+        const foreground=computed(()=>props.context.foreground||{});
+        const verified=computed(()=>!foreground.value.blocked&&props.context.authVerified===true&&typeof props.context.actorId==='string'&&props.context.actorId.length>0);
         const currentOffering=computed(()=>verified.value&&props.context.b1?.readReady===true&&props.offering.status==='ready'&&props.offering.data?.id===props.context.offeringId?props.offering.data:null);
         const allowedModes=computed(()=>currentOffering.value?['teaching','learning'].filter(mode=>props.context.modes.includes(mode)&&currentOffering.value.access[mode]===true):[]);
         const effectiveMode=computed(()=>allowedModes.value.includes(props.accessMode)&&props.context.mode===props.accessMode?props.accessMode:null);
@@ -34,10 +35,13 @@ export default {
         const chooseMode=mode=>{if(verified.value&&allowedModes.value.includes(mode))emit('select-mode',mode);};
         const openTool=id=>{if(verified.value&&props.tools.some(tool=>tool.id===id))emit('open-tool',id);};
         const enrollmentStatus=computed(()=>props.enrollment.data?.status==='active'?'有效选课':props.enrollment.data?.status==='withdrawn'?'已退选':'状态不可用');
-        return {contentRef,toolsDetailsRef,toolsListRef,toolsMaxHeight,measureTools,capabilityFailed,skipToContent,verified,currentOffering,allowedModes,effectiveMode,menuItems,pageTitle,navigate,chooseMode,openTool,enrollmentStatus};
+        return {contentRef,toolsDetailsRef,toolsListRef,toolsMaxHeight,measureTools,capabilityFailed,skipToContent,foreground,verified,currentOffering,allowedModes,effectiveMode,menuItems,pageTitle,navigate,chooseMode,openTool,enrollmentStatus};
     },
     template:`<div class="teaching-workbench">
-        <p v-if="!verified" class="tw-resource-state" role="status">正在验证登录身份…</p>
+        <section v-if="!verified" class="tw-resource-state" role="status" aria-live="polite">
+            <p>{{ foreground.state === 'identity-error' ? '无法确认登录身份，请重试' : foreground.state === 'read-error' ? '暂无法重新确认课程访问，请重试' : '正在验证登录身份…' }}</p>
+            <button v-if="foreground.retryAllowed" type="button" class="tw-button" @click="$emit('refresh')">重试读取</button>
+        </section>
         <template v-else>
             <button type="button" class="tw-skip-link" @click="skipToContent">跳到课程内容</button>
             <nav class="tw-navigation" aria-label="课程工作台导航">
@@ -51,6 +55,7 @@ export default {
                 <main id="tw-main" ref="contentRef" class="tw-content" tabindex="-1">
                     <div class="tw-page-heading"><h1>{{ pageTitle }}</h1><p>按当前课程访问范围读取。课程选择与账号角色分别核验</p></div>
                     <TeachingAvailabilityNotice :availability="availability" />
+                    <p v-if="foreground.detailUnavailable" class="tw-resource-state" role="status">此前记录当前不可访问，请从刷新列表重新选择</p>
                     <TeachingResourceState v-if="capabilityFailed && !locationUnavailable" :state="availability.resourceStatus" :reason="availability.reason" @retry="$emit('refresh')" />
                     <TeachingCourseSelector v-if="!capabilityFailed && !locationUnavailable" :courses="courses" :offerings="offerings" :selected-course-id="selectedCourseId || context.courseId" :selected-offering-id="context.offeringId" :availability="availability" @select-course="$emit('select-course', $event)" @select-offering="$emit('select-offering', $event)" />
                     <TeachingResourceState v-if="locationUnavailable" state="unavailable" reason="not_found" />

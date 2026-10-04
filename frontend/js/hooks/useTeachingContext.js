@@ -234,6 +234,6 @@ export function useTeachingContext(auth, {api=teachingApi,locatorStore=null}={})
     return {
         capabilities:readonly(capabilities),courses:readonly(courses),offerings:readonly(offerings),offering:readonly(offering),enrollment:readonly(enrollment),roster:readonly(roster),roles:readonly(roles),
         selectedOfferingId:readonly(selectedOfferingId),contextEpoch:readonly(contextEpoch),context:readonly(context),modes:readonly(modes),mode:readonly(selectedMode),
-        getContext,setMode,refreshOwnEnrollment:readEnrollment,loadCapabilities,loadCourses,loadOfferings,selectOffering,loadRoster,loadRoles,refresh,clear
+        getContext,setMode,refreshOwnEnrollment:readEnrollment,loadCapabilities,loadCourses,loadOfferings,selectOffering,loadRoster,loadRoles,refresh,clear,clearSelection:()=>invalidate()
     };
 }

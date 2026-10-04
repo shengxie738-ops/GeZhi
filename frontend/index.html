@@ -2567,7 +2567,7 @@
 
         <!-- ==================== 认证模块 (已整合至独立 React 登录页) ==================== -->
         <transition name="fade">
-            <div v-if="!isLoggedIn || !authVerified"
+            <div v-if="!isLoggedIn || (!authVerified && !isTeachingView)"
                 class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 text-white">
                 <div class="animate-spin rounded-full h-10 w-10 border-4 border-slate-700 border-t-[#1c2b38] mb-4">
                 </div>
@@ -2577,7 +2577,7 @@
         </transition>
 
         <!-- ==================== 主系统模块 ==================== -->
-        <teaching-workbench-shell v-if="isLoggedIn && authVerified && isTeachingView"
+        <teaching-workbench-shell v-if="isLoggedIn && isTeachingView"
             :context="teachingContext" :presentation-role="currentRole" :access-mode="teachingContext.mode"
             :section="teachingSection" :courses="teachingCourses" :offerings="teachingOfferings"
             :offering="teachingOffering" :enrollment="teachingEnrollment"
