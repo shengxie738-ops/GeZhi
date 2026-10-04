@@ -7,6 +7,7 @@ import GraphChart from './components/GraphChart.js';
 import TreeChart from './components/TreeChart.js';
 import CodingSandbox from './components/CodingSandbox.js?v=20260715';
 import StudentExamCenter from './components/StudentExamCenter.js';
+import StudentDashboard from './components/StudentDashboard.js';
 import StudentMistakeBook from './components/StudentMistakeBook.js';
 import TeacherExamManager from './components/TeacherExamManager.js';
 import StudentHomework from './components/StudentHomework.js?v=20260717_0100';
@@ -39,6 +40,7 @@ import { useAgents } from './hooks/useAgents.js';
 import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
+import { useStudentNavigationPresentation } from './hooks/useStudentNavigationPresentation.js';
 import { usePlugins } from './hooks/usePlugins.js';
 import { useCustomModels } from './hooks/useCustomModels.js';
 import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
@@ -55,6 +57,7 @@ const app = createApp({
         TreeChart,
         CodingSandbox,
         StudentExamCenter,
+        StudentDashboard,
         StudentMistakeBook,
         TeacherExamManager,
         StudentHomework,
@@ -115,6 +118,7 @@ const app = createApp({
         const teachingAvailability = teachingWorkbench.availability;
         const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
         const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
+        const studentNavigation = useStudentNavigationPresentation(auth.currentRole);
 
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)
@@ -645,6 +649,7 @@ const app = createApp({
             authLoading: auth.authLoading,
             currentRole: auth.currentRole,
             currentView: guardedView,
+            ...studentNavigation,
             examCenterRef,
             activeMenus: auth.activeMenus,
             currentMenuInfo: auth.currentMenuInfo,
