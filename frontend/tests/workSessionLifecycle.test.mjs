@@ -166,7 +166,9 @@ test('main exports guarded lifecycle and retry action; template shows actual syn
     assert.match(html,/historyError/);
     assert.match(html,/本次来源返回的/);
     assert.doesNotMatch(html,/已展示全部来源可核验检索结果/);
-    assert.match(html,/selectedPaper\.citationCountSource/);
+    const detail=await readFile(new URL('../js/components/WorkPaperDetail.js',import.meta.url),'utf8');
+    assert.match(html,/<work-paper-detail[^>]*:paper="selectedPaper"/);
+    assert.match(detail,/paper\.citationCountSource/);
 });
 
 test('obsolete unauthorized transport response cannot expire the next account session',async()=>{

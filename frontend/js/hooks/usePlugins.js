@@ -214,6 +214,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const executePaperSearch = async (overrideQuery = null, pluginOverride = null) => {
         // Invalidate before validation, including no-source/empty-query transitions.
         cancelPaperSearch();
+        selectedPaper.value = null;
         const query = String(typeof overrideQuery === 'string' ? overrideQuery : paperSearchQuery.value).trim();
         if (!query) {
             paperSearchStatus.value = 'idle';
