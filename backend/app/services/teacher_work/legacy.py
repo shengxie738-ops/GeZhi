@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
+from uuid import UUID
 
-from app.services.teacher_work.types import canonical_digest, canonical_json_bytes
+from app.services.teacher_work.types import WorkActor, canonical_digest, canonical_json_bytes
 
 
 @dataclass(frozen=True)
@@ -202,3 +204,146 @@ def guarded_legacy_save(*, transaction_active: bool, footprint_locked: bool,
     if registry_state != "unlinked":
         raise LegacySaveError("WORK_REGISTRY_UNAVAILABLE", 503)
     return save()
+
+
+@dataclass(frozen=True)
+class LegacySaveInput:
+    draft_id: str
+    title: str
+    topic: str
+    duration_minutes: int
+    resource_ids: tuple[str, ...]
+    content: dict
+
+
+@dataclass(frozen=True)
+class LegacyRegistryObservation:
+    state: str
+    confirmed: bool
+
+
+@dataclass(frozen=True)
+class PreparedLegacyDraft:
+    """The existing original-draft primitive's structural write carrier."""
+    owner: str
+    draft_id: str
+    payload: dict
+    module: str = "teacher_lesson_prep"
+    record_type: str = "draft"
+
+
+def _save_input(subject: str, request: LegacySaveInput) -> None:
+    if (type(subject) is not str or not subject or subject != subject.strip() or len(subject) > 255
+            or not isinstance(request, LegacySaveInput) or not _text(request.draft_id, 255)
+            or not _text(request.title, 200, required=True) or not _text(request.topic, 200, required=True)
+            or type(request.duration_minutes) is not int or not 1 <= request.duration_minutes <= 600
+            or type(request.resource_ids) is not tuple or len(request.resource_ids) > 10
+            or any(not _text(value, 255, required=True) for value in request.resource_ids)
+            or type(request.content) is not dict):
+        raise LegacySaveError("INVALID_LEGACY_SAVE", 422)
+    try:
+        _json_value(request.content)
+        canonical_json_bytes(request.content)
+    except (TypeError, ValueError):
+        raise LegacySaveError("INVALID_LEGACY_SAVE", 422) from None
+
+
+def _linked_task(row, subject: str, draft_id: str):
+    if row is None:
+        return None
+    task = row.task
+    if task.owner_subject != subject or task.lesson_draft_id != draft_id or not isinstance(task.task_id, UUID):
+        raise LegacySaveError("NOT_FOUND", 404)
+    return task
+
+
+def prepare_legacy_save(subject: str, request: LegacySaveInput, *, registry: LegacyRegistryObservation,
+                        repository, legacy_save: Callable[[str, LegacySaveInput], dict],
+                        clock: Callable[[], datetime], new_uuid: Callable[[], UUID]) -> dict:
+    """Prepare one original draft under the coordinator's ordered lock protocol.
+
+    This is a candidate write plus caller flush, never commit/response ownership.
+    Compatible registries use the guard irrespective of feature flags. Confirmed
+    physical absence alone may delegate the old save. Actual service wiring and
+    its real registry/request-owner producers are deliberately still separate.
+    """
+    _save_input(subject, request)
+    if not isinstance(registry, LegacyRegistryObservation) or registry.confirmed is not True:
+        raise LegacySaveError("WORK_REGISTRY_UNAVAILABLE", 503)
+    if registry.state == "absent":
+        return legacy_save(subject, request)
+    if registry.state != "compatible":
+        raise LegacySaveError("WORK_REGISTRY_UNAVAILABLE", 503)
+    if repository.uow.in_transaction() is not True:
+        raise LegacySaveError("LEGACY_TRANSACTION_REQUIRED", 503)
+    new = not request.draft_id
+    provisional = None if new else _linked_task(repository.rows.find_task_by_draft(subject, request.draft_id), subject, request.draft_id)
+    institution = provisional.institution_id if provisional is not None else None
+    offering = provisional.offering_id if provisional is not None else None
+    scope = repository.authorize_locked(subject, offering, institution)
+    if (not isinstance(scope.actor, WorkActor) or scope.actor.subject != subject
+            or (scope.institution_id, scope.offering_id) != (institution, offering)):
+        raise LegacySaveError("NOT_FOUND", 404)
+    repository.rows.lock_owner_lease(subject)
+    if any(value != scope.actor.owner_storage_id for value in repository.rows.owner_storage_ids(subject)):
+        raise LegacySaveError("OWNER_NAMESPACE_MISMATCH", 503)
+    if new:
+        generated = new_uuid()
+        if not isinstance(generated, UUID):
+            raise LegacySaveError("LEGACY_STORAGE_UNAVAILABLE", 503)
+        draft_id = str(generated)
+    else:
+        draft_id = request.draft_id
+    original = repository.drafts.lock_draft(subject, draft_id)
+    if original is not None:
+        if (original.owner != subject or original.draft_id != draft_id or original.module != "teacher_lesson_prep"
+                or original.record_type != "draft" or type(original.payload) is not dict
+                or original.payload.get("draft_id") != draft_id):
+            raise LegacySaveError("NOT_FOUND", 404)
+        if new:
+            raise LegacySaveError("LEGACY_DRAFT_ID_CONFLICT", 409)
+    elif not new:
+        raise LegacySaveError("NOT_FOUND", 404)
+    current = _linked_task(repository.rows.find_task_by_draft(subject, draft_id), subject, draft_id)
+    if current is not None:
+        if ((current.institution_id, current.offering_id) != (institution, offering)
+                or (provisional is not None and current.task_id != provisional.task_id)):
+            raise LegacySaveError("LEGACY_SCOPE_CHANGED", 409)
+        current_id = current.task_id
+        current = _linked_task(repository.rows.lock_task(subject, current_id), subject, draft_id)
+        if current is None or current.task_id != current_id or (current.institution_id, current.offering_id) != (institution, offering):
+            raise LegacySaveError("LEGACY_SCOPE_CHANGED", 409)
+        if current.owner_storage_id != scope.actor.owner_storage_id:
+            raise LegacySaveError("OWNER_NAMESPACE_MISMATCH", 503)
+    elif provisional is not None:
+        raise LegacySaveError("LEGACY_SCOPE_CHANGED", 409)
+
+    def prepare() -> dict:
+        now = clock()
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise LegacySaveError("LEGACY_STORAGE_UNAVAILABLE", 503)
+        instant = now.astimezone(timezone.utc).isoformat()
+        data = deepcopy(original.payload) if original is not None else {}
+        if original is not None and not _text(data.get("created_at"), 100, required=True):
+            raise LegacySaveError("LEGACY_STORAGE_UNAVAILABLE", 503)
+        data.update({"draft_id": draft_id, "title": request.title, "topic": request.topic,
+                     "duration_minutes": request.duration_minutes, "resource_ids": list(request.resource_ids),
+                     "content": deepcopy(request.content), "status": "DRAFT",
+                     "created_at": data["created_at"] if original is not None else instant, "updated_at": instant})
+        try:
+            _json_value(data)
+            canonical_json_bytes(data)
+        except (TypeError, ValueError):
+            raise LegacySaveError("LEGACY_STORAGE_UNAVAILABLE", 503) from None
+        row = PreparedLegacyDraft(subject, draft_id, data)
+        if new:
+            repository.drafts.create_draft(row)
+        else:
+            repository.drafts.write_draft(row)
+        if repository.uow.in_transaction() is not True:
+            raise LegacySaveError("LEGACY_TRANSACTION_REQUIRED", 503)
+        repository.uow.flush()
+        return deepcopy(data)
+
+    return guarded_legacy_save(transaction_active=repository.uow.in_transaction(), footprint_locked=True,
+        lease_locked=True, draft_locked=True, registry_state="linked" if current is not None else "unlinked", save=prepare)
