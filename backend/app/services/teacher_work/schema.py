@@ -35,8 +35,10 @@ TEACHER_WORK_SCHEMA_CONTRACT = {
             "duration_minutes": "integer", "target_slide_count": "integer", "lesson_draft_id": "varchar(255)",
             "input_revision": "integer", "working_revision": "integer", "skill_refs": "json", "plugin_ids": "json", "reference_ids": "json",
             "created_at": "datetime(6)", "updated_at": "datetime(6)",
-        }, {"institution_id": "varchar(64)", "offering_id": "varchar(36)", "current_outline_id": "varchar(36)", "latest_version_id": "varchar(36)"}),
-            ("task_id",), unique=(("owner_subject", "lesson_draft_id"),), checks={
+        }, {"institution_id": "varchar(64)", "offering_id": "varchar(36)", "current_outline_id": "varchar(36)", "latest_version_id": "varchar(36)",
+            "create_idempotency_key": "varbinary(512)", "create_request_digest": "varchar(64)"}),
+            ("task_id",), unique=(("owner_subject", "lesson_draft_id"), ("owner_subject", "create_idempotency_key")), checks={
+                "ck_tw_task_create_receipt": "(create_idempotency_key IS NULL AND create_request_digest IS NULL) OR (create_idempotency_key IS NOT NULL AND create_request_digest IS NOT NULL)",
                 "ck_tw_task_revisions": "input_revision >= 1 AND working_revision >= 1",
                 "ck_tw_task_duration": "duration_minutes >= 1 AND duration_minutes <= 600",
                 "ck_tw_task_slides": "target_slide_count >= 6 AND target_slide_count <= 12",

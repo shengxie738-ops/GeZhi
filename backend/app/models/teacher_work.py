@@ -7,7 +7,7 @@ these declarations alone do not establish transactions or runtime immutability.
 from uuid import uuid4
 
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
-from sqlalchemy.dialects.mysql import DATETIME, MEDIUMTEXT
+from sqlalchemy.dialects.mysql import DATETIME, MEDIUMTEXT, VARBINARY
 from sqlalchemy.orm import declarative_base
 
 
@@ -33,6 +33,10 @@ class WorkTask(TeacherWorkBase):
     duration_minutes = Column(Integer, nullable=False, default=45)
     target_slide_count = Column(Integer, nullable=False, default=8)
     lesson_draft_id = Column(String(255), nullable=False)
+    # Exact UTF-8 receipt bytes at the SQL boundary; VARCHAR padding/collation
+    # must not collapse Unicode keys or keys differing only in trailing spaces.
+    create_idempotency_key = Column(VARBINARY(512), nullable=True)
+    create_request_digest = Column(String(64), nullable=True)
     input_revision = Column(Integer, nullable=False, default=1)
     working_revision = Column(Integer, nullable=False, default=1)
     current_outline_id = Column(String(36), nullable=True)
@@ -44,6 +48,8 @@ class WorkTask(TeacherWorkBase):
     updated_at = Column(UTC_DATETIME, nullable=False)
     __table_args__ = (
         UniqueConstraint("owner_subject", "lesson_draft_id", name="uq_tw_task_owner_draft"),
+        UniqueConstraint("owner_subject", "create_idempotency_key", name="uq_tw_task_owner_create_key"),
+        CheckConstraint("(create_idempotency_key IS NULL AND create_request_digest IS NULL) OR (create_idempotency_key IS NOT NULL AND create_request_digest IS NOT NULL)", name="ck_tw_task_create_receipt"),
         CheckConstraint("input_revision >= 1 AND working_revision >= 1", name="ck_tw_task_revisions"),
         CheckConstraint("duration_minutes >= 1 AND duration_minutes <= 600", name="ck_tw_task_duration"),
         CheckConstraint("target_slide_count >= 6 AND target_slide_count <= 12", name="ck_tw_task_slides"),

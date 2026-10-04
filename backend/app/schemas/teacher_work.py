@@ -181,6 +181,16 @@ class WorkingChanges(StrictRequest):
     plugin_ids: list[ProviderID] | None = Field(default=None, max_length=3)
     target_slide_count: int | None = Field(default=None, ge=6, le=12)
 
+    @model_validator(mode="after")
+    def explicit_changes(self) -> WorkingChanges:
+        for name in self.model_fields_set:
+            value = getattr(self, name)
+            if value is None:
+                raise ValueError("explicit changes cannot be null; omit to preserve or use empty selections/requirements")
+            if name in {"resource_ids", "reference_ids", "skill_refs", "plugin_ids"} and len(set(value)) != len(value):
+                raise ValueError("selection IDs must be distinct")
+        return self
+
 
 class WorkingPatchRequest(StrictRequest):
     expected_revision: Revision

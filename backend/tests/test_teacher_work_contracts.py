@@ -427,7 +427,7 @@ def test_metadata_unique_contract():
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     expected = {
-        "WorkTask": (("owner_subject", "lesson_draft_id"),),
+        "WorkTask": (("owner_subject", "lesson_draft_id"), ("owner_subject", "create_idempotency_key")),
         "WorkMessage": (("task_id", "client_message_key"),),
         "WorkRun": (("owner", "task_id", "kind", "idempotency_key"),),
         "PackageVersion": (("task_id", "version_no"), ("run_id",)),
@@ -442,6 +442,24 @@ def test_metadata_unique_contract():
         actual = _declared_unique_keys(classes[name])
         for columns in keys:
             assert frozenset(columns) in actual, f"{name} must uniquely constrain {columns}"
+    task_columns = {node.targets[0].id: node.value for node in classes["WorkTask"].body
+                    if isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)}
+    for name in ("create_idempotency_key", "create_request_digest"):
+        assert name in task_columns, "Server-only durable task-create receipt is missing"
+        assert any(keyword.arg == "nullable" and isinstance(keyword.value, ast.Constant)
+                   and keyword.value.value is True for keyword in task_columns[name].keywords)
+    binary_type = task_columns["create_idempotency_key"].args[0]
+    assert _call_name(binary_type) == "VARBINARY" and binary_type.args[0].value == 512
+    checks = [_literal_columns(node)[0] for node in ast.walk(classes["WorkTask"])
+              if isinstance(node, ast.Call) and _call_name(node) == "CheckConstraint"]
+    assert "(create_idempotency_key IS NULL AND create_request_digest IS NULL) OR (create_idempotency_key IS NOT NULL AND create_request_digest IS NOT NULL)" in checks
+    contract = _symbol("app.services.teacher_work.schema", "TEACHER_WORK_SCHEMA_CONTRACT")["tables"]["teacher_work_tasks"]
+    assert contract["columns"]["create_idempotency_key"] == {"type": "varbinary(512)", "nullable": True}
+    assert contract["columns"]["create_request_digest"] == {"type": "varchar(64)", "nullable": True}
+    assert ("owner_subject", "create_idempotency_key") in contract["unique"]
+    assert contract["checks"]["ck_tw_task_create_receipt"] in checks
+    assert not {"create_idempotency_key", "create_request_digest"} & set(_schema("WorkTaskDTO").model_fields)
 
 
 
