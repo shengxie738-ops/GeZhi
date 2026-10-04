@@ -18,6 +18,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Zhi+Mang+Xing&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600&family=Noto+Serif+SC:wght@300;400;500;600&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet" href="./styles/teaching-workbench.css">
     <!-- Vue 3 ESM (Local Lib) -->
     <script type="importmap">
     {
@@ -2576,7 +2577,18 @@
         </transition>
 
         <!-- ==================== 主系统模块 ==================== -->
-        <div v-if="isLoggedIn && authVerified" class="h-full w-full flex relative home-bg-container">
+        <teaching-workbench-shell v-if="isLoggedIn && authVerified && isTeachingView"
+            :context="teachingContext" :presentation-role="currentRole" :access-mode="teachingContext.mode"
+            :section="teachingSection" :courses="teachingCourses" :offerings="teachingOfferings"
+            :offering="teachingOffering" :enrollment="teachingEnrollment"
+            :selected-course-id="teachingSelectedCourseId" :availability="teachingAvailability"
+            :tools="teachingTools" :location-unavailable="teachingLocationUnavailable"
+            @navigate="teachingNavigate" @refresh="teachingRefresh"
+            @select-course="teachingSelectCourse" @select-offering="teachingSelectOffering"
+            @select-mode="teachingSelectMode" @load-more="teachingLoadMore" @retry="teachingRetry"
+            @open-tool="teachingOpenTool" @logout="handleLogout">
+        </teaching-workbench-shell>
+        <div v-else-if="isLoggedIn && authVerified" class="h-full w-full flex relative home-bg-container">
             <!-- Galaxy粒子背景 -->
             <canvas id="galaxyCanvas" class="absolute inset-0 z-0 pointer-events-none"></canvas>
             <!-- 极简侧边导航栏 -->
@@ -2750,17 +2762,7 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-4">
-                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm transition-colors backdrop-blur-md"
-                            :class="currentRole === 'teacher' ? 'bg-[#1c2b38]/5 border-[#1c2b38]/10 text-[#1c2b38]' : 'bg-[#b91c1c]/5 border-[#b91c1c]/10 text-[#b91c1c]'">
-                            <span class="relative flex h-2 w-2">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                                    :class="currentRole === 'teacher' ? 'bg-[#1c2b38]' : 'bg-[#b91c1c]'"></span>
-                                <span class="relative inline-flex rounded-full h-2 w-2"
-                                    :class="currentRole === 'teacher' ? 'bg-[#1c2b38]' : 'bg-[#b91c1c]'"></span>
-                            </span>
-                            <span class="text-xs font-medium">{{ currentRole === 'teacher' ? '集群监控激活' : '格至 AI 在线'
-                                }}</span>
-                        </div>
+                        <span class="text-xs text-slate-500">原有功能 · 登录身份已验证</span>
                     </div>
                 </header>
 

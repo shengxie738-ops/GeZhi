@@ -92,7 +92,7 @@ test('invalid IDs, option keys, membership, cursors and noncanonical limits fail
 });
 test('sanitized transport refuses foreign and unregistered routes or options before fetch',async t=>{
   setup(t);
-  for(const path of ['https://other.invalid/teaching/courses','/api/teaching/courses','/teaching/../auth/me','/teaching/assignments/a/draft','/teaching/courses?membership=all&membership=all','/teaching/capabilities?key=secret-query','/teaching/courses/x%2fy','/teaching/receipts/receipt-A?key=secret-query']) await assert.rejects(request(path,{teachingTransport:true}),e=>safeError(e,'validation_error',0));
+  for(const path of ['https://other.invalid/teaching/courses','/api/teaching/courses','/teaching/../auth/me','/teaching/assignments/a/private-draft','/teaching/courses?membership=all&membership=all','/teaching/capabilities?key=secret-query','/teaching/courses/x%2fy','/teaching/receipts/receipt-A?key=secret-query']) await assert.rejects(request(path,{teachingTransport:true}),e=>safeError(e,'validation_error',0));
   for(const options of [{method:'POST'},{headers:{Authorization:'override'}},{headers:{Accept:'application/octet-stream'}},{body:'private-body-marker'},{isStream:true},{credentials:'include'}]) await assert.rejects(request('/teaching/capabilities',{teachingTransport:true,...options}),e=>safeError(e,'validation_error',0));
 });
 test('only six B1 recovery actions and exact scope and key fields are accepted',async t=>{

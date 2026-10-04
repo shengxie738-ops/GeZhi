@@ -1,4 +1,4 @@
-// Public B1 HTTP reasons, pinned to the accepted teaching reader/recovery
+// Public B1/B2 HTTP reasons, pinned to the accepted teaching reader/recovery
 // services. Unknown text is never treated as a reason merely by its spelling.
 const HTTP_REASONS = new Set([
     'feature_disabled', 'institution_required', 'policy_snapshot_unavailable',
@@ -14,6 +14,8 @@ const HTTP_REASONS = new Set([
     'preview_expired', 'preview_incompatible', 'roster_capacity_exceeded',
     'withdrawal_confirmation_mismatch', 'unclean_write_transaction', 'transaction_changed',
     'lock_footprint_changed', 'service_commit_forbidden', 'invalid_mutation_result',
+    'assessment_disabled', 'assessment_schema_missing', 'assessment_schema_incompatible',
+    'invalid_assessment_state', 'private_conflict', 'invalid_cursor',
     'invalid_response', 'network_error', 'request_aborted'
 ]);
 const SUMMARY_REASONS = new Set([

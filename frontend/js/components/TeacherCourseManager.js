@@ -152,10 +152,10 @@ export default {
                 </button>
                 <div>
                     <h2 class="text-2xl font-bold text-slate-800" style="font-family:'Noto Serif SC',serif;">
-                        {{ selectedCourse ? selectedCourse.name : '课程库管理' }}
+                        {{ selectedCourse ? selectedCourse.name : '公共资料目录' }}
                     </h2>
                     <p class="text-sm text-slate-500 mt-1">
-                        {{ selectedCourse ? selectedCourse.desc : '管理公共课程库资源，支持课件上传、删除与课程信息维护' }}
+                        {{ selectedCourse ? selectedCourse.desc : '原有公共资料目录，不代表课程访问或选课关系；资料持久化编辑尚未提供' }}
                     </p>
                 </div>
             </div>
@@ -205,7 +205,7 @@ export default {
             <div v-if="editMode"
                 class="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm">
                 <i class="ph ph-pencil-simple text-amber-500 text-lg"></i>
-                <span><strong>编辑模式已开启</strong>：您现在可以修改课程信息、增删课件。关闭开关退出编辑。</span>
+                <span><strong>编辑模式已开启</strong>：仅可检查编辑表单；资料持久化服务尚未提供，修改不会保存。关闭开关退出编辑。</span>
             </div>
         </transition>
 

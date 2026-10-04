@@ -27,7 +27,7 @@ function formatExamAlertDate(isoStr) {
 
 // ─── Hook 主体 ──────────────────────────────────────────────
 
-export function useDashboard(currentUser) {
+export function useDashboard(currentUser, { enabled = () => true } = {}) {
     // ---------- 响应式状态 ----------
     const dashboardLoading = ref(false);
     const dashboardError = ref(null);
@@ -69,6 +69,15 @@ export function useDashboard(currentUser) {
 
     /** 当前登录用户名 */
     const _username = computed(() => currentUser?.value?.username || '');
+    const readEnabled = () => enabled() === true;
+    let readGeneration = 0;
+    const clearDashboard = () => {
+        readGeneration++;
+        dashboardLoading.value = false;
+        dashboardError.value = null;
+        for (const resource of [homeworkList, deadlines, examAlerts, errorNotebook, errorPoints, interventions, nudges, notifications, interactions]) resource.value = [];
+        mistakeSummary.value = { total: 0, unresolved: 0, repeated: 0, aiAnalyzed: 0 };
+    };
 
     // ---------- 核心加载函数 ----------
 
@@ -77,13 +86,16 @@ export function useDashboard(currentUser) {
      */
     const refreshDashboard = async () => {
         const username = _username.value;
-        if (!username) return;
+        if (!username || !readEnabled()) return;
+        const generation = ++readGeneration;
+        const current = () => generation === readGeneration && readEnabled() && _username.value === username;
 
         dashboardLoading.value = true;
         dashboardError.value = null;
 
         try {
             const data = await apiRequest(`/dashboard/student/${encodeURIComponent(username)}`);
+            if (!current()) return;
 
             // ── 作业数据 ──
             if (Array.isArray(data.homeworkList)) {
@@ -126,21 +138,25 @@ export function useDashboard(currentUser) {
             }
 
         } catch (err) {
+            if (!current()) return;
             console.error('[useDashboard] 仪表盘数据加载失败:', err);
             dashboardError.value = err?.message || '数据加载失败，请稍后重试';
         } finally {
-            dashboardLoading.value = false;
+            if (current()) dashboardLoading.value = false;
         }
 
+        if (!current()) return;
         // ── 教师下发的 interaction 任务（独立端点，后台加载，不阻塞 loading） ──
         try {
             const interactionData = await analyticsApi.getStudentInteractions(username);
+            if (!current()) return;
             if (Array.isArray(interactionData?.interactions)) {
                 interactions.value = interactionData.interactions;
             } else if (Array.isArray(interactionData)) {
                 interactions.value = interactionData;
             }
         } catch (err) {
+            if (!current()) return;
             console.warn('[useDashboard] interaction 任务加载失败（非致命）:', err);
         }
     };
@@ -286,13 +302,14 @@ export function useDashboard(currentUser) {
 
     // 当用户登录状态变化（username 从空变为有值）时，自动触发加载
     watch(
-        () => _username.value,
-        (newUsername, oldUsername) => {
-            if (newUsername && newUsername !== oldUsername) {
-                refreshDashboard();
+        () => [_username.value, readEnabled()],
+        ([newUsername, available], previous) => {
+            clearDashboard();
+            if (newUsername && available && (!previous || newUsername !== previous[0] || available !== previous[1])) {
+                void refreshDashboard();
             }
         },
-        { immediate: false }
+        { immediate: false, flush: 'sync' }
     );
 
     // ---------- 事件总线监听 ----------
@@ -339,6 +356,7 @@ export function useDashboard(currentUser) {
     // 组件卸载时移除事件监听器，防止内存泄漏和重复执行
     if (getCurrentInstance()) {
         onBeforeUnmount(() => {
+            clearDashboard();
             if (typeof window !== 'undefined') {
                 window.removeEventListener('homework-submitted', _onHomeworkSubmitted);
                 window.removeEventListener('interaction-completed', _onInteractionCompleted);

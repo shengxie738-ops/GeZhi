@@ -72,19 +72,22 @@ export function formatTeachingLocation(locator) {
 
 // navigateView is the existing outer guard. Its transition options keep the
 // exam flush first, including object changes within the same section.
-export function createTeachingNavigation({navigateView,getContext,checkLeave,getHash,replaceHash}={}) {
-    let latestIntent=0,disposed=false,confirmed=null;
+export function createTeachingNavigation({navigateView,getContext,checkLeave,getHash,replaceHash,initialLegacyView,initialLegacyHash=''}={}) {
+    let latestIntent=0,disposed=false;
+    const legacyView=view=>typeof view==='string' && /^[a-z][a-z0-9_-]*$/.test(view) && !isTeachingView(view);
+    // Seed only the already mounted legacy address, never a teaching authority claim.
+    let confirmed=legacyView(initialLegacyView) ? Object.freeze({hash:typeof initialLegacyHash==='string'&&!initialLegacyHash.startsWith('#teaching/')?initialLegacyHash:'',locator:null,view:initialLegacyView}) : null;
     const history=[];
     const verified=context=>context?.authVerified===true && typeof context.actorId==='string' && context.actorId.length>0
         && ['student','teacher'].includes(context.currentRole);
     const authorityIdentity=context=>JSON.stringify([context?.authVerified,context?.actorId,context?.authEpoch,context?.contextEpoch,context?.currentRole]);
     const restore=()=>{if (confirmed && typeof replaceHash==='function') replaceHash(confirmed.hash);};
-    const transition=async(input,back=false)=>{
+    const transition=async(input,back=false,legacy=false)=>{
         const intent=++latestIntent;
-        const hash=typeof input==='string'?input:formatTeachingLocation(input);
-        const locator=parseTeachingLocation(hash);
+        const hash=legacy?'':typeof input==='string'?input:formatTeachingLocation(input);
+        const locator=legacy?null:parseTeachingLocation(hash);
         const context=getContext?.();
-        if (disposed || !locator || !verified(context) || typeof navigateView!=='function') {if (!disposed) restore();return false;}
+        if (disposed || (legacy?!legacyView(input):!locator) || !verified(context) || typeof navigateView!=='function') {if (!disposed) restore();return false;}
         const identity=authorityIdentity(context);
         let guardOwnsIntent=()=>true;
         const ownsIntent=()=>!disposed && intent===latestIntent && guardOwnsIntent();
@@ -97,18 +100,21 @@ export function createTeachingNavigation({navigateView,getContext,checkLeave,get
             return allowed===true && current();
         };
         let accepted=false;
-        try {accepted=await navigateView(sectionViews[context.currentRole][locator.section],{force:true,checkLeave:leave,isCurrent:current,onIntent:owns=>{guardOwnsIntent=owns;}});}
+        try {accepted=await navigateView(legacy?input:sectionViews[context.currentRole][locator.section],{force:!legacy,checkLeave:leave,isCurrent:current,onIntent:owns=>{guardOwnsIntent=owns;}});}
         catch { /* an unavailable transition cannot confirm a locator */ }
         if (!ownsIntent()) return false;
         if (!current() || accepted!==true) {restore();return false;}
-        confirmed=Object.freeze({hash,locator:Object.freeze({...locator})});
-        if (back) history.pop();else if (history.at(-1)?.hash!==hash) history.push(confirmed);
+        confirmed=Object.freeze(legacy?{hash,locator:null,view:input}:{hash,locator:Object.freeze({...locator})});
+        if (legacy) history.length=0;
+        else if (back) history.pop();else if (history.at(-1)?.hash!==hash) history.push(confirmed);
         if (typeof replaceHash==='function' && (!getHash || getHash()!==hash)) replaceHash(hash);
         return true;
     };
     return {
         openSection:section=>transition({section}),
         openObject:locator=>transition(locator),
+        openLegacy:view=>transition(view,false,true),
+        restoreLocation:()=>{if(!disposed)restore();},
         back:()=>history.length>1?transition(history.at(-2).locator,true):Promise.resolve(false),
         getLocation:()=>confirmed,
         dispose:()=>{disposed=true;++latestIntent;}
