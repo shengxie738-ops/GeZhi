@@ -267,3 +267,16 @@ test('stale own enrollment denial cannot clear a newer authorized offering',asyn
     assert.equal(hook.offering.data.id,'B');assert.equal(hook.enrollment.data.offering_id,'B');assert.equal(hook.contextEpoch.value,epoch);
     assert.deepEqual(hook.modes.value,['learning']);assert.equal(hook.offering.error,null);assert.equal(hook.enrollment.error,null);
 });
+
+
+test('explicit own enrollment refresh after dual-mode change reauthorizes without stale reuse',async t=>{
+ let revision=0;const {hook,calls}=setup(t,{api:{getOffering:async id=>offering(id,{access:access({teaching:true,learning:true,role_scope:'offering'})}),getEnrollment:async id=>({...enrollment(id),revision:++revision})}});
+ await hook.refresh();await hook.selectOffering('A');assert.equal(typeof hook.refreshOwnEnrollment,'function');hook.setMode('learning');assert.equal(hook.enrollment.data,null);assert.equal(await hook.refreshOwnEnrollment(),true);assert.equal(hook.enrollment.data.revision,2);assert.equal(calls.filter(call=>call.name==='getEnrollment').length,2);
+});
+test('explicit own enrollment refresh cannot read assistant enrollment or install late mode replies',async t=>{
+ const assistant=setup(t,{api:{getOffering:async id=>offering(id,{access:access({teaching:true,learning:false,role_scope:'assigned'}),enrollment:null})}});await assistant.hook.refresh();await assistant.hook.selectOffering('A');assert.equal(typeof assistant.hook.refreshOwnEnrollment,'function');assert.equal(await assistant.hook.refreshOwnEnrollment(),false);assert.equal(assistant.calls.some(call=>call.name==='getEnrollment'),false);
+ let waiting=null;const {hook,calls}=setup(t,{api:{getOffering:async id=>offering(id,{access:access({teaching:true,learning:true,role_scope:'offering'})}),getEnrollment:id=>waiting?waiting.promise:Promise.resolve(enrollment(id))}});await hook.refresh();await hook.selectOffering('A');hook.setMode('learning');waiting=deferred();const read=hook.refreshOwnEnrollment(),signal=calls.at(-1).args[1].signal;hook.setMode('teaching');assert.equal(signal.aborted,true);waiting.resolve(enrollment());assert.equal(await read,false);assert.equal(hook.enrollment.data,null);assert.equal(hook.mode.value,'teaching');
+});
+test('explicit own refresh authoritative denial retains full selected-context invalidation',async t=>{
+ for(const [status,reason] of [[403,'permission_denied'],[404,'not_found']]){let denied=false;const {hook}=setup(t,{api:{getOffering:async id=>offering(id,{access:access({teaching:true,learning:true,role_scope:'offering'})}),getEnrollment:async id=>{if(denied)throw failure(reason,status);return enrollment(id);}}});await hook.refresh();await hook.selectOffering('A');assert.equal(typeof hook.refreshOwnEnrollment,'function');hook.setMode('learning');denied=true;assert.equal(await hook.refreshOwnEnrollment(),false);assert.equal(hook.offering.data,null);assert.equal(hook.enrollment.data,null);assert.equal(hook.selectedOfferingId.value,null);assert.equal(hook.context.value.b1.readReady,false);assert.deepEqual(hook.enrollment.error,{reason,status});}
+});

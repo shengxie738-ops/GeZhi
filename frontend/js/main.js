@@ -30,6 +30,9 @@ import { getDashboardGreeting, getUserDisplayName } from './utils/dashboardGreet
 // 导入自定义 Hooks
 import { useToast } from './hooks/useToast.js';
 import { useAuth } from './hooks/useAuth.js';
+import { useTeachingWorkbench } from './hooks/useTeachingWorkbench.js';
+import { getTeachingAvailability } from './utils/teachingStatus.js';
+import TeachingWorkbenchShell from './components/teaching/TeachingWorkbenchShell.js';
 import { useChat } from './hooks/useChat.js';
 import { useCourses } from './hooks/useCourses.js';
 import { useMonitor } from './hooks/useMonitor.js';
@@ -67,6 +70,7 @@ const app = createApp({
         TeacherProjectManager,
         TeacherAiLessonPrep,
         ForeignLangPage,
+        TeachingWorkbenchShell,
     },
     setup() {
         // 1. 全局提示 Hook
@@ -107,7 +111,11 @@ const app = createApp({
             setView: (view) => { auth.currentView.value = view; },
             notify: showToast
         });
-        const guardedView = computed({ get: () => auth.currentView.value, set: navigateView });
+        const teachingWorkbench = useTeachingWorkbench(auth, navigateView);
+        const isTeachingView = teachingWorkbench.isTeachingView;
+        const teachingAvailability = computed(() => getTeachingAvailability(teachingWorkbench.capabilities.data, null));
+        const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
+        const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
 
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)
@@ -217,7 +225,9 @@ const app = createApp({
         const lineOption = ref(getLineOptionTemplate());
 
         // ── 仪表盘 Hook（真实数据驱动）──
-        const dashboardState = useDashboard(auth.currentUser);
+        const dashboardState = useDashboard(auth.currentUser, {
+            enabled: () => auth.authVerified.value === true && auth.currentRole.value === 'student' && !isTeachingView.value && !teachingWorkbench.teachingEntryPending.value
+        });
         const {
             homeworkList, deadlines, examAlerts, errorPoints, errorNotebook,
             pendingHomeworkCount, submittedHomeworkCount,
@@ -253,7 +263,7 @@ const app = createApp({
 
         const handleSwitchView = (e) => {
             if (e.detail) {
-                navigateView(e.detail);
+                teachingWorkbench.navigateToView(e.detail);
             }
         };
 
@@ -366,7 +376,7 @@ const app = createApp({
                     importBtn.onclick = (e) => {
                         e.stopPropagation();
                         const code = pre.querySelector('code')?.innerText || pre.innerText;
-                        navigateView('coding');
+                        teachingWorkbench.navigateToView('coding');
                         setTimeout(() => {
                             window.dispatchEvent(new CustomEvent('import-code', { detail: code }));
                         }, 150);
@@ -440,7 +450,7 @@ const app = createApp({
 
                                 if (type === 'tree') {
                                     // 自动将右侧视图切换到课程路径图 (courses/pathway)，实现可视化画布聚焦
-                                    navigateView('courses');
+                                    teachingWorkbench.navigateToView('courses');
                                     setTimeout(() => {
                                         const newOption = {
                                             tooltip: { trigger: 'item', triggerOn: 'mousemove' },
@@ -599,6 +609,25 @@ const app = createApp({
             authVerified: auth.authVerified,
             authError: auth.authError,
             verifySession: auth.verifySession,
+            isTeachingView,
+            teachingContext: teachingWorkbench.context,
+            teachingSection: teachingWorkbench.section,
+            teachingCourses: teachingWorkbench.courses,
+            teachingOfferings: teachingWorkbench.offerings,
+            teachingOffering: teachingWorkbench.offering,
+            teachingEnrollment: teachingWorkbench.enrollment,
+            teachingSelectedCourseId: teachingWorkbench.selectedCourseId,
+            teachingLocationUnavailable: teachingWorkbench.locationUnavailable,
+            teachingAvailability,
+            teachingTools,
+            teachingNavigate: teachingWorkbench.openSection,
+            teachingSelectCourse: teachingWorkbench.selectCourse,
+            teachingSelectOffering: teachingWorkbench.selectOffering,
+            teachingSelectMode: teachingWorkbench.selectMode,
+            teachingRefresh: teachingWorkbench.refresh,
+            teachingLoadMore: teachingWorkbench.loadMore,
+            teachingRetry: teachingWorkbench.retry,
+            teachingOpenTool: teachingWorkbench.navigateToView,
             // Toast
             toast,
             showToast,

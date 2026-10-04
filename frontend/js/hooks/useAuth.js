@@ -11,7 +11,7 @@ const studentMenus = [
     { id: 'mistakes', name: '错题本', icon: 'ph-warning-diamond', title: '错题本', desc: '汇总测试错题与 AI 错因分析' },
     { id: 'exam', name: '考试', icon: 'ph-exam', title: '考试中心', desc: '查看待考科目、进入客观题与编程考试' },
     { id: 'homework', name: '作业', icon: 'ph-article', title: '作业提交与诊断区', desc: '日常作业、阶段任务与大作业项目递交与智能诊断' },
-    { id: 'courses', name: '课程库', icon: 'ph-books', title: '公共课程库', desc: '浏览数据结构、计算机程序设计等公开课件' },
+    { id: 'courses', name: '公共资料', icon: 'ph-books', title: '公共课程库', desc: '浏览数据结构、计算机程序设计等公开课件' },
     { id: 'agents', name: '智能体', icon: 'ph-robot', title: 'Agent 编排工坊', desc: '自定义与管理您的 AI 角色群' },
     { id: 'coding', name: '编程实战', icon: 'ph-code', title: '在线编程实战', desc: '在 Web 编辑器中手写算法并运行评测' },
     { id: 'academic-space', name: '学术空间', icon: 'ph-git-pull-request', title: '学术空间', desc: '整合个人代码仓库、拉取请求与论坛协作' }
@@ -25,7 +25,7 @@ const teacherMenus = [
     { id: 't_exams', name: '考试管理', icon: 'ph-exam', title: '考试管理中心', desc: '创建考试、下达编程题并监控提交状态' },
     { id: 't_homework', name: '作业管理', icon: 'ph-article', title: '作业管理中心', desc: '管理班级作业提交、查看智能诊断与协同评阅' },
     { id: 't_projects', name: '项目管理', icon: 'ph-projector-screen', title: '项目实训管理', desc: '管理大作业递交与编程团队实训' },
-    { id: 't_courses', name: '课程库', icon: 'ph-books', title: '课程库管理', desc: '管理公共课程库的课件资源，支持上传、删除与重命名' },
+    { id: 't_courses', name: '公共资料', icon: 'ph-books', title: '公共资料目录', desc: '浏览原有公共资源，目录不代表课程访问或选课关系' },
     { id: 't_lesson_prep', name: 'AI备课', icon: 'ph-notebook', title: 'AI备课中心', desc: '课件检索 · 教案生成 · 草稿编辑' },
     { id: 'agents', name: 'AI 工坊', icon: 'ph-robot', title: 'Agent 编排与预设', desc: '配置班级级公共智能体参数与 Prompt' }
 ];
@@ -48,11 +48,17 @@ export function useAuth(showToast, onLoginSuccess) {
     const normalizeStoredView = (role, view) => {
         if (role === 'student' && ['repository', 'forum'].includes(view)) return 'academic-space';
         if (role === 'teacher' && ['t_repository', 't_forum'].includes(view)) return 't_space';
-        return view || (role === 'student' ? 'dashboard' : 't_dashboard');
+        if (getTeachingMenuInfo(view)) return view;
+        const legacyMenus = role === 'student' ? studentMenus : teacherMenus;
+        if (legacyMenus.some(menu => menu.id === view) || role === 'student' && view === 'foreign-lang') return view;
+        return role === 'student' ? 'teaching-home' : 't_teaching-home';
     };
     const currentView = ref(normalizeStoredView(currentRole.value, localStorage.getItem('currentView')));
 
-    const activeMenus = computed(() => currentRole.value === 'student' ? studentMenus : teacherMenus);
+    const activeMenus = computed(() => [
+        getTeachingMenuInfo(currentRole.value === 'student' ? 'teaching-home' : 't_teaching-home'),
+        ...(currentRole.value === 'student' ? studentMenus : teacherMenus)
+    ]);
     // 外语学习工作台没有侧栏菜单项，入口在工作台模式分流页；挂载期间顶部信息回落到"工作台"菜单
     const VIEW_MENU_ALIASES = { 'foreign-lang': 'workspace' };
     const currentMenuInfo = computed(() => {
@@ -61,7 +67,7 @@ export function useAuth(showToast, onLoginSuccess) {
         const target = VIEW_MENU_ALIASES[currentView.value] || currentView.value;
         const menu = activeMenus.value.find(m => m.id === target);
         if (!menu) {
-            currentView.value = currentRole.value === 'student' ? 'dashboard' : 't_dashboard';
+            currentView.value = currentRole.value === 'student' ? 'teaching-home' : 't_teaching-home';
             return activeMenus.value[0];
         }
         return menu;
