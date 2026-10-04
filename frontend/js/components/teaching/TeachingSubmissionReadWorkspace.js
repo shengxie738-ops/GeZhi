@@ -21,8 +21,12 @@ export default {
         };
         const editSelector=value=>{selector.value=value;props.workspace.clearStudentSelection();};
         const readStudent=()=>{if(access.value.canReadTeacherSubmissions&&release.value)return props.workspace.loadTeacherHistory(selector.value);};
-        watch(()=>[access.value.mode,access.value.canReadTeacherSubmissions,props.assignments.selection.releaseId,denied.value],()=>selector.value='',{flush:'sync'});
-        return{access,selector,release,subject,selectedId,denied,choose,readStudent,editSelector,detailRef};
+        const readHeads=()=>{selector.value='';return props.workspace.loadTeacherHeads();};
+        // Keep the typed draft separate from installed query state. A resource
+        // reset can invalidate denied while its boolean remains false in Vue 3.3.
+        // Compare primitive sources, and clear the draft only on scope changes.
+        watch([()=>unref(props.workspace.authorityIdentity),()=>access.value.mode,()=>access.value.canReadTeacherSubmissions,()=>props.assignments.selection.releaseId,()=>denied.value],()=>selector.value='',{flush:'sync'});
+        return{access,selector,release,subject,selectedId,denied,choose,readStudent,readHeads,editSelector,detailRef};
     },
     template:`<div class="tw-read-workspace" aria-label="提交记录只读工作区">
         <TeachingResourceState v-if="!access.ready" state="unavailable" :reason="access.reason" />
@@ -41,7 +45,7 @@ export default {
                             <section v-if="access.canReadOwnSubmissions" class="tw-panel tw-head-facts" aria-label="我的当前提交头"><h2>我的当前提交头</h2><template v-if="workspace.head.status === 'ready'"><p>当前头 {{ workspace.head.data.submission_id }} · 修订 {{ workspace.head.data.revision }}</p><p class="tw-meta">头读取时点 {{ workspace.head.data.as_of }}</p><button type="button" class="tw-button" @click="choose('selectSubmission',workspace.head.data.submission_id)">查看当前头</button></template><template v-else-if="workspace.head.status === 'empty'"><p>尚无已接收提交</p><p class="tw-meta">头读取时点 {{ workspace.head.data.as_of }}</p></template><TeachingResourceState v-else :state="workspace.head.status" :reason="workspace.head.error?.reason" @retry="workspace.loadOwnHead()" /></section>
                             <SubmissionHistoryPanel v-if="access.canReadOwnSubmissions" kind="ownHistory" :resource="workspace.ownHistory" :selected-id="selectedId" :timezone="release.timezone" @select="choose('selectSubmission',$event)" @load-more="workspace.loadMore('ownHistory')" @retry="workspace.loadOwnHistory()" />
                             <template v-if="access.canReadTeacherSubmissions">
-                                <form class="tw-panel tw-subject-selector" @submit.prevent="readStudent"><label><span>精确学生标识</span><input :value="selector" @input="editSelector($event.target.value)" aria-describedby="tw-subject-limit" autocomplete="off" spellcheck="false" /></label><p id="tw-subject-limit" class="tw-meta">原样输入 1–255 个 Unicode 字符，不自动修剪或查询名单；空结果不说明该学生是否存在</p><button type="submit" class="tw-button" @click.prevent="readStudent">读取该学生历史</button><button type="button" class="tw-button" @click="workspace.loadTeacherHeads()">读取当前可见已提交记录</button></form>
+                                <form class="tw-panel tw-subject-selector" @submit.prevent="readStudent"><label><span>精确学生标识</span><input :value="selector" @input="editSelector($event.target.value)" aria-describedby="tw-subject-limit" autocomplete="off" spellcheck="false" /></label><p id="tw-subject-limit" class="tw-meta">原样输入 1–255 个 Unicode 字符，不自动修剪或查询名单；空结果不说明该学生是否存在</p><button type="submit" class="tw-button" @click.prevent="readStudent">读取该学生历史</button><button type="button" class="tw-button" @click="readHeads">读取当前可见已提交记录</button></form>
                                 <p v-if="subject !== null" class="tw-meta">本次精确筛选 {{ subject }}</p>
                                 <SubmissionHistoryPanel kind="teacherHeads" :resource="workspace.teacherHeads" :timezone="release.timezone" @select-student="workspace.loadTeacherHistory($event)" @load-more="workspace.loadMore('teacherHeads')" @retry="workspace.loadTeacherHeads()" />
                                 <SubmissionHistoryPanel v-if="subject !== null" kind="teacherHistory" :resource="workspace.teacherHistory" :selected-id="selectedId" :timezone="release.timezone" @select="choose('selectSubmission',$event)" @load-more="workspace.loadMore('teacherHistory')" @retry="workspace.loadTeacherHistory(subject)" />

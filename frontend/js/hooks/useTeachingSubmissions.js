@@ -144,8 +144,9 @@ export function useTeachingSubmissions({context,active,selection,api=teachingAss
         if(eligible('teacher'))return subject===null?loadTeacherHeads():loadTeacherHistory(subject);
         return false;
     };
-    const stop=watch(authority,clear,{flush:'sync'});
+    const authorityIdentity=computed(authority);
+    const stop=watch(authorityIdentity,clear,{flush:'sync'});
     if(getCurrentScope())onScopeDispose(()=>{disposed=true;stop();clear();});
     const releaseReady=computed(()=>!blocked.value&&Boolean(installed())&&unref(active)===true&&access.value.ready);
-    return{head:readonly(head),ownHistory:readonly(ownHistory),teacherHeads:readonly(teacherHeads),teacherHistory:readonly(teacherHistory),detail:readonly(detail),selectedSubmissionId:readonly(selectedSubmissionId),studentId:readonly(studentId),access:readonly(access),releaseReady:readonly(releaseReady),loadOwnHead,loadOwnHistory,loadTeacherHeads,loadTeacherHistory,clearStudentSelection,selectSubmission,loadMore,refresh,clear};
+    return{head:readonly(head),ownHistory:readonly(ownHistory),teacherHeads:readonly(teacherHeads),teacherHistory:readonly(teacherHistory),detail:readonly(detail),selectedSubmissionId:readonly(selectedSubmissionId),studentId:readonly(studentId),access:readonly(access),releaseReady:readonly(releaseReady),authorityIdentity:readonly(authorityIdentity),loadOwnHead,loadOwnHistory,loadTeacherHeads,loadTeacherHistory,clearStudentSelection,selectSubmission,loadMore,refresh,clear};
 }
