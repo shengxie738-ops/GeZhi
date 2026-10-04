@@ -7,6 +7,8 @@ import GraphChart from './components/GraphChart.js';
 import TreeChart from './components/TreeChart.js';
 import CodingSandbox from './components/CodingSandbox.js?v=20260715';
 import StudentExamCenter from './components/StudentExamCenter.js';
+import StudentDashboard from './components/StudentDashboard.js';
+import WorkPaperDetail from './components/WorkPaperDetail.js';
 import StudentMistakeBook from './components/StudentMistakeBook.js';
 import TeacherExamManager from './components/TeacherExamManager.js';
 import StudentHomework from './components/StudentHomework.js?v=20260717_0100';
@@ -39,7 +41,9 @@ import { useAgents } from './hooks/useAgents.js';
 import { useProfile } from './hooks/useProfile.js';
 import { useUserCenter } from './hooks/useUserCenter.js';
 import { useDashboard } from './hooks/useDashboard.js';
+import { useStudentNavigationPresentation } from './hooks/useStudentNavigationPresentation.js';
 import { usePlugins } from './hooks/usePlugins.js';
+import { useWorkPresentation } from './hooks/useWorkPresentation.js';
 import { useCustomModels } from './hooks/useCustomModels.js';
 import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
 import { resolvePaperHistoryState } from './utils/conversations.js';
@@ -55,6 +59,8 @@ const app = createApp({
         TreeChart,
         CodingSandbox,
         StudentExamCenter,
+        StudentDashboard,
+        WorkPaperDetail,
         StudentMistakeBook,
         TeacherExamManager,
         StudentHomework,
@@ -115,6 +121,9 @@ const app = createApp({
         const teachingAvailability = teachingWorkbench.availability;
         const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
         const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
+        const studentNavigation = useStudentNavigationPresentation(auth.currentRole, {
+            isVisible: () => auth.isLoggedIn.value && auth.authVerified.value && !isTeachingView.value && teachingWorkbench.legacyRenderAllowed.value
+        });
 
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)
@@ -161,6 +170,15 @@ const app = createApp({
         // 11. 插件市场与 Codex 输入框联动 Hook
         const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
         chat.setWorkspaceCancellationHandler(pluginsState.cancelPaperSearch);
+        const workPresentation = useWorkPresentation({
+            selectedPaper: pluginsState.selectedPaper,
+            isDetailVisible: () => Boolean(pluginsState.activeSearchPlugin.value) ||
+                (auth.currentView.value === 'workspace' && chat.agentMode.value === 'paper' && chat.paperActiveTab.value === 'results'),
+            openPaperDetail: pluginsState.openPaperDetail,
+            closePaperDetail: pluginsState.closePaperDetail,
+            insertPaperToChat: pluginsState.insertPaperToChat,
+            returnToChatDialog: chat.returnToChatDialog
+        });
 
         // 12. 工作台消息分流控制器 (论文检索与普通对话解耦)
         const workspaceSendMessage = createWorkspaceMessageSender({
@@ -645,6 +663,9 @@ const app = createApp({
             authLoading: auth.authLoading,
             currentRole: auth.currentRole,
             currentView: guardedView,
+            ...studentNavigation,
+            workTaskRailCollapsed: workPresentation.workTaskRailCollapsed,
+            toggleWorkTaskRail: workPresentation.toggleWorkTaskRail,
             examCenterRef,
             activeMenus: auth.activeMenus,
             currentMenuInfo: auth.currentMenuInfo,
@@ -942,14 +963,13 @@ const app = createApp({
             paperSearchError: pluginsState.paperSearchError,
             selectedPaper: pluginsState.selectedPaper,
             selectedPaperSourceKeys: pluginsState.selectedPaperSourceKeys,
-            openPaperDetail: pluginsState.openPaperDetail,
-            closePaperDetail: pluginsState.closePaperDetail,
+            openPaperDetail: workPresentation.openWorkPaperDetail,
+            closePaperDetail: workPresentation.closeWorkPaperDetail,
             copyPaperCitation: pluginsState.copyPaperCitation,
             copyBibtexCitation: pluginsState.copyBibtexCitation,
             downloadPaperCitation: pluginsState.downloadPaperCitation,
             insertPaperToChat: (paper) => {
-                pluginsState.insertPaperToChat(paper);
-                chat.returnToChatDialog();
+                workPresentation.insertWorkPaperToChat(paper);
             },
             toggleAddMenu: pluginsState.toggleAddMenu,
             insertPluginToInput: pluginsState.insertPluginToInput,

@@ -19,6 +19,8 @@
         href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Zhi+Mang+Xing&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@300;400;500;600&family=Noto+Serif+SC:wght@300;400;500;600&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="./styles/teaching-workbench.css">
+    <link rel="stylesheet" href="./styles/student-dashboard.css">
+    <link rel="stylesheet" href="./styles/workspace-light.css">
     <!-- Vue 3 ESM (Local Lib) -->
     <script type="importmap">
     {
@@ -2590,12 +2592,14 @@
             @select-mode="teachingSelectMode" @load-more="teachingLoadMore" @retry="teachingRetry"
             @open-tool="teachingOpenTool" @logout="handleLogout">
         </teaching-workbench-shell>
-        <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container">
+        <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
+            :class="{ 'student-legacy-shell': currentRole === 'student' }">
             <!-- Galaxy粒子背景 -->
             <canvas id="galaxyCanvas" class="absolute inset-0 z-0 pointer-events-none"></canvas>
             <!-- 极简侧边导航栏 -->
-            <nav class="w-[76px] flex flex-col items-center py-6 z-20 flex-shrink-0 text-slate-400 transition-all duration-500 relative"
-                :class="currentRole === 'teacher' ? 'ios-liquid-sidebar ios-liquid-sidebar-teacher' : 'ios-liquid-sidebar'">
+            <nav id="legacy-global-navigation" aria-label="主导航" class="student-global-nav w-[76px] flex flex-col items-center py-6 z-20 flex-shrink-0 text-slate-400 transition-all duration-500 relative"
+                :class="[currentRole === 'teacher' ? 'ios-liquid-sidebar ios-liquid-sidebar-teacher' : '', { 'student-nav-collapsed': currentRole === 'student' && studentNavCollapsed }]"
+                @keydown="dismissStudentNavLabel">
 
                 <!-- 侧栏液态流动背景 -->
                 <div class="sidebar-blob-container">
@@ -2605,7 +2609,18 @@
                 </div>
 
                 <!-- Logo -->
-                <div class="w-12 h-12 mb-6 cursor-pointer relative flex items-center justify-center shrink-0 hover:scale-110 transition-transform duration-300 relative z-20 group"
+                <div v-if="currentRole === 'student'" class="student-nav-brand" aria-label="格至 GeZhi">
+                    <span class="student-nav-seal" aria-hidden="true">格</span>
+                    <span class="student-nav-brand-name"><strong>格至</strong><small>GeZhi</small></span>
+                </div>
+                <button v-if="currentRole === 'student'" type="button" class="student-nav-collapse"
+                    :aria-expanded="!studentNavCollapsed" aria-controls="legacy-global-navigation"
+                    :aria-label="studentNavCollapsed ? '展开主导航' : '收起主导航'"
+                    @click="studentNavCollapsed = !studentNavCollapsed">
+                    <i class="ph" :class="studentNavCollapsed ? 'ph-sidebar-simple' : 'ph-sidebar'" aria-hidden="true"></i>
+                    <span>收起导航</span>
+                </button>
+                <div v-if="currentRole === 'teacher'" class="w-12 h-12 mb-6 cursor-pointer relative flex items-center justify-center shrink-0 hover:scale-110 transition-transform duration-300 relative z-20 group"
                     title="格至">
                     <!-- Interactive glowing aura behind the seal -->
                     <div class="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500 blur-md pointer-events-none"
@@ -2691,15 +2706,18 @@
                     </svg>
                 </div>
                 <!-- 导航菜单 -->
-                <div class="flex flex-col gap-3.5 w-full px-[6px] flex-1 overflow-y-auto no-scrollbar relative z-20">
-                    <button v-for="menu in activeMenus" :key="menu.id" @click="currentView = menu.id"
+                <div class="student-nav-items flex flex-col gap-3.5 w-full px-[6px] flex-1 overflow-y-auto no-scrollbar relative z-20" @scroll="updateStudentNavLabelPosition">
+                    <button v-for="menu in activeMenus" :key="menu.id" type="button" @click="currentView = menu.id"
+                        :aria-current="currentView === menu.id ? 'page' : undefined" :aria-label="menu.name"
+                        @focus="showStudentNavLabel($event, menu.name, 'focus')" @blur="hideStudentNavLabel($event, 'focus')"
+                        @mouseenter="showStudentNavLabel($event, menu.name, 'hover')" @mouseleave="hideStudentNavLabel($event, 'hover')"
                         class="w-full h-[58px] rounded-xl flex flex-col items-center justify-center ios-menu-btn group relative"
                         :class="currentView === menu.id 
-                            ? (currentRole === 'teacher' ? 'ios-menu-btn-active-teacher shadow-md' : 'ios-menu-btn-active-student shadow-md') 
+                            ? (currentRole === 'teacher' ? 'ios-menu-btn-active-teacher shadow-md' : 'student-nav-active')
                             : 'text-slate-700 hover:text-black'">
                         <i
                             :class="['ph', menu.icon, 'text-[24px] mb-0.5 group-hover:scale-110 transition-transform duration-300']"></i>
-                        <span class="text-[12px] font-bold leading-tight text-center tracking-wide">{{ menu.name
+                        <span class="student-nav-label text-[12px] font-bold leading-tight text-center tracking-wide">{{ menu.name
                             }}</span>
                         <!-- 活跃红点 -->
                         <span v-if="menu.id === 'workspace' && thinkingAgent && currentRole === 'student'"
@@ -2707,12 +2725,23 @@
                     </button>
                 </div>
 
+                <span v-if="currentRole === 'student' && studentNavCollapsed && studentNavHoverLabel" class="student-nav-tooltip"
+                    data-student-nav-tooltip :style="{ top: studentNavHoverLabel.top + 'px' }" aria-hidden="true"
+                    @mouseenter="keepStudentNavTooltip" @mouseleave="leaveStudentNavTooltip">{{ studentNavHoverLabel.label }}</span>
                 <!-- 底部：切换角色与退出 -->
-                <div class="mt-auto w-full flex flex-col items-center gap-4 px-3 relative z-20">
+                <div class="student-nav-footer mt-auto w-full flex flex-col items-center gap-4 px-3 relative z-20">
 
-                    <div class="relative group cursor-pointer w-full flex justify-center">
+                    <div class="student-nav-user-group relative group cursor-pointer w-full flex justify-center">
                         <!-- 头像展示：有头像则展示图片，无则展示首字母 -->
-                        <div class="w-10 h-10 rounded-full border border-white/20 flex items-center justify-center font-bold text-sm select-none shadow-md hover:scale-105 active:scale-95 transition-all overflow-hidden"
+                        <button v-if="currentRole === 'student'" type="button" class="student-nav-user-trigger" @click="openUserCenter" aria-label="打开个人中心">
+                            <span class="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 overflow-hidden">
+                                <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url" class="w-full h-full object-cover" alt="" />
+                                <span v-else>{{ currentUser?.username ? currentUser.username.charAt(0).toUpperCase() : 'U' }}</span>
+                            </span>
+                            <span class="student-nav-user-name">{{ currentUser?.username || '个人中心' }}</span>
+                            <i v-if="!studentNavCollapsed" class="ph ph-caret-right" aria-hidden="true"></i>
+                        </button>
+                        <div v-if="currentRole === 'teacher'" class="w-10 h-10 rounded-full border border-white/20 flex items-center justify-center font-bold text-sm select-none shadow-md hover:scale-105 active:scale-95 transition-all overflow-hidden"
                             :class="currentUser?.avatar_url ? '' : 'bg-gradient-to-br from-[#1c2b38] to-[#253645] text-white'">
                             <img v-if="currentUser?.avatar_url" :src="currentUser.avatar_url"
                                 class="w-full h-full object-cover" alt="头像" />
@@ -2720,7 +2749,7 @@
                                 }}</span>
                         </div>
                         <!-- 悬浮菜单：个人中心 + 退出 -->
-                        <div class="absolute left-full ml-3 bottom-0 w-36 rounded-2xl shadow-float border border-white/10 backdrop-blur-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 overflow-hidden"
+                        <div class="student-nav-user-menu absolute left-full ml-3 bottom-0 w-36 rounded-2xl shadow-float border border-white/10 backdrop-blur-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 overflow-hidden"
                             :class="currentRole === 'teacher' ? 'bg-[#1c2b38]/95 text-white' : 'bg-slate-900/90 text-white'">
                             <div class="px-3 py-2 border-b border-white/5 bg-white/5">
                                 <p class="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">{{
@@ -2741,13 +2770,13 @@
             </nav>
 
             <!-- 右侧工作区 -->
-            <div class="flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden transition-colors duration-500"
+            <div class="student-legacy-content flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden transition-colors duration-500"
                 :class="currentRole === 'teacher' ? 'bg-[#1c2b38]/10 backdrop-blur-sm' : 'bg-slate-900/10 backdrop-blur-sm'">
 
                 <!-- 顶栏 -->
                 <header
-                    class="h-16 bg-surface/80 backdrop-blur-xl border-b border-slate-200/60 flex items-center justify-between px-8 z-10 flex-shrink-0">
-                    <div class="flex items-center gap-3">
+                    class="student-legacy-header h-16 bg-surface/80 backdrop-blur-xl border-b border-slate-200/60 flex items-center justify-between px-8 z-10 flex-shrink-0">
+                    <div v-if="currentRole === 'teacher'" class="flex items-center gap-3">
                         <div class="p-1.5 rounded-lg text-white shadow-sm"
                             :class="currentRole === 'teacher' ? 'bg-primary' : 'bg-primary'">
                             <i :class="['ph', currentMenuInfo.icon, 'text-xl']"></i>
@@ -2763,8 +2792,9 @@
                                 style="font-family: 'Barlow Condensed', sans-serif;">{{ currentMenuInfo.desc }}</p>
                         </div>
                     </div>
+                    <div v-else class="student-header-breadcrumb">学生端<span>/</span>{{ currentMenuInfo.name }}</div>
                     <div class="flex items-center gap-4">
-                        <span class="text-xs text-slate-500">原有功能 · 登录身份已验证</span>
+                        <span class="text-xs text-slate-500">登录身份已验证</span>
                     </div>
                 </header>
 
@@ -2773,377 +2803,14 @@
 
                     <!-- ==================== 学生端视图 (保留原有) ==================== -->
                     <template v-if="currentRole === 'student'">
-                        <!-- 1. 仪表盘 (Dashboard) - Premium 2026 Redesign -->
+                        <!-- 1. 仪表盘：真实学习记录总览 -->
                         <transition name="fade">
-                            <div v-if="currentView === 'dashboard'"
-                                class="dashboard-light absolute inset-0 overflow-y-auto dark-scroll">
-                                <!-- Generative Art Canvas Background -->
-                                <canvas id="gen-art-canvas"></canvas>
-                                <!-- Noise texture overlay -->
-                                <div class="noise-overlay"></div>
-
-                                <!-- Dashboard Content -->
-                                <div
-                                    class="dashboard-content relative z-2 p-8 lg:p-12 flex flex-col gap-10 max-w-[1600px] mx-auto">
-
-                                    <!-- HERO: Oversized greeting + time -->
-                                    <section
-                                        class="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 pt-4 pb-2">
-                                        <div>
-                                            <p class="label-minor mb-3 tracking-[0.2em]">DASHBOARD</p>
-                                            <h1 class="display-heading display-heading-xl mb-3">
-                                                {{ dashboardDisplayName }}<span class="accent-glow">，</span>{{
-                                                dashboardGreeting }}
-                                            </h1>
-                                            <p class="text-slate-500 text-sm font-light max-w-[50ch] leading-relaxed">
-                                                今日有 <span class="text-[#b91c1c] font-semibold">{{ pendingHomeworkCount
-                                                    }}</span> 项作业待提交，
-                                                <span class="text-amber-600 font-semibold">{{ examAlerts.length
-                                                    }}</span> 场考试即将到来
-                                            </p>
-                                        </div>
-                                        <div class="flex items-center gap-4">
-                                            <div class="text-right">
-                                                <p
-                                                    class="text-slate-400 text-[10px] font-semibold tracking-[0.15em] uppercase">
-                                                    当前时间</p>
-                                                <p class="display-heading text-2xl font-light tabular-nums"
-                                                    style="font-family: 'Barlow Condensed', monospace;">{{ currentTime
-                                                    }}</p>
-                                            </div>
-                                            <div class="w-px h-10 bg-slate-300"></div>
-                                            <!-- 仪表盘数据刷新控件 -->
-                                            <div class="flex flex-col items-center gap-1 ml-2 mr-2 flex-shrink-0">
-                                                <button id="dashboard-refresh-btn" @click="refreshDashboard()"
-                                                    :disabled="dashboardLoading"
-                                                    :title="dashboardLoading ? '正在同步数据...' : '点击刷新仪表盘数据'"
-                                                    class="w-9 h-9 rounded-full flex items-center justify-center border transition-all duration-200 flex-shrink-0"
-                                                    :class="dashboardLoading
-                                                        ? 'border-slate-300 bg-slate-50 text-slate-300 cursor-not-allowed'
-                                                        : 'border-slate-300 bg-white text-slate-500 hover:border-[#1c2b38] hover:text-[#1c2b38] hover:shadow-md active:scale-95'">
-                                                    <i class="ph text-sm"
-                                                        :class="dashboardLoading ? 'ph-circle-notch animate-spin' : 'ph-arrows-clockwise'"></i>
-                                                </button>
-                                                <span class="text-[9px] text-slate-400 font-medium tracking-wide"
-                                                    :class="dashboardLoading ? 'text-blue-400 animate-pulse' : ''">
-                                                    {{ dashboardLoading ? '同步中' : '刷新' }}
-                                                </span>
-                                            </div>
-                                            <div class="w-px h-10 bg-slate-300"></div>
-                                            <div class="text-right">
-                                                <p
-                                                    class="text-slate-400 text-[10px] font-semibold tracking-[0.15em] uppercase">
-                                                    学习进度</p>
-                                                <p class="display-heading text-2xl accent-glow tabular-nums"
-                                                    style="font-family: 'Barlow Condensed', monospace;">{{ progress }}%
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <!-- 格至手机端入口 -->
-                                    <div @click="showMiniprogramQR = true"
-                                        class="miniprogram-entry glass-light cursor-pointer inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl group transition-all duration-300 hover:scale-[1.02] self-start">
-                                        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1c2b38] to-[#253645] flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300">
-                                            <i class="ph ph-device-mobile-camera text-white text-sm"></i>
-                                        </div>
-                                        <span class="text-slate-800 text-xs font-bold" style="font-family: 'Barlow', sans-serif;">格至手机端</span>
-                                        <i class="ph ph-qr-code text-slate-400 text-sm group-hover:text-[#b91c1c] transition-colors duration-300"></i>
-                                    </div>
-
-                                    <div class="glass-light rounded-2xl border border-slate-200/70 p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                        <div>
-                                            <p class="label-minor mb-1">PROGRAMMING DIAGNOSIS</p>
-                                            <h2 class="text-slate-800 text-lg font-bold">开始一次编程学习诊断</h2>
-                                            <p class="text-xs text-slate-500 mt-1">查看掌握度、实践应用度与今日动态学习路径</p>
-                                        </div>
-                                        <button class="min-h-[42px] px-5 rounded-xl bg-[#1c2b38] text-white text-xs font-bold hover:bg-[#253645]" @click="currentView = 'learning-diagnosis'">继续学习</button>
-                                    </div>
-
-                                    <!-- Progress track -->
-                                    <div class="progress-track my-5">
-                                        <div class="progress-fill" :style="'width: ' + progress + '%'"></div>
-                                    </div>
-
-                                    <!-- BENTO GRID: Asymmetric dashboard cards -->
-                                    <div class="bento-grid">
-
-                                        <!-- A: 今日待提交作业 (span 7 cols, 2 rows) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-7 row-span-2 p-6 flex flex-col"
-                                            style="grid-row: span 2;">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.04), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full min-h-0">
-                                                <div class="flex items-center justify-between mb-5 shrink-0">
-                                                    <div>
-                                                        <p class="label-minor mb-1">TODAY</p>
-                                                        <h2 class="text-slate-800 text-lg font-bold"
-                                                            style="font-family: 'Barlow', sans-serif;">今日待提交作业</h2>
-                                                    </div>
-                                                    <span class="text-[10px] text-slate-400 font-mono">{{
-                                                        submittedHomeworkCount }}/{{ homeworkList.length }} 已提交</span>
-                                                </div>
-                                                <div class="flex-1 overflow-y-auto dark-scroll flex flex-col gap-2.5 min-h-0">
-                                                    <div v-for="hw in homeworkList" :key="hw.id"
-                                                        class="flex items-center gap-4 p-3.5 rounded-xl border border-slate-200/60 hover:border-slate-300/80 transition-all duration-300 cursor-pointer group"
-                                                        :class="hw.submitted ? 'opacity-50' : ''"
-                                                        @click="currentView = 'homework'">
-                                                        <!-- Status indicator -->
-                                                        <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-300"
-                                                            :class="hw.submitted ? 'border-[#b91c1c] bg-[#b91c1c]/10' : 'border-slate-300 group-hover:border-[#b91c1c]/50'">
-                                                            <i v-if="hw.submitted"
-                                                                class="ph ph-check text-[#b91c1c] text-xs"></i>
-                                                        </div>
-                                                        <div class="flex-1 min-w-0">
-                                                            <p class="text-sm text-slate-700 font-medium truncate"
-                                                                :class="hw.submitted ? 'line-through text-slate-400' : ''">
-                                                                {{ hw.title }}</p>
-                                                            <p class="text-[11px] text-slate-400 mt-0.5">{{ hw.subject
-                                                                }}</p>
-                                                        </div>
-                                                        <div class="deadline-pill shrink-0"
-                                                            :class="hw.urgent ? 'text-amber-700 bg-amber-500/10 border-amber-500/20' : ''">
-                                                            {{ hw.deadline }}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- B: 各科目作业截止时间 (span 5 cols) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-5 p-6 flex flex-col">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.035), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full min-h-0">
-                                                <div class="shrink-0">
-                                                    <p class="label-minor mb-1">DEADLINES</p>
-                                                    <h2 class="text-slate-800 text-lg font-bold mb-4"
-                                                        style="font-family: 'Barlow', sans-serif;">各科目截止时间</h2>
-                                                </div>
-                                                <div class="flex-1 overflow-y-auto dark-scroll flex flex-col gap-3 min-h-0">
-                                                    <div v-for="dl in deadlines" :key="dl.subject"
-                                                        class="flex items-center justify-between py-2 border-b border-slate-200/60 last:border-0">
-                                                        <div class="flex items-center gap-3">
-                                                            <div class="w-2 h-2 rounded-full"
-                                                                :style="'background: ' + dl.color"></div>
-                                                            <span class="text-slate-700 text-sm font-medium">{{
-                                                                dl.subject }}</span>
-                                                        </div>
-                                                        <div class="flex items-center gap-3">
-                                                            <span class="text-slate-400 text-xs font-mono">{{ dl.date
-                                                                }}</span>
-                                                            <span class="deadline-pill text-[10px]"
-                                                                :class="dl.urgent ? 'text-amber-700 bg-amber-500/10 border-amber-500/20' : ''">{{
-                                                                dl.remaining }}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- C: 考试通知 (span 5 cols) -->
-                                        <div
-                                            class="glass-light exam-alert spotlight-card col-span-12 xl:col-span-5 p-6 flex flex-col">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(217, 119, 6, 0.05), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full min-h-0">
-                                                <div class="shrink-0">
-                                                    <p class="label-minor mb-1" style="color: rgba(217, 119, 6, 0.85);">
-                                                        EXAMS</p>
-                                                    <h2 class="text-slate-800 text-lg font-bold mb-4"
-                                                        style="font-family: 'Barlow', sans-serif;">考试通知</h2>
-                                                </div>
-                                                <div class="flex-1 overflow-y-auto dark-scroll flex flex-col gap-3 min-h-0">
-                                                    <div v-for="exam in examAlerts" :key="exam.id"
-                                                        class="p-3 rounded-xl bg-white/40 border border-slate-200/60 hover:border-amber-500/30 transition-all duration-300 cursor-pointer">
-                                                        <div class="flex items-center justify-between mb-1.5">
-                                                            <span class="text-slate-700 text-sm font-semibold">{{
-                                                                exam.name }}</span>
-                                                            <span
-                                                                class="text-amber-700 text-[10px] font-mono font-semibold">{{
-                                                                exam.date }}</span>
-                                                        </div>
-                                                        <p class="text-slate-400 text-[11px]">{{ exam.note }}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- D: 易错点追踪 (span 4 cols, 2 rows) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-4 row-span-2 p-6 flex flex-col"
-                                            style="grid-row: span 2;">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(185, 28, 28, 0.05), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full min-h-0">
-                                                <div class="shrink-0">
-                                                    <p class="label-minor mb-1" style="color: rgba(185, 28, 28, 0.85);">
-                                                        ERROR TRACKING</p>
-                                                    <h2 class="text-slate-800 text-lg font-bold mb-4"
-                                                        style="font-family: 'Barlow', sans-serif;">易错点追踪</h2>
-                                                </div>
-                                                <div class="flex-1 overflow-y-auto dark-scroll flex flex-col gap-2 min-h-0">
-                                                    <div v-for="err in errorPoints" :key="err.id"
-                                                        class="error-item p-3 rounded-lg cursor-pointer hover:translate-x-1 transition-all duration-300"
-                                                        @click="fillInput('帮我分析这个易错点：' + err.topic)">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <span class="text-slate-700 text-sm font-medium">{{
-                                                                err.topic }}</span>
-                                                            <span class="text-[10px] font-mono"
-                                                                :class="err.severity === 'high' ? 'text-red-600 font-semibold' : err.severity === 'medium' ? 'text-amber-600 font-semibold' : 'text-slate-400'">
-                                                                {{ err.count }}次
-                                                            </span>
-                                                        </div>
-                                                        <p class="text-slate-400 text-[11px]">{{ err.detail }}</p>
-                                                        <div class="mt-2 progress-track">
-                                                            <div class="h-full rounded-full"
-                                                                :class="err.severity === 'high' ? 'bg-red-500/80' : 'bg-amber-500/60'"
-                                                                :style="'width: ' + Math.min(err.count * 15, 100) + '%'">
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- E: 能力协同六维图像 (span 4 cols, 2 rows) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-4 row-span-2 p-6 flex flex-col"
-                                            style="grid-row: span 2;">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.04), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full min-h-0">
-                                                <div class="shrink-0">
-                                                    <p class="label-minor mb-1">CAPABILITY RADAR</p>
-                                                    <h2 class="text-slate-800 text-lg font-bold mb-2"
-                                                        style="font-family: 'Barlow', sans-serif;">能力协同六维图谱</h2>
-                                                </div>
-                                                <div class="radar-glow flex-1 min-h-0">
-                                                    <radar-chart :option="studentRadarOption"
-                                                        class="w-full h-full"></radar-chart>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- F: 错题本复盘 (span 4 cols, 2 rows) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-4 row-span-2 p-6 flex flex-col"
-                                            style="grid-row: span 2;">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.04), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10 flex flex-col h-full w-full min-h-0">
-                                                <div class="shrink-0">
-                                                    <p class="label-minor mb-1">ERROR REVIEW</p>
-                                                    <h2 class="text-slate-800 text-lg font-bold mb-4"
-                                                        style="font-family: 'Barlow', sans-serif;">错题本复盘</h2>
-                                                </div>
-                                                <div
-                                                    class="flex-1 overflow-y-auto dark-scroll flex flex-col gap-2.5 pr-1 min-h-0">
-                                                    <div v-for="note in errorNotebook" :key="note.id"
-                                                        class="p-3 rounded-xl bg-white/40 border border-slate-200/60 hover:border-[#b91c1c]/30 transition-all duration-300 cursor-pointer group"
-                                                        @click="fillInput('帮我复盘这道错题：' + note.question)">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <span class="text-slate-700 text-xs font-semibold">{{
-                                                                note.subject }}</span>
-                                                            <span class="text-slate-400 text-[10px] font-mono">{{
-                                                                note.date }}</span>
-                                                        </div>
-                                                        <p
-                                                            class="text-slate-500 text-sm group-hover:text-slate-700 transition-colors">
-                                                            {{ note.question }}</p>
-                                                        <div class="flex items-center gap-2 mt-2">
-                                                            <span class="text-[9px] px-2 py-0.5 rounded-full"
-                                                                :class="note.mastered ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-700 border border-amber-500/20'">
-                                                                {{ note.mastered ? '已掌握' : '待巩固' }}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- G: 直播课答疑预约 (span 5 cols) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-5 p-6">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.035), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10">
-                                                <p class="label-minor mb-1">LIVE Q&A BOOKING</p>
-                                                <h2 class="text-slate-800 text-lg font-bold mb-4"
-                                                    style="font-family: 'Barlow', sans-serif;">直播课答疑预约</h2>
-                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                                    <div v-for="slot in liveSlots" :key="slot.id" class="booking-slot"
-                                                        :class="slot.booked ? 'booked' : ''"
-                                                        @click="slot.booked = !slot.booked">
-                                                        <div class="flex items-center justify-between mb-1.5">
-                                                            <span class="text-slate-700 text-sm font-semibold">{{
-                                                                slot.teacher }}</span>
-                                                            <span class="pulse-dot"
-                                                                :class="slot.booked ? 'bg-[#1c2b38] text-[#1c2b38]' : 'bg-slate-300 text-slate-300'"></span>
-                                                        </div>
-                                                        <p class="text-slate-500 text-xs">{{ slot.subject }}</p>
-                                                        <div class="flex items-center justify-between mt-2">
-                                                            <span class="text-slate-400 text-[10px] font-mono">{{
-                                                                slot.time }}</span>
-                                                            <span class="text-[10px] font-semibold"
-                                                                :class="slot.booked ? 'text-[#1c2b38]' : 'text-[#b91c1c]'">
-                                                                {{ slot.booked ? '已预约' : '可预约' }}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- H: 课程笔记本 (span 7 cols) -->
-                                        <div class="glass-light spotlight-card col-span-12 xl:col-span-7 p-6">
-                                            <div class="spotlight-effect"
-                                                style="background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(28, 43, 56, 0.035), transparent 40%);">
-                                            </div>
-                                            <div class="relative z-10">
-                                                <div class="flex items-center justify-between mb-4">
-                                                    <div>
-                                                        <p class="label-minor mb-1">COURSE NOTES</p>
-                                                        <h2 class="text-slate-800 text-lg font-bold"
-                                                            style="font-family: 'Barlow', sans-serif;">课程笔记本</h2>
-                                                    </div>
-                                                    <button
-                                                        class="text-[10px] text-[#b91c1c] font-semibold px-3 py-1.5 rounded-lg border border-[#b91c1c]/20 hover:bg-[#b91c1c]/5 transition-all duration-300">
-                                                        + 新建笔记
-                                                    </button>
-                                                </div>
-                                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                    <div v-for="note in courseNotes" :key="note.id"
-                                                        class="note-card p-4 rounded-xl border border-slate-200/60">
-                                                        <div class="flex items-center gap-2 mb-2">
-                                                            <div class="w-1.5 h-1.5 rounded-full"
-                                                                :style="'background: ' + note.color"></div>
-                                                            <span
-                                                                class="text-slate-500 text-[10px] font-semibold tracking-wide uppercase">{{
-                                                                note.subject }}</span>
-                                                        </div>
-                                                        <p
-                                                            class="text-slate-700 text-sm font-medium mb-1.5 line-clamp-2">
-                                                            {{ note.title }}</p>
-                                                        <p class="text-slate-400 text-[11px] line-clamp-2">{{
-                                                            note.preview }}</p>
-                                                        <div class="flex items-center justify-between mt-3">
-                                                            <span class="text-slate-400 text-[10px] font-mono">{{
-                                                                note.date }}</span>
-                                                            <span class="text-slate-400 text-[10px]">{{ note.wordCount
-                                                                }}字</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                    </div>
-                                </div>
-                            </div>
+                            <student-dashboard v-if="currentView === 'dashboard'"
+                                :homework-list="homeworkList" :exam-alerts="examAlerts" :error-notebook="errorNotebook"
+                                :loading="dashboardLoading" :error="dashboardError"
+                                @refresh="refreshDashboard" @navigate="teachingOpenTool"
+                                @open-miniprogram="showMiniprogramQR = true">
+                            </student-dashboard>
                         </transition>
                         <!-- 2. 课程知识思维导图 -->
                         <transition name="fade">
@@ -3295,9 +2962,9 @@
 
                         <!-- 3. 一站式 Work 超级工作台 -->
                         <transition name="fade">
-                            <div v-show="currentView === 'workspace'" class="absolute inset-0 flex overflow-hidden bg-[#f8fafc] text-slate-800 select-none">
+                            <div v-show="currentView === 'workspace'" class="work-light absolute inset-0 flex overflow-hidden text-slate-800" :class="{ 'work-light--rail-collapsed': workTaskRailCollapsed }">
                                 <!-- 左侧专属侧栏 (Codex / TRAE 风格) -->
-                                <aside class="w-64 min-w-[250px] max-w-[270px] bg-slate-50/90 border-r border-slate-200/80 flex flex-col justify-between p-3.5 backdrop-blur-md shrink-0 h-full">
+                                <aside id="work-taskrail" v-show="!workTaskRailCollapsed" class="work-taskrail w-64 min-w-[250px] max-w-[270px] bg-slate-50/90 border-r border-slate-200/80 flex flex-col justify-between p-3.5 backdrop-blur-md shrink-0 h-full">
                                     <!-- 顶部模式选择与主操作 -->
                                     <div class="flex flex-col gap-3 min-h-0 flex-1">
                                         <!-- 顶部工作空间标识 -->
@@ -3306,9 +2973,9 @@
                                                 <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-[#1c2b38] to-[#2d4356] text-white flex items-center justify-center shadow-xs">
                                                     <i class="ph ph-book-open text-sm"></i>
                                                 </div>
-                                                <span style="font-family: 'Noto Serif SC', serif;">格至 Work</span>
+                                                <span style="font-family: 'Noto Serif SC', serif;">任务</span>
                                             </div>
-                                            <span class="text-[10px] bg-slate-200/80 text-slate-600 px-2 py-0.5 rounded-md font-medium tracking-wide">Workspace</span>
+
                                         </div>
 
                                         <!-- + 新建任务 按钮 -->
@@ -3323,38 +2990,7 @@
 
                                         <!-- 快捷功能导航区 -->
                                         <div class="flex flex-col gap-1 py-1">
-                                            <button type="button" @click="openPluginMarket"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
-                                                <i class="ph ph-puzzle-piece text-base text-indigo-500"></i>
-                                                <span>插件市场</span>
-                                                <span v-if="installedPlugins.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-bold">
-                                                    {{ installedPlugins.length }}
-                                                </span>
-                                            </button>
-                                            <button id="btn-switch-mode-chat" type="button" @click="switchWorkMode('chat')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
-                                                :class="agentMode === 'chat' ? 'bg-violet-600/10 text-violet-700 font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
-                                                <i class="ph ph-chats-circle text-base text-violet-600"></i>
-                                                <span>AI 对话</span>
-                                            </button>
-                                            <button id="btn-switch-mode-rag" type="button" @click="switchWorkMode('rag')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
-                                                :class="agentMode === 'rag' ? 'bg-[#1c2b38]/10 text-[#1c2b38] font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
-                                                <i class="ph ph-database text-base text-emerald-600"></i>
-                                                <span>知识库检索</span>
-                                            </button>
-                                            <button id="btn-switch-mode-tutor" type="button" @click="switchWorkMode('tutor')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
-                                                :class="agentMode === 'tutor' ? 'bg-[#b91c1c]/10 text-[#b91c1c] font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
-                                                <i class="ph ph-graduation-cap text-base text-[#b91c1c]"></i>
-                                                <span>引导式学习</span>
-                                            </button>
-                                            <button id="btn-switch-mode-paper" type="button" @click="switchWorkMode('paper')"
-                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left"
-                                                :class="agentMode === 'paper' ? 'bg-sky-500/10 text-sky-700 font-bold' : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900'">
-                                                <i class="ph ph-article text-base text-sky-600"></i>
-                                                <span>论文查询</span>
-                                            </button>
+
                                             <button type="button" @click="showToast('模板库已准备就绪', 'info')"
                                                 class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
                                                 <i class="ph ph-file-text text-base text-teal-600"></i>
@@ -3478,7 +3114,15 @@
                                     </div>
 
                                     <!-- 侧栏最下方：大模型配置设置入口 (参考截图1底部布局) -->
-                                    <div class="pt-2 border-t border-slate-200/80 shrink-0">
+                                    <div class="work-taskrail-settings pt-2 border-t border-slate-200/80 shrink-0">
+                                        <button type="button" @click="openPluginMarket"
+                                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-all text-left">
+                                                <i class="ph ph-puzzle-piece text-base text-indigo-500"></i>
+                                                <span>插件市场</span>
+                                                <span v-if="installedPlugins.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-bold">
+                                                    {{ installedPlugins.length }}
+                                                </span>
+                                            </button>
                                         <button type="button" @click="openCustomModelModal('create')"
                                             id="btn-workspace-model-settings"
                                             class="w-full px-3 py-2 rounded-xl bg-white hover:bg-slate-100/90 border border-slate-200/90 text-slate-700 hover:text-slate-900 transition-all flex items-center justify-between shadow-2xs group active:scale-98 cursor-pointer"
@@ -3500,9 +3144,43 @@
                                 </aside>
 
                                 <!-- 右侧核心工作区 (Codex / TRAE 风格) -->
-                                <main class="flex-1 flex flex-col relative h-full bg-[#fafafa] overflow-hidden">
+                                <main class="work-main flex-1 flex flex-col relative h-full overflow-hidden">
+                                    <div class="work-heading-row">
+                                        <h1>一站式 Work</h1>
+                                        <button id="work-taskrail-toggle" type="button" @click="toggleWorkTaskRail($event)"
+                                            :aria-expanded="!workTaskRailCollapsed" aria-controls="work-taskrail">
+                                            <i class="ph" :class="workTaskRailCollapsed ? 'ph-sidebar-simple' : 'ph-caret-line-left'"></i>
+                                            <span>{{ workTaskRailCollapsed ? '展开任务栏' : '收起任务栏' }}</span>
+                                        </button>
+                                    </div>
+                                    <nav class="work-mode-tabs" aria-label="Work 模式">
+                                        <button id="btn-switch-mode-chat" type="button" @click="switchWorkMode('chat')"
+                                                class="work-mode-button" :aria-pressed="agentMode === 'chat'"
+                                                :class="{ 'is-active': agentMode === 'chat' }">
+                                                <i class="ph ph-chats-circle text-base text-violet-600"></i>
+                                                <span>AI 对话</span>
+                                            </button>
+                                        <button id="btn-switch-mode-rag" type="button" @click="switchWorkMode('rag')"
+                                                class="work-mode-button" :aria-pressed="agentMode === 'rag'"
+                                                :class="{ 'is-active': agentMode === 'rag' }">
+                                                <i class="ph ph-database text-base text-emerald-600"></i>
+                                                <span>知识库检索</span>
+                                            </button>
+                                        <button id="btn-switch-mode-tutor" type="button" @click="switchWorkMode('tutor')"
+                                                class="work-mode-button" :aria-pressed="agentMode === 'tutor'"
+                                                :class="{ 'is-active': agentMode === 'tutor' }">
+                                                <i class="ph ph-graduation-cap text-base text-[#b91c1c]"></i>
+                                                <span>引导式学习</span>
+                                            </button>
+                                        <button id="btn-switch-mode-paper" type="button" @click="switchWorkMode('paper')"
+                                                class="work-mode-button" :aria-pressed="agentMode === 'paper'"
+                                                :class="{ 'is-active': agentMode === 'paper' }">
+                                                <i class="ph ph-article text-base text-sky-600"></i>
+                                                <span>论文查询</span>
+                                            </button>
+                                    </nav>
                                     <!-- 顶部微状态条 -->
-                                    <header class="px-6 py-3 flex items-center justify-between border-b border-slate-200/40 bg-white/40 backdrop-blur-sm z-10 select-none">
+                                    <header class="work-context-header px-6 py-3 flex items-center justify-between border-b border-slate-200/40 bg-white/40 backdrop-blur-sm z-10 select-none">
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-bold text-slate-400">当前模式:</span>
                                             <span class="text-xs px-2.5 py-0.5 rounded-full font-bold shadow-xs flex items-center gap-1"
@@ -3517,10 +3195,10 @@
                                         </div>
                                         <div class="flex items-center gap-2">
                                             <!-- 论文模式双态视图切换胶囊: 检索文献列表 ⇄ 研读对话记录 -->
-                                            <div v-if="agentMode === 'paper' && (paperSearchResults.length > 0 || activeConversationMessages.length > 0)"
-                                                class="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200/80 shadow-2xs mr-1">
+                                            <div v-if="agentMode === 'paper'"
+                                                class="work-paper-tabs">
                                                 <button type="button" @click="setPaperActiveTab('results')"
-                                                    id="tab-paper-results-btn"
+                                                    id="tab-paper-results-btn" :aria-pressed="paperActiveTab === 'results'"
                                                     class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                     :class="paperActiveTab === 'results' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
                                                     <i class="ph ph-article"></i>
@@ -3530,7 +3208,7 @@
                                                     </span>
                                                 </button>
                                                 <button type="button" @click="setPaperActiveTab('dialog')"
-                                                    id="tab-paper-dialog-btn"
+                                                    id="tab-paper-dialog-btn" :aria-pressed="paperActiveTab === 'dialog'"
                                                     class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                     :class="paperActiveTab === 'dialog' ? 'bg-white text-violet-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'">
                                                     <i class="ph ph-chats-circle"></i>
@@ -3556,11 +3234,11 @@
 
                                     <!-- 场景 A：首屏 / 新建任务空白态 / 论文查询结果列表大厅 -->
                                     <div v-if="(agentMode === 'paper' && paperActiveTab === 'results') || (agentMode !== 'paper' && (activeConversationMessages.length === 0 || activeConversationId === 'new'))"
-                                        class="flex-1 flex flex-col items-center p-6 md:p-12 overflow-y-auto max-w-4xl mx-auto w-full animate-fade-in"
-                                        :class="agentMode === 'paper' && (paperSearchResults.length > 0 || paperSearchStatus !== 'idle') ? 'justify-start' : 'justify-center'">
-                                        
+                                        class="work-start flex-1 flex flex-col items-center p-6 md:p-12 overflow-y-auto mx-auto w-full animate-fade-in"
+                                        :class="[ { 'work-start--paper': agentMode === 'paper' }, agentMode === 'paper' && (paperSearchResults.length > 0 || paperSearchStatus !== 'idle') ? 'justify-start' : 'justify-center' ]">
+
                                         <!-- 居中大标题 -->
-                                        <div class="text-center mb-6 select-none">
+                                        <div v-if="agentMode !== 'paper'" class="text-center mb-6 select-none">
                                             <div class="inline-flex items-center gap-2.5 text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight"
                                                 style="font-family: 'Noto Serif SC', serif;">
                                                 <i class="ph" :class="agentMode === 'paper' ? 'ph-article text-sky-600' : (agentMode === 'tutor' ? 'ph-graduation-cap text-[#b91c1c]' : (agentMode === 'rag' ? 'ph-database text-emerald-600' : 'ph-chats-circle text-violet-600'))"></i>
@@ -3572,7 +3250,7 @@
                                         </div>
 
                                         <!-- 超级 AI 问答输入框卡片 -->
-                                        <div class="w-full max-w-3xl bg-white rounded-3xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.06)] p-4 flex flex-col transition-all focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
+                                        <div v-if="agentMode !== 'paper'" class="w-full max-w-3xl bg-white rounded-3xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.06)] p-4 flex flex-col transition-all focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
                                             <!-- 已挂载插件与 Skills 胶囊标签 -->
                                             <div v-if="activeInputPlugins.length > 0" class="flex flex-wrap items-center gap-1.5 px-1 pb-2">
                                                 <span v-for="p in activeInputPlugins" :key="p.id"
@@ -3733,7 +3411,7 @@
                                         </div>
 
                                         <!-- 云端 / 本地标识切换 -->
-                                        <div class="mt-4 flex items-center gap-2 text-xs text-slate-400 font-medium select-none">
+                                        <div v-if="agentMode !== 'paper'" class="mt-4 flex items-center gap-2 text-xs text-slate-400 font-medium select-none">
                                             <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200/70 shadow-2xs">
                                                 <i class="ph ph-cloud text-slate-500"></i>
                                                 <span class="text-slate-600">云端协同</span>
@@ -3741,8 +3419,40 @@
                                             </div>
                                         </div>
 
+                                        <form class="work-paper-query" v-if="agentMode === 'paper'" @submit.prevent="sendMessage()">
+                                            <label class="work-query-label" for="work-paper-query-input">检索论文</label>
+                                            <input id="work-paper-query-input" v-model="inputText" type="text"
+                                                @keydown.enter.exact.prevent="sendMessage()" placeholder="输入学术关键词、论文题目或 DOI"
+                                                :disabled="thinkingAgent !== null || isSearchingPapers">
+                                            <button type="submit" :disabled="!inputText.trim() || thinkingAgent !== null || isSearchingPapers">查询论文</button>
+                                            <div class="work-query-sources">
+                                                <span>已安装检索来源：{{ installedPlugins.filter(p => p.canSearchLive).map(p => p.name).join(' · ') || '尚未安装' }}</span>
+                                                <details class="work-query-source-picker">
+                                                    <summary>选择检索来源</summary>
+                                                    <div class="work-query-source-options" role="group" aria-label="已安装检索来源">
+                                                        <button v-for="plugin in installedPlugins.filter(p => p.canSearchLive)" :key="plugin.id" type="button"
+                                                            :data-work-query-source="plugin.id" :aria-pressed="activeInputPlugins.some(tag => tag.id === plugin.id)"
+                                                            @click="insertPluginToInput(plugin)">
+                                                            {{ plugin.name }}
+                                                            <span v-if="activeInputPlugins.some(tag => tag.id === plugin.id)">已选</span>
+                                                        </button>
+                                                        <p v-if="!installedPlugins.some(p => p.canSearchLive)">尚未安装可检索来源</p>
+                                                    </div>
+                                                </details>
+                                                <button type="button" @click="openPluginMarket">管理来源与插件</button>
+                                            </div>
+                                            <div v-if="activeInputPlugins.length" class="work-query-tags">
+                                                <span v-for="plugin in activeInputPlugins" :key="plugin.id">
+                                                    {{ plugin.name }}
+                                                    <button type="button" @click="removeActiveInputPlugin(plugin.id)" :aria-label="'移除标签 ' + plugin.name">移除</button>
+                                                </span>
+                                            </div>
+                                        </form>
+
                                         <!-- ==================== 论文查询模式：多来源可核验检索状态与结果 ==================== -->
-                                        <div v-if="agentMode === 'paper'" class="w-full max-w-3xl mt-6 flex flex-col gap-4">
+                                        <div v-if="agentMode === 'paper'" class="work-paper-workspace">
+                                            <div class="work-paper-results">
+                                            <h2 class="work-results-heading">查询结果</h2>
                                             <div v-if="paperWorkSyncStatus" role="status" class="p-3 rounded-xl border border-slate-200 bg-white text-xs flex items-center justify-between gap-3">
                                                 <span v-if="paperWorkSyncStatus.state === 'pending'" class="text-sky-700">工作记录已保存在本地，正在同步云端...</span>
                                                 <span v-else-if="paperWorkSyncStatus.state === 'saved'" class="text-emerald-700">工作记录已收到云端保存回执</span>
@@ -3753,7 +3463,7 @@
                                             <!-- 总状态与多来源增量状态栏 -->
                                             <div v-if="isSearchingPapers || paperSearchStatus !== 'idle' || paperSourceStatuses.length > 0"
                                                 class="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col gap-3">
-                                                
+
                                                 <!-- 头部总状态与统计 -->
                                                 <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
                                                     <div class="flex items-center gap-2">
@@ -3875,11 +3585,11 @@
 
                                             <!-- 论文结果列表 -->
                                             <div v-if="paperSearchResults.length > 0" class="space-y-4">
-                                                <div v-for="paper in paperSearchResults" :key="paper.id"
-                                                    class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-sky-300 hover:shadow-md transition-all flex flex-col justify-between gap-3">
+                                                <div v-for="(paper, index) in paperSearchResults" :key="paper.id"
+                                                     :class="{ 'is-selected': selectedPaper && selectedPaper.id === paper.id }" class="work-result-row bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-sky-300 hover:shadow-md transition-all flex flex-col justify-between gap-3">
                                                     <div>
                                                         <div class="flex items-start justify-between gap-2.5 mb-1.5">
-                                                            <h4 class="text-base font-bold text-slate-900 leading-snug">{{ paper.title }}</h4>
+                                                            <h4 class="work-result-title text-base font-bold text-slate-900 leading-snug"><span class="work-result-number">{{ String(index + 1).padStart(2, '0') }}</span>{{ paper.title }}</h4>
                                                             <div class="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                                                                 <span v-for="src in paper.sources" :key="src.key" class="text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-bold border border-sky-200/80">
                                                                     {{ src.label }}
@@ -3916,7 +3626,7 @@
                                                     <!-- 卡片底部操作栏 -->
                                                     <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                                                         <div class="flex flex-wrap items-center gap-2">
-                                                            <button type="button" @click="openPaperDetail(paper)"
+                                                            <button type="button" @click="openPaperDetail(paper, $event)"
                                                                 class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center gap-1.5 transition-colors">
                                                                 <i class="ph ph-file-text"></i>
                                                                 <span>查看详情</span>
@@ -3969,6 +3679,14 @@
                                                     </button>
                                                 </div>
                                             </div>
+                                            </div>
+                                            <!-- Work detail pane -->
+                                            <aside class="work-detail-pane" aria-label="文献详情">
+                                                <work-paper-detail v-if="selectedPaper && !activeSearchPlugin" :paper="selectedPaper" presentation="pane"
+                                                    @close="closePaperDetail" @copy-citation="copyPaperCitation(selectedPaper)"
+                                                    @download-citation="downloadPaperCitation(selectedPaper, $event)" @insert-to-chat="insertPaperToChat(selectedPaper)"></work-paper-detail>
+                                                <div v-else class="work-detail-empty"><h2>文献详情</h2><p>选择文献查看详情</p><p>来源元数据及摘要；未读取全文</p></div>
+                                            </aside>
                                         </div>
                                     </div>
 
@@ -3977,7 +3695,7 @@
                                         <!-- 消息流列表 -->
                                         <div ref="chatContainer"
                                             class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 scroll-smooth pb-44 max-w-4xl mx-auto w-full">
-                                            
+
                                             <!-- 论文模式：当前任务研读引导卡片 (当当前任务尚无消息时呈现) -->
                                             <div v-if="agentMode === 'paper' && activeConversationMessages.length === 0"
                                                 class="flex flex-col items-center justify-center py-16 text-center max-w-lg mx-auto animate-fade-in">
@@ -3994,7 +3712,7 @@
                                                 class="chat-message-anchor flex flex-col w-full"
                                                 :class="msg.senderType === 'user' ? 'items-end' : 'items-start'"
                                                 :data-message-id="msg.id">
-                                                
+
                                                 <!-- 用户消息气泡 -->
                                                 <div v-if="msg.senderType === 'user'"
                                                     class="flex items-end gap-2.5 max-w-[85%]">
@@ -4108,7 +3826,7 @@
                                                         </span>
                                                     </div>
 
-                                                    <textarea v-model="inputText"
+                                                    <textarea data-work-dialog-composer v-model="inputText"
                                                         @keydown.enter.exact.prevent="sendMessage()" rows="2"
                                                         class="flex-1 bg-transparent resize-none outline-none py-2 px-3 text-sm max-h-36 text-slate-800 placeholder-slate-400 no-scrollbar transition-colors"
                                                         :placeholder="agentMode === 'paper' ? '输入论文题目、学术关键词、DOI 或文献综述需求...' : (agentMode === 'tutor' ? '向导师提问概念理论、算法原理、推导步骤或解题思路...' : (agentMode === 'rag' ? '输入知识库检索或文献问答问题...' : '输入追问或新的任务指令...'))"></textarea>
@@ -4373,7 +4091,7 @@
                             </div>
                         </transition>
 
-                        <!-- 自定义大模型配置弹窗 (明亮色轻量高级设计) -->
+<!-- 自定义大模型配置弹窗 (明亮色轻量高级设计) -->
                         <transition name="fade">
                             <div v-if="showCustomModelModal"
                                 class="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
@@ -5874,7 +5592,7 @@
                             <!-- 底部操作 -->
                             <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <button type="button" @click="openPaperDetail(paper)"
+                                    <button type="button" @click="openPaperDetail(paper, $event)"
                                         class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors">
                                         <i class="ph ph-file-text"></i>
                                         <span>查看详情</span>
@@ -5919,157 +5637,13 @@
             </div>
         </transition>
 
-        <!-- ==================== 学术论文详情弹窗 (Paper Detail Modal) ==================== -->
+        <!-- Shared plugin-drawer detail fallback -->
         <transition name="fade">
-            <div v-if="selectedPaper" v-cloak
-                class="fixed inset-0 z-[220] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 sm:p-6"
-                tabindex="-1"
-                @keydown.esc="closePaperDetail"
+            <div v-if="selectedPaper && activeSearchPlugin" v-cloak class="work-detail-modal-backdrop"
                 @click.self="closePaperDetail">
-                <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up outline-none focus:ring-2 focus:ring-sky-500">
-                    <!-- 头部 -->
-                    <div class="px-6 py-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/70">
-                        <div class="flex items-start gap-3.5 pr-4">
-                            <div class="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center text-xl shrink-0 shadow-xs">
-                                <i class="ph ph-article"></i>
-                            </div>
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2 mb-1">
-                                    <span v-for="src in selectedPaper.sources" :key="src.key" class="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-bold border border-sky-200">
-                                        {{ src.label }}
-                                    </span>
-                                    <span v-if="selectedPaper.year" class="text-[10px] px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-bold">
-                                        {{ selectedPaper.year }}
-                                    </span>
-                                    <span v-if="selectedPaper.workType" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono">
-                                        {{ selectedPaper.workType }}
-                                    </span>
-                                </div>
-                                <h3 class="text-base sm:text-lg font-bold text-slate-900 leading-snug">{{ selectedPaper.title }}</h3>
-                            </div>
-                        </div>
-                        <button type="button" @click="closePaperDetail"
-                            class="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all shrink-0">
-                            <i class="ph ph-x text-lg"></i>
-                        </button>
-                    </div>
-
-                    <!-- 内容滚动区域 -->
-                    <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
-                        <!-- 作者与出处 -->
-                        <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-2">
-                            <div class="text-xs text-slate-600 flex items-start gap-2">
-                                <span class="font-bold text-slate-700 shrink-0">作者团队：</span>
-                                <span class="leading-relaxed">{{ selectedPaper.authorsText || '暂无作者信息' }}</span>
-                            </div>
-                            <div v-if="selectedPaper.venue || selectedPaper.journal" class="text-xs text-slate-600 flex items-start gap-2">
-                                <span class="font-bold text-slate-700 shrink-0">发表刊物/会议：</span>
-                                <span class="leading-relaxed">{{ selectedPaper.venue || selectedPaper.journal }}</span>
-                            </div>
-                            <div v-if="selectedPaper.retrievedAt" class="text-[11px] text-slate-400 flex items-center gap-2">
-                                <span class="font-medium text-slate-500">检索时间：</span>
-                                <span>{{ selectedPaper.retrievedAt }}</span>
-                            </div>
-                        </div>
-
-                        <!-- 标识符与引用统计 -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div class="p-3.5 rounded-2xl bg-white border border-slate-200/90 text-xs space-y-1.5">
-                                <div class="font-bold text-slate-700 flex items-center gap-1.5">
-                                    <i class="ph ph-fingerprint text-sky-600"></i>
-                                    <span>学术标识符</span>
-                                </div>
-                                <div class="text-slate-600 font-mono text-[11px] space-y-1">
-                                    <div v-if="selectedPaper.doi" class="truncate" :title="selectedPaper.doi">DOI: {{ selectedPaper.doi }}</div>
-                                    <div v-if="selectedPaper.arxivId">arXiv: {{ selectedPaper.arxivId }}</div>
-                                    <div v-if="selectedPaper.pmid">PMID: {{ selectedPaper.pmid }}</div>
-                                    <div v-if="!selectedPaper.doi && !selectedPaper.arxivId && !selectedPaper.pmid" class="text-slate-400 italic">暂无官方标识符</div>
-                                </div>
-                            </div>
-                            <div class="p-3.5 rounded-2xl bg-white border border-slate-200/90 text-xs space-y-1.5">
-                                <div class="font-bold text-slate-700 flex items-center gap-1.5">
-                                    <i class="ph ph-chart-line-up text-amber-600"></i>
-                                    <span>引用统计与来源</span>
-                                </div>
-                                <div class="text-slate-600 text-[11px] space-y-1">
-                                    <div>被引次数：<span class="font-bold text-amber-700">{{ selectedPaper.citationCount !== null && selectedPaper.citationCount !== undefined ? selectedPaper.citationCount : '暂未统计' }}</span></div>
-                                    <div class="text-slate-400">引用量来源：{{ selectedPaper.citationCountSource || '开放学术元数据' }}</div>
-                                    <div v-if="selectedPaper.ranking && typeof selectedPaper.ranking.relevanceScore === 'number'" class="text-slate-400">检索概念覆盖度：{{ Math.round(selectedPaper.ranking.relevanceScore * 100) }}%（启发式，非相关性保证）</div>
-                                    <div class="text-slate-400">阅读范围：来源元数据及摘要；未读取全文</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 摘要 -->
-                        <div class="space-y-2">
-                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                <i class="ph ph-text-align-left text-slate-500"></i>
-                                <span>论文摘要</span>
-                            </h4>
-                            <p class="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                {{ selectedPaper.abstract || '该数据源未提供摘要' }}
-                            </p>
-                        </div>
-
-                        <!-- 来源记录明细 -->
-                        <div v-if="selectedPaper.sources && selectedPaper.sources.length > 0" class="space-y-2">
-                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                <i class="ph ph-tree-structure text-slate-500"></i>
-                                <span>来源记录追踪</span>
-                            </h4>
-                            <div class="flex flex-wrap gap-2">
-                                <div v-for="src in selectedPaper.sources" :key="src.key"
-                                    class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs space-y-0.5">
-                                    <div class="font-bold text-slate-800">{{ src.label }}</div>
-                                    <div v-if="src.rawId" class="text-[10px] text-slate-400 font-mono">ID: {{ src.rawId }}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 底部操作栏 -->
-                    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <a v-if="selectedPaper.officialUrl" :href="selectedPaper.officialUrl" target="_blank" rel="noopener noreferrer"
-                                class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
-                                <i class="ph ph-arrow-square-out"></i>
-                                <span>访问官方论文页面</span>
-                            </a>
-                            <a v-if="selectedPaper.openAccessUrl" :href="selectedPaper.openAccessUrl" target="_blank" rel="noopener noreferrer"
-                                class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs">
-                                <i class="ph ph-lock-open"></i>
-                                <span>打开开放全文</span>
-                            </a>
-                            <span v-else class="text-xs text-slate-400 italic px-2 flex items-center gap-1">
-                                <i class="ph ph-lock-simple"></i>
-                                <span>暂未发现开放全文</span>
-                            </span>
-                        </div>
-
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" @click="copyPaperCitation(selectedPaper)"
-                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
-                                <i class="ph ph-quotes"></i>
-                                <span>复制 BibTeX</span>
-                            </button>
-                            <button type="button" @click="downloadPaperCitation(selectedPaper, 'bib')"
-                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
-                                <i class="ph ph-download-simple"></i>
-                                <span>下载 .bib</span>
-                            </button>
-                            <button type="button" @click="downloadPaperCitation(selectedPaper, 'ris')"
-                                class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors">
-                                <i class="ph ph-download-simple"></i>
-                                <span>下载 .ris</span>
-                            </button>
-                            <button type="button" @click="insertPaperToChat(selectedPaper)"
-                                class="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs">
-                                <i class="ph ph-chat-circle-dots"></i>
-                                <span>引入对话</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <work-paper-detail :paper="selectedPaper" presentation="modal"
+                    @close="closePaperDetail" @copy-citation="copyPaperCitation(selectedPaper)"
+                    @download-citation="downloadPaperCitation(selectedPaper, $event)" @insert-to-chat="insertPaperToChat(selectedPaper)"></work-paper-detail>
             </div>
         </transition>
 
