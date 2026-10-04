@@ -114,3 +114,12 @@
 .teaching-workbench .tw-history-stage { border-top:1px solid var(--tw-rule);padding-top:1rem;margin-top:1.25rem; }
 
 @container (min-width:960px) { .teaching-workbench .tw-read-columns { grid-template-columns:minmax(0,5fr) minmax(0,7fr); } }
+
+/* Desktop submission facts remain inert and within the teaching surface. */
+.teaching-workbench .tw-submission-columns { margin-top:1.25rem; }
+.teaching-workbench .tw-submission-history,.teaching-workbench .tw-head-facts,.teaching-workbench .tw-subject-selector { margin-bottom:1rem; }
+.teaching-workbench .tw-head-facts .tw-button,.teaching-workbench .tw-subject-selector .tw-button { margin-top:.75rem;margin-right:.5rem; }
+.teaching-workbench .tw-subject-selector label { display:block; }
+.teaching-workbench .tw-subject-selector .tw-meta { margin-top:.5rem; }
+.teaching-workbench .tw-submission-facts section { border-top:1px solid var(--tw-rule);margin-top:1rem;padding-top:.75rem; }
+.teaching-workbench .tw-submission-content { font-family:monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;margin:.5rem 0 0; }

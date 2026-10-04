@@ -1,6 +1,7 @@
 import { ref,computed,readonly,watch,onMounted,onScopeDispose } from 'vue';
 import { useTeachingContext } from './useTeachingContext.js';
 import { useTeachingAssignments } from './useTeachingAssignments.js';
+import { useTeachingSubmissions } from './useTeachingSubmissions.js';
 import { getTeachingAvailability,safeTeachingSummaryReason } from '../utils/teachingStatus.js';
 import { createTeachingNavigation,isTeachingView,parseTeachingLocation } from '../controllers/teachingNavigation.js';
 
@@ -18,8 +19,11 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
     // mounted until the existing leave guard has actually accepted its exit.
     const initialTeachingEntryPending=ref(Boolean(location?.hash?.startsWith('#teaching/')));
     const legacyRenderAllowed=computed(()=>!initialTeachingEntryPending.value);
-    const assignmentsActive=computed(()=>teachingView.value && section.value==='tasks' && auth.authVerified.value===true);
+    const assignmentsActive=computed(()=>teachingView.value && ['tasks','history'].includes(section.value) && auth.authVerified.value===true);
     const assignments=useTeachingAssignments({context:teaching.context,active:assignmentsActive,api:assignmentApi});
+    const submissionsActive=computed(()=>teachingView.value && section.value==='history' && auth.authVerified.value===true);
+    const submissionSelection=computed(()=>({releaseId:assignments.selection.releaseId,release:assignments.release}));
+    const submissions=useTeachingSubmissions({context:teaching.context,active:submissionsActive,selection:submissionSelection,api:assignmentApi});
     let disposed=false,intent=0,loading=null,navigation,initialEntrySettled=false,initialEntryGeneration=0;
     const availability=computed(()=>{
         const resource=teaching.capabilities;
@@ -58,7 +62,7 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         try {accepted=await navigation.openObject(locator);}
         finally {if(request===intent)teachingEntryPending.value=false;}
         if(!current(request,epoch)||!accepted)return false;
-        assignments.clear();section.value=locator.section;locationUnavailable.value=false;selectedCourseId.value=null;
+        submissions.clear();assignments.clear();section.value=locator.section;locationUnavailable.value=false;selectedCourseId.value=null;
         // A locator is only a read intent. Install fresh list ancestry first.
         const futureDetail=Boolean(locator.assignmentId||locator.releaseId||locator.submissionId);
         const loaded=await ensureLoaded(refresh);
@@ -77,8 +81,8 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
             if(current(request,epoch))selectedCourseId.value=teaching.context.value.courseId;
         }else selectedCourseId.value=teaching.context.value.courseId||offeringQueryCourseId.value;
         if(!current(request,epoch))return false;
-        if(section.value==='tasks' && assignments.access.value.ready){
-            const loadedTasks=await assignments.refresh();
+        if(['tasks','history'].includes(section.value) && assignments.access.value.ready){
+            const loadedTasks=await(section.value==='history'?assignments.loadReleases():assignments.refresh());
             if(!current(request,epoch))return false;
             if(futureDetail){
                 let acceptedDetail=false;
@@ -89,7 +93,16 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
                     }
                     return current(request,epoch) && resource.status==='ready' && resource.items.some(row=>row.id===id);
                 };
-                if(loadedTasks && locator.releaseId && !locator.submissionId && await find('releasePage',locator.releaseId))acceptedDetail=await assignments.selectRelease(locator.releaseId);
+                if(loadedTasks && locator.releaseId && await find('releasePage',locator.releaseId)){
+                    acceptedDetail=await assignments.selectRelease(locator.releaseId);
+                    if(acceptedDetail && locator.submissionId){
+                        acceptedDetail=await submissions.refresh();
+                        const kind=submissions.access.value.canReadOwnSubmissions?'ownHistory':'teacherHeads';
+                        const resource=submissions[kind];
+                        while(acceptedDetail && current(request,epoch) && resource.status==='ready' && !resource.items.some(row=>row.id===locator.submissionId) && resource.nextCursor)acceptedDetail=await submissions.loadMore(kind);
+                        acceptedDetail=acceptedDetail && current(request,epoch) && resource.status==='ready' && resource.items.some(row=>row.id===locator.submissionId) && await submissions.selectSubmission(locator.submissionId);
+                    }
+                }
                 else if(loadedTasks && locator.assignmentId && await find('assignmentPage',locator.assignmentId)){
                     acceptedDetail=await assignments.selectAssignment(locator.assignmentId);
                     if(acceptedDetail && locator.versionId)acceptedDetail=await find('versionPage',locator.versionId) && await assignments.selectVersion(locator.versionId);
@@ -114,10 +127,10 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         if(mode==='learning'){
             const loaded=await teaching.refreshOwnEnrollment();
             if(!current(request,epoch)||!loaded)return false;
-            if(section.value==='tasks')await assignments.refresh();
+            if(['tasks','history'].includes(section.value))await(section.value==='history'?assignments.loadReleases():assignments.refresh());
             return current(request,epoch);
         }
-        if(section.value==='tasks')await assignments.refresh();
+        if(['tasks','history'].includes(section.value))await(section.value==='history'?assignments.loadReleases():assignments.refresh());
         return current(request,epoch);
     };
     const selectAssignment=id=>{
@@ -127,7 +140,33 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
     };
     const selectVersion=id=>assignments.versionPage.status==='ready' && assignments.versionPage.items.some(row=>row.id===id)?openLocation({section:'tasks',offeringId:teaching.context.value.offeringId,assignmentId:assignments.selection.assignmentId,versionId:id}):assignments.selectVersion(id);
     const selectRelease=id=>assignments.releasePage.status==='ready' && assignments.releasePage.items.some(row=>row.id===id)?openLocation({section:'tasks',offeringId:teaching.context.value.offeringId,releaseId:id}):assignments.selectRelease(id);
-    const assignmentNavigation={selectAssignment,selectVersion,selectRelease};
+    const selectSubmissionRelease=async id=>{
+        const request=++intent,epoch=auth.authEpoch.value;
+        if(!verified()||section.value!=='history'||!teachingView.value)return false;
+        submissions.clear();
+        const accepted=await assignments.selectRelease(id);
+        if(!current(request,epoch)||!accepted)return false;
+        const loaded=await submissions.refresh();
+        return current(request,epoch)&&loaded;
+    };
+    const selectSubmission=async id=>{
+        if(!verified()||section.value!=='history'||!assignments.selection.releaseId)return false;
+        const own=submissions.access.value.canReadOwnSubmissions,resource=own?submissions.ownHistory:submissions.studentId.value===null?submissions.teacherHeads:submissions.teacherHistory;
+        const installed=resource.status==='ready'&&resource.items.some(row=>row.id===id)||own&&submissions.head.status==='ready'&&submissions.head.data.submission_id===id;
+        if(!installed)return submissions.selectSubmission(id);
+        const request=++intent,epoch=auth.authEpoch.value;
+        const accepted=await navigation.openObject({section:'history',offeringId:teaching.context.value.offeringId,releaseId:assignments.selection.releaseId,submissionId:id});
+        if(!accepted||!current(request,epoch))return false;
+        const loaded=await submissions.selectSubmission(id);
+        return current(request,epoch)&&loaded;
+    };
+    const openSubmissionHistory=async id=>{
+        const offeringId=teaching.context.value.offeringId;
+        if(!await openLocation({section:'history',offeringId}))return false;
+        return selectSubmissionRelease(id);
+    };
+    const assignmentNavigation={selectAssignment,selectVersion,selectRelease,openSubmissionHistory};
+    const submissionNavigation={selectRelease:selectSubmissionRelease,selectSubmission,refresh:()=>openLocation({section:'history',offeringId:teaching.context.value.offeringId})};
     const refresh=()=>openLocation(navigation.getLocation()?.locator||{section:section.value},{refresh:true});
     const loadMore=kind=>{
         if(!verified()||!teachingView.value)return Promise.resolve(false);
@@ -177,8 +216,11 @@ export function useTeachingWorkbench(auth,navigateView,{api,assignmentApi,locato
         else if(teachingView.value)void trackInitialEntry(openSection(viewSections[auth.currentView.value]));
         else {initialTeachingEntryPending.value=false;initialEntrySettled=true;}
     },{immediate:true,flush:'sync'});
+    const stopSubmissionDenial=watch(()=>['head','ownHistory','teacherHeads','teacherHistory','detail'].some(kind=>{const r=submissions[kind];return r.status==='unavailable' && ([401,403,404].includes(r.error?.status)||['unauthenticated','permission_denied','not_found'].includes(r.error?.reason));}),denial=>{
+        if(!denial)return;locationUnavailable.value=true;assignments.clear();
+    },{flush:'sync'});
     const handleHashEvent=()=>trackInitialEntry(handleHashChange());
     onMounted(()=>eventTarget?.addEventListener('hashchange',handleHashEvent));
-    onScopeDispose(()=>{disposed=true;++intent;teachingEntryPending.value=false;stop();navigation.dispose();loading=null;eventTarget?.removeEventListener('hashchange',handleHashEvent);});
-    return {...teaching,assignments,assignmentNavigation,legacyRenderAllowed:readonly(legacyRenderAllowed),availability:readonly(availability),isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
+    onScopeDispose(()=>{disposed=true;++intent;teachingEntryPending.value=false;stop();stopSubmissionDenial();navigation.dispose();loading=null;eventTarget?.removeEventListener('hashchange',handleHashEvent);});
+    return {...teaching,assignments,submissions,assignmentNavigation,submissionNavigation,legacyRenderAllowed:readonly(legacyRenderAllowed),availability:readonly(availability),isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
 }

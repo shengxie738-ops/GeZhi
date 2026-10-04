@@ -41,7 +41,8 @@ export default {
                     <p v-else-if="!selectedResource" class="tw-panel tw-meta">从已读取的列表打开任务，查看公开说明与固定版本</p>
                 </div>
             </div>
-            <p class="tw-meta tw-history-stage">提交记录读取界面尚未接入，未请求或统计提交记录</p>
+            <button v-if="preview?.kind === 'release' && (access.canReadOwnSubmissions || access.canReadTeacherSubmissions)" type="button" class="tw-button tw-history-stage" @click="navigation?.openSubmissionHistory?.(workspace.selection.releaseId)">查看提交记录</button>
+            <p class="tw-meta tw-history-stage">提交记录按当前发布与访问范围单独读取</p>
         </template>
     </div>`
 };

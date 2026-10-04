@@ -612,6 +612,8 @@ const app = createApp({
             teachingLegacyRenderAllowed: teachingWorkbench.legacyRenderAllowed,
             teachingContext: teachingWorkbench.context,
             teachingAssignments: teachingWorkbench.assignments,
+            teachingSubmissions: teachingWorkbench.submissions,
+            teachingSubmissionNavigation: teachingWorkbench.submissionNavigation,
             teachingAssignmentNavigation: teachingWorkbench.assignmentNavigation,
             teachingSection: teachingWorkbench.section,
             teachingCourses: teachingWorkbench.courses,
