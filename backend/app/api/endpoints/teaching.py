@@ -200,11 +200,11 @@ def _recovery_data(intent):
     return {"recovery": query.model_dump(mode="json")}
 
 
-def commit_pending_write(db: Session, pending: B2PendingWrite, intent):
+def commit_pending_write(db: Session, pending: B2PendingWrite, intent, *, request_owner=None):
     """Encode both bounded outcomes before t1; return success after COMMIT.
 
-    This is only the B2 owner-helper lifetime. Dedicated request/session teardown
-    containment belongs to the separately reviewed Tranche 2 integration.
+    The optional explicit B2 request owner carries those exact prepared bytes
+    and completion evidence through its dedicated dependency teardown.
     """
     if type(pending) is not B2PendingWrite or pending._controller.intent is not intent:
         raise HTTPException(503, "invalid_pending_write")
@@ -214,11 +214,15 @@ def commit_pending_write(db: Session, pending: B2PendingWrite, intent):
         unknown = _response(503, "write_outcome_unknown", _recovery_data(intent))
         success = _response(200 if pending.replayed else pending.receipt.http_status,
             "ok", _write_data(pending))
+        if request_owner is not None:
+            request_owner.prepare_outcomes(pending, intent, success, unknown)
         finalized = finalize_pending_write(db, pending)
     except Exception:
         rollback_pending_write(db, pending)
         raise
     try:
+        if request_owner is not None:
+            request_owner.begin_commit()
         commit_finalized_write(db, finalized)
     except Exception as exc:
         # Any exception from the sole COMMIT attempt is conservatively unknown,
@@ -228,8 +232,32 @@ def commit_pending_write(db: Session, pending: B2PendingWrite, intent):
         logger.error("B2 COMMIT completion failure confirmed=%s exception_class=%s",
             confirmed, type(exc).__name__)
         rollback_pending_write(db, pending)
+        if request_owner is not None:
+            return request_owner.complete_commit()
         return success if confirmed else unknown
+    if request_owner is not None:
+        return request_owner.complete_commit()
     return success
+
+
+def commit_owned_b2_write(owner, intent, authorization_scope, mutation):
+    """Finite B2 request-owner path; B1 result/commit/recovery are untouched."""
+    from app.services.teaching.sessions import B2RequestOwner
+    from app.services.teaching.types import ASSESSMENT_WRITE_ACTIONS, WriteIntent
+    if (not isinstance(owner, B2RequestOwner) or type(intent) is not WriteIntent
+            or intent.action not in ASSESSMENT_WRITE_ACTIONS):
+        raise HTTPException(503, 'invalid_b2_owner')
+    recovery = None
+    try:
+        recovery = _recovery_data(intent)
+        pending = owner.execute(intent, authorization_scope, mutation)
+        return commit_pending_write(owner.session, pending, intent, request_owner=owner)
+    except HTTPException as exc:
+        owner.abandon()
+        return owner.record_response(_domain_error(exc, recovery if exc.status_code == 503 else None))
+    except Exception:
+        owner.abandon()
+        return owner.record_response(_private_error())
 
 
 def commit_write(db: Session, intent, authorization_scope, mutation):

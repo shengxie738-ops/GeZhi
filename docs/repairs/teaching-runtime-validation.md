@@ -411,3 +411,129 @@ no observer or post-invalidation persistence assertion. Durable post-invalidatio
 visibility remains **BLOCKED/UNPROVED**, to be addressed only in a separately
 reviewed supported acceptance environment; this narrower result does not close
 that gap or the real dependency-teardown requirement.
+
+## B2 native-owner protocol, Tranche 2 source checkpoint
+
+This checkpoint adds source for an isolated native validation owner and a finite
+initial acceptance matrix. **No native owner positive, native ASGI journey,
+MySQL/socket/server/container, migration, DDL, seed installation or native test
+has run at this checkpoint.** Independent source review and a separate approval
+of the exact Cloud environment, fresh synthetic database identity, schema,
+fixture inventory, commands and selections are still required. This source is
+not production activation, deployment approval or closure of all fourteen gates.
+
+Only the seven B2 mutation routes use a new explicit B2 request-owner dependency.
+The owner supplies their one dedicated Session/connection to the real signed
+current-account resolver and the endpoint. There is no second identity Session,
+identity cache or client-selected owner. All B2 GET dependencies and B1 route,
+execution, owner-commit, receipt recovery and session teardown behavior are
+preserved. The ordinary owner and ordinary `execute_write` still reach the same
+unconditional `503 write_safety_unproven` refusal. Public write capabilities stay
+false, including inside the isolated validation app.
+
+The private finite trusted-owner entry delegates to the same B2 kernel. Admission
+is an explicit owner call before, and at, locked-context collection, never a
+Session boolean or an unconditional alternative engine. It retains the actual
+business operation classes, DTO normalization, native physical readiness checks,
+current persisted identity, held locks, mutation-shape checks, t0/t1 clocks,
+finalization and sole guarded owner COMMIT. B1 and unknown actions cannot enter
+this owner path.
+
+The B2 request owner carries the already encoded success and original-tuple
+unknown responses plus bounded not-dispatched/possible/confirmed completion
+state across the real dependency generator lifetime. Later rollback,
+`db.close()` or `connection.close()` faults cannot replace a prepared outcome.
+Confirmed acceptance remains confirmed; a conservative ambiguous attempt retains
+`write_outcome_unknown` and its original action/scope/key. Cleanup logs bounded
+phase/outcome/exception-class data only. Failed cleanup invalidates this physical
+connection rather than disposing the whole pool, and guards are released only
+when terminal transaction/disposal state is established. Closed owners refuse
+reuse. Normal connection close uses SQLAlchemy's isolation restoration; actual
+MySQL/pool restoration and poisoned-connection replacement remain **NOT RUN**.
+
+An owner factory receives a Session-owned physical root before its identity/schema
+verification SQL. `Session.begin()` alone is lazy and is insufficient: allowing
+verification to start an external Connection root would cause default rollback-only
+join semantics and prevent the Session from issuing the required real COMMIT.
+The construction helper binds `db.connection()` first, after READ COMMITTED is
+selected and before identity SQL. Its separate original in-memory unit control
+observes that exact root ownership and actual Session completion of the root;
+it is not NativeValidationOwner admission evidence.
+
+### Test-only native factory: source, positive behavior NOT RUN
+
+Production source never imports the test support. Only its explicit test-owned
+factory can create NativeValidationOwner. Construction requires an existing
+native MySQL Engine and an immutable manifest binding the exact engine, UUID4
+run, UTC expiry, schema/datadir/socket/server UUID, current code hashes, both B1
+and B2 physical contracts and completed ledgers, complete known seed inventory,
+synthetic institution, exact offering scopes, actor and learners, and one frozen
+policy generation. All B2 business, receipt/event and roster-preview tables must
+be empty initially; no other schema tables/accounts are accepted. The engine's
+schema and Unix socket must match. Actual physical schema/ledger and database
+identity inspection occurs before owner construction. Code-only checks reject
+substituted schema, transaction, clock, identity and business-operation functions.
+No persistent credential or signing service is introduced.
+
+The factory and each subsequent run check require an exact SQLAlchemy NullPool
+Engine, and the native fixture independently asserts that non-reusing pool. A new
+Connection wrapper alone cannot be reported as an independent physical observer.
+The test-only owner captures MySQL CONNECTION_ID before kernel locks/staging,
+and each native acceptance observer captures its own CONNECTION_ID before row
+queries and asserts that it differs. The matrix records both IDs and t0/t1 in
+run-owned observations for the future launcher to retain. No writer SQL is added
+after t1 and no public DTO/authority field changes. All such native observations
+remain NOT RUN; the non-reusing pool and diagnostic assertions are mandatory
+execution contracts, not synthetic vendor evidence.
+
+The run rechecks its expiry/code contract for each owner/admission, binds the
+exact dedicated transaction, and closes/revokes its owners at run completion.
+Each native owner checks the exact finite action, institution/scope, actor,
+immutable policy and actual operation class. Wrong Session/connection/transaction,
+B1/unknown action, expired/closed run, and an unapproved scope fail closed.
+The isolated ASGI app overrides only the B2 owner and dedicated read/recovery DB
+dependencies. The real account resolver is retained. Nothing in a header, query,
+body, Settings change or Session admission boolean selects the native owner.
+This is a trusted server-code boundary, not protection against arbitrary Python
+execution by an operator.
+
+The finite initial native matrix is written but unselected: seven-action signed
+teacher/learner acceptance, exact-key replay/conflicts/current-parent refusal,
+original receipt recovery, independent physical row observations, false public
+write capabilities, B1/unknown action refusal, ordinary-kernel hard closure,
+Session/root/scope binding and expired/closed-run refusal. It creates no schema
+and starts no service. Its fixture accepts only a factory-verified run supplied
+by a separately authorized native launcher. Without one, native tests are
+explicitly NOT RUN. Actual constraint/index waits, expiry/authority races,
+timeout/deadlock, native transport/commit ambiguity and native teardown/pool
+faults remain later reviewed acceptance cases, not claims of this initial source.
+
+### Source/synthetic evidence and retained restrictions
+
+The exact guarded selections cover twelve new unit/synthetic cases plus the
+previous fourteen signed B2 HTTP nodes/twenty-one parametrized cases, with only
+the existing test app's B2 owner dependency adaptation. All request identity is
+real signed/current-account resolution. The positive synthetic fixture retains
+exactly its five historical application substitutions: B1 schema, B2 schema,
+dedicated transaction, hard gate and fixed UTC clock. Those substitutions are
+not present in native factory positives and cannot prove native readiness.
+
+The new native-factory negative actually rejects the historical in-memory SQLite
+Engine before identity/schema/admission SQL. Manifest/code immutability checks
+and the ordinary owner hard-gate negative are code/unit evidence. The six
+teardown variants are explicitly simulated faults on bound Session rollback/close,
+bound Connection close, Session after_commit and Connection commit events.
+They assert reached/restored fault targets and prepared response bytes through
+real FastAPI dependency-generator cleanup. Their ambiguous fault interrupts a
+pre-driver commit event, not a real native transport; the known-commit variants
+use the confirmed marker. There is no post-invalidation row observer or durable
+visibility assertion in these synthetic cases.
+
+The previous file-backed SQLite denial remains unchanged:
+`GuardDenied: Only original in-memory SQLite fixtures are allowed`. The two old
+setup errors remain errors, not passes. This checkpoint does not rerun, port,
+recreate, URI/DBAPI-wrap, change the guard for, or otherwise bypass that denied
+case. Native protocol source is separate and grants no permission to evade the
+restriction. The denied replay/collect_locks side-effect probe and all variants
+remain excluded. No bare pytest, aggregate app, frontend/browser/mobile QA,
+provider/real-user activity, commit/push/merge, deployment or activation occurred.

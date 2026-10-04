@@ -1,6 +1,6 @@
 """B2 signed-token, isolated ASGI source/synthetic evidence only.
 
-The request app overrides only the dedicated DB dependency. Real signatures and
+The request app overrides the dedicated read DB and finite B2 owner dependencies. Real signatures and
 current persisted UserAccount resolution run. b2case retains its exactly five
 reviewed fixture-local substitutions; closed boundaries restore real gates.
 No aggregate/startup/server/browser import or production-readiness claim.
@@ -39,11 +39,18 @@ def app_for(case):
     app.include_router(assessment.router, prefix='/api')
     async def fixture_db():
         return db
+    async def fixture_owner():
+        sessions = feature('app.services.teaching.sessions')
+        with sessions.B2RequestOwner(db, db.connection()) as owner:
+            yield owner
     app.dependency_overrides[adapter.get_teaching_db] = fixture_db
-    assert set(app.dependency_overrides) == {adapter.get_teaching_db}
+    app.dependency_overrides[assessment.get_b2_write_owner] = fixture_owner
+    assert set(app.dependency_overrides) == {adapter.get_teaching_db, assessment.get_b2_write_owner}
     assert assessment.get_teaching_request_account is adapter.get_teaching_request_account
     assert assessment.get_teaching_db is adapter.get_teaching_db
     assert assessment.commit_write is adapter.commit_write
+    assert assessment.get_b2_db.__defaults__[0].dependency is assessment.get_b2_write_owner
+    assert assessment.get_b2_request_account.__defaults__[1].dependency is assessment.get_b2_db
     return app, adapter
 
 

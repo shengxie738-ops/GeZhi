@@ -353,7 +353,7 @@ def _no_mutation(session):
             event.remove(target, name, listener)
 
 
-def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
+def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False, b2_owner=None):
     _require_transaction(session)
     # Trusted identity/policy/schema preflight precedes operation collection.
     # Dialect reflection has its own read-only statements (e.g. SQLite PRAGMA);
@@ -372,12 +372,21 @@ def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=Non
     _require_same_transaction(connection, transaction)
     with _no_mutation(session):
         return _collect_locked_context(session, action, scope, actor=actor, initial=initial,
-            intent=intent, mutation=mutation, lookup=lookup, object_ref=object_ref, write=write)
+            intent=intent, mutation=mutation, lookup=lookup, object_ref=object_ref, write=write, b2_owner=b2_owner)
 
 
-def _collect_locked_context(session, action, scope, *, actor, initial, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
+def _collect_locked_context(session, action, scope, *, actor, initial, intent=None, mutation=None, lookup=None, object_ref=None, write=False, b2_owner=None):
     if write:
-        _require_write_safety(session)
+        if b2_owner is None:
+            _require_write_safety(session)
+        else:
+            # This capability comes only from the finite trusted-owner entry.
+            # It is neither a client selector nor an unconditional kernel bypass.
+            from app.services.teaching.sessions import B2RequestOwner
+            if (not isinstance(b2_owner, B2RequestOwner) or intent is None
+                    or action not in ASSESSMENT_WRITE_ACTIONS or intent.action != action):
+                _error(503, 'invalid_b2_owner')
+            b2_owner.require_admission(session, intent, scope, mutation)
     if not isinstance(scope, ScopeRef) or scope.institution_id != initial.institution_id:
         _error(404, "not_found")
     action = access._action(action)
@@ -896,7 +905,21 @@ def rollback_pending_write(session, pending):
     pending._controller.rollback()
 
 
-def _execute_b2_write(session, intent, authorization_scope, mutation):
+def _execute_owned_b2_write(owner, intent, authorization_scope, mutation):
+    """Private trusted-owner entry to the identical seven-action B2 kernel.
+
+    Ordinary execute_write still reaches the unconditional production gate.
+    A production owner also refuses; native test support owns its own admission.
+    """
+    from app.services.teaching.sessions import B2RequestOwner
+    if (not isinstance(owner, B2RequestOwner) or type(intent) is not WriteIntent
+            or intent.action not in ASSESSMENT_WRITE_ACTIONS):
+        _error(503, 'invalid_b2_owner')
+    owner.require_admission(owner.session, intent, authorization_scope, mutation)
+    return _execute_b2_write(owner.session, intent, authorization_scope, mutation, b2_owner=owner)
+
+
+def _execute_b2_write(session, intent, authorization_scope, mutation, *, b2_owner=None):
     guard = None
     try:
         require_clean_transaction(session)
@@ -907,7 +930,7 @@ def _execute_b2_write(session, intent, authorization_scope, mutation):
             _error(422, 'validation_error')
         with _no_commit(session):
             context = _lock_context(session, intent.actor_id, intent.action, authorization_scope,
-                intent=intent, mutation=mutation, write=True)
+                intent=intent, mutation=mutation, write=True, b2_owner=b2_owner)
             require_clean_transaction(session)
             guard = _B2WriteGuard(session, context, intent)
             if context.receipt is not None:
