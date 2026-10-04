@@ -196,3 +196,90 @@ test('joined auth teaching-hash entry suppresses legacy dashboard calls before a
  const app=renderer.createApp({setup(){auth=useAuth(()=>{});const guard=createNavigationGuard({getCurrentView:()=>auth.currentView.value,getExam:()=>null,setView:view=>auth.currentView.value=view,notify(){}});controller=useTeachingWorkbench(auth,guard,{api,locatorStore:null});useDashboard(auth.currentUser,{enabled:()=>auth.authVerified.value===true&&!controller.isTeachingView.value&&!controller.teachingEntryPending?.value});return()=>null;}});app.mount(node('root'));await settle();await settle();
  try{assert.equal(auth.authVerified.value,true);assert.equal(auth.currentView.value,'teaching-courses');assert.equal(urls.filter(url=>url.includes('/dashboard/')).length,0);assert.equal(controller.teachingEntryPending.value,false);}finally{app.unmount();window.location=previousLocation;window.history=previousHistory;globalThis.fetch=previousFetch;analyticsApi.getStudentInteractions=originalInteractions;}
 });
+
+
+// Desktop QA regression packet: measured browser findings, isolated runtime contracts.
+test('capability failure presents its sanitized service reason and no idle catalog',async()=>{
+ const h=await workbench({api:{getCapabilities:async()=>{throw{reason:'teaching_schema_missing',status:503,message:'PRIVATE_DETAIL'};}}});
+ try{
+  assert.ok(h.controller.availability,'Availability must project the actual capabilities resource');
+  assert.equal(h.controller.availability.value.readReady,false);assert.equal(h.controller.availability.value.mutationAllowed,false);
+  assert.equal(h.controller.availability.value.reason,'teaching_schema_missing');assert.equal(h.controller.availability.value.resourceStatus,'error');
+  assert.deepEqual(h.calls,[]);assert.equal(h.controller.courses.status,'idle');assert.equal(h.controller.offerings.status,'idle');
+  const shell=await mount('TeachingWorkbenchShell',shellProps({availability:h.controller.availability.value,courses:h.controller.courses,offerings:h.controller.offerings}));
+  try{assert.match(textOf(shell.root),/教学服务暂不可用/);assert.match(textOf(shell.root),/读取失败/);assert.doesNotMatch(textOf(shell.root),/等待选择或读取|PRIVATE_DETAIL/);assert.equal(walk(shell.root).filter(el=>el.tag==='select').length,0);button(shell.root,'重试读取').props.onClick();assert.deepEqual(shell.emitted.refresh,[[]]);assert.doesNotMatch(await shell.ssr(),/等待选择或读取|PRIVATE_DETAIL/);}finally{shell.close();}
+ }finally{h.close();}
+});
+test('unknown capability failure presents read error without fabricated diagnosis or raw text',async()=>{
+ const h=await workbench({api:{getCapabilities:async()=>{throw{reason:'PRIVATE_DETAIL',status:503};}}});
+ try{assert.ok(h.controller.availability);assert.equal(h.controller.availability.value.reason,'request_failed');
+  const shell=await mount('TeachingWorkbenchShell',shellProps({availability:h.controller.availability.value,courses:h.controller.courses,offerings:h.controller.offerings}));
+  try{assert.match(textOf(shell.root),/读取失败/);assert.doesNotMatch(textOf(shell.root),/PRIVATE_DETAIL|教学服务暂不可用|等待选择或读取/);}finally{shell.close();}
+ }finally{h.close();}
+});
+test('confirmed teaching to legacy exam restores empty legacy hash on rejected hash navigation',async()=>{
+ const h=await workbench({hash:'#teaching/home'});try{
+  assert.equal(await h.controller.navigateToView('exam'),true);assert.equal(h.location.hash,'');const reads=h.calls.length;
+  h.setLeave(false);h.location.hash='#teaching/home';assert.equal(await h.events.get('hashchange')(),false);
+  assert.equal(h.auth.currentView.value,'exam');assert.equal(h.location.hash,'');assert.equal(h.examFlushes,1);assert.equal(h.calls.length,reads);
+  h.setLeave(true);h.location.hash='#teaching/courses';assert.equal(await h.events.get('hashchange')(),true);
+  assert.equal(h.examFlushes,2);assert.equal(h.auth.currentView.value,'teaching-courses');assert.equal(h.location.hash,'#teaching/courses');
+ }finally{h.close();}
+});
+test('malformed initial teaching hash from saved legacy enters guarded unavailable shell without reads',async()=>{
+ const h=await workbench({view:'dashboard',hash:'#teaching/offerings/O?role=teacher'});try{
+  assert.equal(h.auth.currentView.value,'teaching-home');assert.equal(h.location.hash,'#teaching/home');assert.equal(h.controller.locationUnavailable.value,true);assert.deepEqual(h.calls,[]);
+  assert.equal(h.controller.context.value.offeringId,null);assert.equal(h.controller.context.value.mutationAllowed,false);
+  assert.equal(await h.controller.openSection('courses'),true);assert.equal(h.controller.locationUnavailable.value,false);assert.ok(h.calls.length>0);
+ }finally{h.close();}
+});
+test('malformed initial teaching hash obeys saved exam rejection before entering teaching shell',async()=>{
+ const h=await workbench({view:'exam',verified:false,hash:'#teaching/offerings/O?role=teacher'});try{
+  h.setLeave(false);h.auth.authVerified.value=true;await settle();
+  assert.equal(h.auth.currentView.value,'exam');assert.equal(h.location.hash,'');assert.equal(h.examFlushes,1);assert.deepEqual(h.calls,[]);assert.match(h.notices[0][0],/答案尚未保存/);
+ }finally{h.close();}
+});
+test('older rejected hash cannot roll back newer confirmed teaching or legacy intent',async()=>{
+ const h=await workbench({hash:'#teaching/home'});try{
+  h.location.hash='#teaching/courses';const old=h.events.get('hashchange')();const recent=h.controller.navigateToView('exam');
+  await Promise.all([old,recent]);assert.equal(h.auth.currentView.value,'exam');assert.equal(h.location.hash,'');
+  h.setLeave(true);h.location.hash='#teaching/history';assert.equal(await h.events.get('hashchange')(),true);assert.equal(h.location.hash,'#teaching/history');
+ }finally{h.close();}
+});
+test('desktop tool viewport uses measured top and cleans resize scroll listeners on unmount',async()=>{
+ let helpers;try{helpers=await import('../js/utils/teachingToolsViewport.js');}catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND')throw error;}
+ assert.equal(typeof helpers?.measureTeachingToolsHeight,'function','Measured remaining viewport helper must exist');
+ assert.equal(helpers.measureTeachingToolsHeight({top:383.4375,viewportHeight:800}),400.5625);
+ assert.equal(helpers.measureTeachingToolsHeight({top:383.4375,viewportHeight:900}),480);
+ assert.equal(helpers.measureTeachingToolsHeight({top:850,viewportHeight:800}),0);
+ assert.equal(helpers.measureTeachingToolsHeight({top:NaN,viewportHeight:800}),null);
+ const before=new Map([...listeners].map(([name,fns])=>[name,fns.size]));const previousHeight=window.innerHeight;window.innerHeight=800;
+ const shell=await mount('TeachingWorkbenchShell',shellProps());try{
+  const details=walk(shell.root).find(el=>el.tag==='details'),menu=walk(shell.root).find(el=>el.props.class==='tw-tool-list');
+  assert.ok(details.props.onToggle,'Native details toggle must trigger viewport measurement');let top=383.4375;details.open=true;menu.getBoundingClientRect=()=>({top});
+  details.props.onToggle();await settle();assert.equal(menu.props.style['--tw-tools-max-height'],'400.5625px');
+  window.innerHeight=700;window.dispatchEvent({type:'resize'});await settle();assert.equal(menu.props.style['--tw-tools-max-height'],'300.5625px');
+  top=450;window.dispatchEvent({type:'scroll'});await settle();assert.equal(menu.props.style['--tw-tools-max-height'],'234px');
+  assert.equal(listeners.get('resize').size,(before.get('resize')||0)+1);assert.equal(listeners.get('scroll').size,(before.get('scroll')||0)+1);
+ }finally{shell.close();window.innerHeight=previousHeight;}
+ assert.equal(listeners.get('resize')?.size||0,before.get('resize')||0);assert.equal(listeners.get('scroll')?.size||0,before.get('scroll')||0);
+});
+test('desktop CSS tool viewport and placeholder control contrast intent are explicit',()=>{
+ const css=source('styles/teaching-workbench.css');
+ assert.match(css,/max-height:\s*var\(--tw-tools-max-height/);assert.doesNotMatch(css,/100vh\s*-\s*200px/);assert.match(css,/overscroll-behavior:\s*contain/);
+ assert.match(css,/\.teaching-workbench input::placeholder\s*\{[^}]*color:\s*var\(--tw-secondary\)[^}]*opacity:\s*1/);
+ assert.match(css,/\.teaching-workbench select,\.teaching-workbench input\s*\{[^}]*border:\s*1px solid var\(--tw-secondary\)/);
+ const luminance=hex=>{const rgb=hex.match(/[a-f0-9]{2}/gi).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
+ const secondary=css.match(/--tw-secondary:\s*(#[a-f0-9]{6})/i)[1],surface=css.match(/--tw-surface:\s*(#[a-f0-9]{3,6})/i)[1];assert.equal(surface,'#fff');assert.ok((1.05)/(luminance(secondary)+.05)>=4.5);
+});
+
+test('main shell availability wires the resource projection rather than capabilities data alone',()=>{
+ const main=source('js/main.js');assert.match(main,/const teachingAvailability = teachingWorkbench\.availability;/);assert.doesNotMatch(main,/getTeachingAvailability\(teachingWorkbench\.capabilities\.data/);
+});
+test('capability retry recovers actual catalog reads with write gate still closed',async()=>{
+ let reads=0;const h=await workbench({api:{getCapabilities:async()=>{if(++reads===1)throw{reason:'database_unavailable',status:503};return capability();}}});
+ try{assert.equal(h.controller.availability.value.resourceStatus,'error');assert.equal(await h.controller.refresh(),true);assert.equal(h.controller.availability.value.resourceStatus,'ready');assert.equal(h.controller.availability.value.readReady,true);assert.equal(h.controller.availability.value.mutationAllowed,false);assert.equal(h.controller.courses.status,'ready');assert.equal(h.controller.offerings.status,'ready');}finally{h.close();}
+});
+test('malformed initial saved exam can accept only through flush before unavailable shell with no reads',async()=>{
+ const h=await workbench({view:'exam',hash:'#teaching/offerings/O?role=teacher'});try{assert.equal(h.examFlushes,1);assert.equal(h.auth.currentView.value,'teaching-home');assert.equal(h.location.hash,'#teaching/home');assert.equal(h.controller.locationUnavailable.value,true);assert.deepEqual(h.calls,[]);assert.equal(h.controller.context.value.offeringId,null);}finally{h.close();}
+});

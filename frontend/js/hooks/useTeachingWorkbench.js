@@ -1,5 +1,6 @@
 import { ref,computed,readonly,watch,onMounted,onScopeDispose } from 'vue';
 import { useTeachingContext } from './useTeachingContext.js';
+import { getTeachingAvailability,safeTeachingSummaryReason } from '../utils/teachingStatus.js';
 import { createTeachingNavigation,isTeachingView,parseTeachingLocation } from '../controllers/teachingNavigation.js';
 
 const viewSections=Object.freeze({'teaching-home':'home','teaching-courses':'courses','teaching-tasks':'tasks','teaching-history':'history','t_teaching-home':'home','t_teaching-courses':'courses','t_teaching-assignments':'tasks','t_teaching-submissions':'history'});
@@ -12,12 +13,18 @@ export function useTeachingWorkbench(auth,navigateView,{api,locatorStore=globalT
     const offeringQueryCourseId=ref(null),teachingEntryPending=ref(false);
     const teachingView=computed(()=>isTeachingView(auth.currentView.value));
     let disposed=false,intent=0,loading=null,navigation;
-    let confirmedHash=teachingView.value?'':location?.hash||'';
+    const availability=computed(()=>{
+        const resource=teaching.capabilities;
+        const result=getTeachingAvailability(resource.data,null);
+        if(['error','unavailable'].includes(resource.status)) {result.readReady=false;result.reason=safeTeachingSummaryReason(resource.error?.reason);}
+        return {...result,resourceStatus:resource.status};
+    });
     const verified=()=>!disposed&&auth.authVerified.value===true;
     const replaceHash=hash=>{
         if(history?.replaceState&&location)history.replaceState(null,'',(location.pathname||'')+(location.search||'')+hash);
     };
-    const makeNavigation=()=>createTeachingNavigation({navigateView,getContext:teaching.getContext,getHash:()=>location?.hash||'',replaceHash:hash=>{confirmedHash=hash;replaceHash(hash);}});
+    const makeNavigation=()=>createTeachingNavigation({navigateView,getContext:teaching.getContext,getHash:()=>location?.hash||'',replaceHash,
+        initialLegacyView:teachingView.value?null:auth.currentView.value,initialLegacyHash:location?.hash||''});
     navigation=makeNavigation();
     const current=(request,epoch)=>verified()&&request===intent&&auth.authEpoch.value===epoch&&teachingView.value;
     const ensureLoaded=async(force=false)=>{
@@ -36,7 +43,6 @@ export function useTeachingWorkbench(auth,navigateView,{api,locatorStore=globalT
         try {accepted=await navigation.openObject(locator);}
         finally {if(request===intent)teachingEntryPending.value=false;}
         if(!current(request,epoch)||!accepted)return false;
-        confirmedHash=navigation.getLocation().hash;
         section.value=locator.section;locationUnavailable.value=false;selectedCourseId.value=null;
         // No B2 detail endpoint is called by F3, including deep hash locators.
         const futureDetail=Boolean(locator.assignmentId||locator.releaseId||locator.submissionId);
@@ -81,30 +87,42 @@ export function useTeachingWorkbench(auth,navigateView,{api,locatorStore=globalT
         if(isTeachingView(view))return openSection(viewSections[view]);
         const request=++intent;
         teachingEntryPending.value=false;
-        const accepted=await navigateView(view);
-        if(!disposed&&request===intent&&accepted===true){teaching.clear();selectedCourseId.value=null;offeringQueryCourseId.value=null;locationUnavailable.value=false;confirmedHash='';replaceHash('');return true;}
+        const accepted=await navigation.openLegacy(view);
+        if(!disposed&&request===intent&&accepted===true){teaching.clear();selectedCourseId.value=null;offeringQueryCourseId.value=null;locationUnavailable.value=false;return true;}
         return false;
     };
-    const handleHashChange=async()=>{
+    const enterUnavailableLocation=async()=>{
+        const request=++intent,epoch=auth.authEpoch.value;
+        teachingEntryPending.value=!teachingView.value;
+        let accepted=false;
+        try {accepted=await navigation.openSection('home');}
+        finally {if(request===intent)teachingEntryPending.value=false;}
+        if(!accepted||!current(request,epoch))return false;
+        // The invalid locator is never used for a capabilities/catalog/object read.
+        teaching.clear();section.value='home';locationUnavailable.value=true;selectedCourseId.value=null;offeringQueryCourseId.value=null;
+        return false;
+    };
+    const handleHashChange=async({initial=false}={})=>{
         if(!verified())return false;
         const locator=parseTeachingLocation(location?.hash);
         if(!locator){
+            if(!navigation.getLocation() && location?.hash?.startsWith('#teaching/'))return enterUnavailableLocation();
+            // A seeded legacy address also needs guarded malformed initial entry.
+            if(!teachingView.value && location?.hash?.startsWith('#teaching/') && initial)return enterUnavailableLocation();
             ++intent;locationUnavailable.value=true;selectedCourseId.value=null;offeringQueryCourseId.value=null;teaching.clear();
-            replaceHash(confirmedHash);return false;
+            navigation.restoreLocation();return false;
         }
-        const accepted=await openLocation(locator);
-        if(!accepted&&!disposed)replaceHash(confirmedHash);
-        return accepted;
+        return openLocation(locator);
     };
     const stop=watch([()=>auth.authVerified.value,()=>auth.authEpoch.value],([available])=>{
         ++intent;loading=null;teachingEntryPending.value=false;selectedCourseId.value=null;offeringQueryCourseId.value=null;locationUnavailable.value=false;
         navigation.dispose();navigation=makeNavigation();
         if(!available||disposed)return;
         const hash=location?.hash||'';
-        if(hash.startsWith('#teaching/'))void handleHashChange();
+        if(hash.startsWith('#teaching/'))void handleHashChange({initial:true});
         else if(teachingView.value)void openSection(viewSections[auth.currentView.value]);
     },{immediate:true,flush:'sync'});
     onMounted(()=>eventTarget?.addEventListener('hashchange',handleHashChange));
     onScopeDispose(()=>{disposed=true;++intent;teachingEntryPending.value=false;stop();navigation.dispose();loading=null;eventTarget?.removeEventListener('hashchange',handleHashChange);});
-    return {...teaching,isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
+    return {...teaching,availability:readonly(availability),isTeachingView:teachingView,teachingEntryPending:readonly(teachingEntryPending),section,selectedCourseId,locationUnavailable,openSection,selectCourse,selectOffering,selectMode,refresh,loadMore,retry,navigateToView};
 }

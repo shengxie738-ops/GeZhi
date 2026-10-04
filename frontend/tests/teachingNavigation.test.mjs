@@ -165,3 +165,29 @@ for (const epoch of ['authEpoch','contextEpoch']) {
         check=true;assert.equal(await controller.openSection('courses'),true);assert.equal(hash,'#teaching/courses');assert.equal(view,'teaching-courses');
     });
 }
+
+
+test('controller explicitly confirms guarded legacy locator and restores it after exam refusal',async t=>{
+ const {createTeachingNavigation:create}=ready();let view='teaching-home',hash='#teaching/home',allowed=false;const notices=[];
+ const go=createNavigationGuard({getCurrentView:()=>view,getExam:()=>view==='exam'?{flushAnswers:async()=>allowed}:null,setView:next=>view=next,notify:message=>notices.push(message)});
+ const controller=create({navigateView:go,getContext:()=>({...verified,authEpoch:1,contextEpoch:1}),getHash:()=>hash,replaceHash:next=>hash=next});t.after(()=>controller.dispose());
+ await controller.openSection('home');assert.equal(typeof controller.openLegacy,'function','Legacy navigation must have the same confirmed owner');
+ assert.equal(await controller.openLegacy('exam'),true);assert.deepEqual(controller.getLocation(),{hash:'',locator:null,view:'exam'});assert.equal(hash,'');
+ hash='#teaching/courses';assert.equal(await controller.openObject(hash),false);assert.equal(view,'exam');assert.equal(hash,'');assert.equal(notices.length,1);
+ allowed=true;assert.equal(await controller.openSection('courses'),true);assert.equal(hash,'#teaching/courses');
+});
+test('controller latest legacy intent invalidates delayed teaching and authority changed legacy cannot commit',async t=>{
+ const {createTeachingNavigation:create}=ready();let view='teaching-home',hash='#teaching/home',context={...verified,authEpoch:1,contextEpoch:1};let check=true;
+ const go=createNavigationGuard({getCurrentView:()=>view,getExam:()=>view==='exam'?{flushAnswers:()=>check}:null,setView:next=>view=next,notify(){}});
+ const controller=create({navigateView:go,getContext:()=>context,getHash:()=>hash,replaceHash:next=>hash=next,checkLeave:()=>check});t.after(()=>controller.dispose());
+ await controller.openSection('home');assert.equal(typeof controller.openLegacy,'function');const waiting=deferred();check=waiting.promise;
+ const old=controller.openSection('courses');check=true;assert.equal(await controller.openLegacy('exam'),true);waiting.resolve(true);assert.equal(await old,false);assert.equal(hash,'');assert.equal(view,'exam');
+ const flush=deferred();check=flush.promise;const pending=controller.openLegacy('dashboard');context={...context,contextEpoch:2};flush.resolve(true);assert.equal(await pending,false);assert.equal(view,'exam');assert.equal(hash,'');
+});
+
+test('same-view legacy cancellation preserves existing guard no-flush behavior',async t=>{
+ const {createTeachingNavigation:create}=ready();let view='exam',hash='',flushes=0;
+ const go=createNavigationGuard({getCurrentView:()=>view,getExam:()=>({flushAnswers:async()=>{flushes++;return false;}}),setView:next=>view=next,notify(){}});
+ const controller=create({navigateView:go,getContext:()=>verified,getHash:()=>hash,replaceHash:next=>hash=next,initialLegacyView:'exam'});t.after(()=>controller.dispose());
+ assert.equal(await controller.openLegacy('exam'),true);assert.equal(flushes,0);assert.equal(view,'exam');assert.equal(hash,'');
+});

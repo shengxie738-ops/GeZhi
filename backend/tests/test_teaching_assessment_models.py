@@ -1,12 +1,14 @@
 """B2 metadata and in-memory SQLite evidence only; never import startup."""
 import ast
 import importlib
+import importlib.util
+import re
 from datetime import datetime
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CheckConstraint, JSON, String, UniqueConstraint, create_engine, event
+from sqlalchemy import CheckConstraint, Column, JSON, MetaData, String, Table, UniqueConstraint, create_engine, event
 from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -51,6 +53,135 @@ def checks(table):
 def fk_shapes(table):
     return {(tuple(c.columns.keys()), c.referred_table.name, tuple(e.column.name for e in c.elements))
             for c in table.foreign_key_constraints}
+
+
+def assessment_startup_sources():
+    return {name: (BACKEND / name).read_text() for name in
+            ("app/main.py", "app/core/init_db.py", "app/api/api.py")}
+
+
+def assert_assessment_startup_contract(sources):
+    """Audit the c084ca5 router and startup table selection without importing either."""
+    # The bounded suite uses pytest's importlib mode; load only this audited test
+    # utility by its exact path, never any ordinary application startup module.
+    spec = importlib.util.spec_from_file_location("b1_startup_selection_contract", BACKEND / "tests/test_teaching_models.py")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    capture_actual_selection = helper.capture_actual_selection
+
+    assert set(sources) == {"app/main.py", "app/core/init_db.py", "app/api/api.py"}
+    expected_import = ast.parse("from app.api.endpoints import teaching_assessment").body[0]
+    expected_mount = ast.parse(
+        'api_router.include_router(teaching_assessment.router, prefix="", tags=["teaching-assessment"])'
+    ).body[0]
+    trees = {name: ast.parse(source) for name, source in sources.items()}
+    for name, tree in trees.items():
+        imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))
+                   and any(token in ast.unparse(node) for token in ("teaching_assessment", "assessment_schema"))]
+        references = [node for node in ast.walk(tree)
+                      if isinstance(node, ast.Name) and node.id == "teaching_assessment"]
+        if name == "app/api/api.py":
+            assert len(imports) == 1 and ast.dump(imports[0]) == ast.dump(expected_import), "assessment import must be exact and unique"
+            assert imports[0] in tree.body, "assessment import must be at aggregate module scope"
+            mounts = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                      and any(isinstance(child, ast.Name) and child.id == "teaching_assessment"
+                              for child in ast.walk(node))]
+            assert len(references) == len(mounts) == 1, "assessment mount must be unique and use no alias"
+            mount = next((node for node in tree.body if isinstance(node, ast.Expr) and node.value is mounts[0]), None)
+            assert mount is not None and ast.dump(mount) == ast.dump(expected_mount), "assessment mount must target the exact api_router/prefix/tags at module scope"
+            assert tree.body.index(mount) == tree.body.index(imports[0]) + 1, "assessment mount must immediately follow its import"
+        else:
+            assert not imports and not references, "assessment imports and mounts belong only in app/api/api.py"
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "create_all":
+                    assert name == "app/core/init_db.py", "startup create_all belongs only in audited init_db"
+                assert not (isinstance(node.func, ast.Attribute) and node.func.attr == "create"), "startup table.create is forbidden"
+                assert ast.unparse(node.func).split(".")[-1] not in {"migrate_teaching_schema", "migrate_assessment_schema"}, "startup teaching migration is forbidden"
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                assert not (re.search(r"\bCREATE\s+TABLE\b", node.value, re.I)
+                            and "teaching_" in node.value.lower()), "startup teaching CREATE TABLE SQL is forbidden"
+
+    init = trees["app/core/init_db.py"]
+    policy_import = ast.parse("from app.core.schema_policy import startup_table_allowed").body[0]
+    policy_imports = [node for node in ast.walk(init) if isinstance(node, (ast.Import, ast.ImportFrom))
+                      and any(alias.name == "startup_table_allowed" or alias.asname == "startup_table_allowed"
+                              for alias in node.names)]
+    assert len(policy_imports) == 1 and policy_imports[0] in init.body and ast.dump(policy_imports[0]) == ast.dump(policy_import), "startup predicate import must be exact and unique"
+    assert not any((isinstance(node, ast.Name) and node.id == "startup_table_allowed" and isinstance(node.ctx, ast.Store))
+                   or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == "startup_table_allowed")
+                   for node in ast.walk(init)), "startup predicate must not be rebound"
+    _, b2 = modules()
+    b1 = feature("app.services.teaching.schema")
+    predicate = feature("app.core.schema_policy").startup_table_allowed
+    teaching = [*b1.b1_tables(), *b2.b2_tables()]
+    assert all(not predicate(table) for table in teaching), "startup predicate must exclude actual B1/B2 tables"
+    ordinary = Table("ordinary_static_control", MetaData(), Column("id", String(36), primary_key=True))
+    try:
+        selection = capture_actual_selection(sources["app/core/init_db.py"], teaching + [ordinary], predicate)
+    except AssertionError as exc:
+        raise AssertionError("startup create_all contract: " + str(exc)) from exc
+    assert selection == [ordinary], "startup selection must exclude all actual B1/B2 tables and keep ordinary tables"
+
+
+@pytest.mark.parametrize("defect", [
+    "missing_import", "duplicate_import", "aliased_import", "wrong_import_module",
+    "nested_import", "wrong_import_location", "model_import", "migration_import",
+    "missing_mount", "duplicate_mount", "wrong_receiver", "wrong_router", "wrong_prefix", "wrong_tags", "nested_mount",
+    "unfiltered_create_all", "include_teaching_tables", "extra_create_all", "direct_table_create", "raw_teaching_ddl",
+    "wrong_policy_import", "rebound_policy",
+])
+def test_assessment_startup_guard_rejects_unsafe_source(defect):
+    # Each mutation violates the committed router or no-implicit-DDL contract.
+    # Sources are parsed only; no aggregate module, SQL or startup is executed.
+    sources = assessment_startup_sources()
+    assert_assessment_startup_contract(sources)
+    api, main, init = "app/api/api.py", "app/main.py", "app/core/init_db.py"
+    import_line = "from app.api.endpoints import teaching_assessment"
+    mount_line = 'api_router.include_router(teaching_assessment.router, prefix="", tags=["teaching-assessment"])'
+    replacements = {
+        "missing_import": (import_line, ""),
+        "duplicate_import": (import_line, import_line + "\n" + import_line),
+        "aliased_import": (import_line, import_line + " as assessment_alias"),
+        "wrong_import_module": (import_line, "from other.endpoints import teaching_assessment"),
+        "nested_import": (import_line, "if True:\n    " + import_line),
+        "model_import": (import_line, import_line + "\nfrom app.models import teaching_assessment"),
+        "migration_import": (import_line, import_line + "\nfrom app.services.teaching import assessment_schema"),
+        "missing_mount": (mount_line, ""),
+        "duplicate_mount": (mount_line, mount_line + "\n" + mount_line),
+        "wrong_receiver": (mount_line, mount_line.replace("api_router.", "other_router.", 1)),
+        "wrong_router": (mount_line, mount_line.replace("teaching_assessment.router", "teaching.router")),
+        "wrong_prefix": (mount_line, mount_line.replace('prefix=""', 'prefix="/wrong"')),
+        "wrong_tags": (mount_line, mount_line.replace('tags=["teaching-assessment"]', 'tags=["wrong"]')),
+        "nested_mount": (mount_line, "if True:\n    " + mount_line),
+    }
+    if defect in replacements:
+        old, new = replacements[defect]
+        assert sources[api].count(old) == 1
+        sources[api] = sources[api].replace(old, new)
+    elif defect == "wrong_import_location":
+        sources[api] = sources[api].replace(import_line, "")
+        sources[main] += "\n" + import_line + "\n"
+    elif defect == "unfiltered_create_all":
+        start = sources[init].index("    Base.metadata.create_all(")
+        end = sources[init].index("\n    _ensure_columns", start)
+        sources[init] = sources[init][:start] + "    Base.metadata.create_all(bind=engine, tables=Base.metadata.sorted_tables)" + sources[init][end:]
+    elif defect == "include_teaching_tables":
+        sources[init] = sources[init].replace("if startup_table_allowed(table)", "if True")
+    elif defect == "extra_create_all":
+        sources[main] += "\nBase.metadata.create_all(bind=engine)\n"
+    elif defect == "direct_table_create":
+        sources[init] += "\nTeachingAssignment.__table__.create(engine)\n"
+    elif defect == "raw_teaching_ddl":
+        sources[init] += '\nconnection.execute(text("CREATE TABLE teaching_assignments (id VARCHAR(36))"))\n'
+    elif defect == "wrong_policy_import":
+        sources[init] = sources[init].replace("from app.core.schema_policy import startup_table_allowed", "from unsafe_policy import startup_table_allowed")
+    else:
+        assert defect == "rebound_policy"
+        sources[init] += "\nstartup_table_allowed = lambda table: True\n"
+    with pytest.raises(AssertionError, match="assessment|startup") as rejected:
+        assert_assessment_startup_contract(sources)
+    print("STATIC_REFUSAL", defect, str(rejected.value).splitlines()[0])
 
 
 def test_b2_tables_are_explicit_only():
@@ -99,10 +230,8 @@ def test_b2_tables_are_explicit_only():
         for fk in table.foreign_key_constraints:
             columns = tuple(fk.columns.keys())
             assert any(key[:len(columns)] == columns for key in support), (table.name, columns)
-    # Read source only. Ordinary startup is never imported or run.
-    for path in (BACKEND / "app/main.py", BACKEND / "app/core/init_db.py", BACKEND / "app/api/api.py"):
-        imports = [ast.unparse(n) for n in ast.walk(ast.parse(path.read_text())) if isinstance(n, (ast.Import, ast.ImportFrom))]
-        assert not any("teaching_assessment" in name or "assessment_schema" in name for name in imports)
+    # Task6 mounts the exact B2 router; startup DDL remains separately forbidden.
+    assert_assessment_startup_contract(assessment_startup_sources())
     assert "late_policy = 'reject'" in checks(models.ReleasePreview.__table__)
     assert "late_policy = 'reject'" in checks(models.Release.__table__)
     assert "expires_at > created_at" in checks(models.ReleasePreview.__table__)

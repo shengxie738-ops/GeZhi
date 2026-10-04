@@ -31,7 +31,6 @@ import { getDashboardGreeting, getUserDisplayName } from './utils/dashboardGreet
 import { useToast } from './hooks/useToast.js';
 import { useAuth } from './hooks/useAuth.js';
 import { useTeachingWorkbench } from './hooks/useTeachingWorkbench.js';
-import { getTeachingAvailability } from './utils/teachingStatus.js';
 import TeachingWorkbenchShell from './components/teaching/TeachingWorkbenchShell.js';
 import { useChat } from './hooks/useChat.js';
 import { useCourses } from './hooks/useCourses.js';
@@ -113,7 +112,7 @@ const app = createApp({
         });
         const teachingWorkbench = useTeachingWorkbench(auth, navigateView);
         const isTeachingView = teachingWorkbench.isTeachingView;
-        const teachingAvailability = computed(() => getTeachingAvailability(teachingWorkbench.capabilities.data, null));
+        const teachingAvailability = teachingWorkbench.availability;
         const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
         const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
 
