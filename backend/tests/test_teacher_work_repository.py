@@ -529,3 +529,444 @@ def test_legacy_duration_mismatch_is_marked_on_import_and_save():
         assert stored["teacher_work"]["needs_normalization_fields"] == ["duration_minutes", "teaching_flow"]
         assert stored["content"]["duration_minutes"] == stored["content"]["teaching_flow"][0]["minutes"] == 30
     assert memory.versions == {} and memory.approvals == [{"approval_id": "old-approval", "input_revision": 1}]
+
+
+# T2b: exact statement/metadata/recording-transport selection, initially RED only.
+# This does not authorize SQLAlchemy imports until its separate closure release.
+def _sql_module():
+    assert (BACKEND / "app/repositories/teacher_work_sql.py").is_file(), "T2b SQL adapter is missing"
+    return importlib.import_module("app.repositories.teacher_work_sql")
+
+
+class RecordingSqlResult:
+    def __init__(self, values=(), rowcount=0):
+        self.values = list(values)
+        self.rowcount = rowcount
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self.values)
+
+    def first(self):
+        return self.values[0] if self.values else None
+
+
+class RecordingSqlQuery:
+    """Only the existing JsonStore query transport DSL, not feature behavior."""
+    def __init__(self, session, statement):
+        self.session, self.statement = session, statement
+
+    def filter(self, *predicates):
+        self.statement = self.statement.where(*predicates)
+        return self
+
+    def order_by(self, *columns):
+        self.statement = self.statement.order_by(*columns)
+        return self
+
+    def with_for_update(self):
+        self.statement = self.statement.with_for_update()
+        return self
+
+    def first(self):
+        return self.session.execute(self.statement.limit(1)).scalars().first()
+
+    def all(self):
+        return self.session.execute(self.statement).scalars().all()
+
+
+class RecordingSqlTransport:
+    """Supplied rows/statements only. Never a SQLAlchemy Session or database."""
+    def __init__(self, sql, origin):
+        self.sql = sql
+        self.origin = origin
+        self.active = True
+        self.nested = False
+        self.info = {}
+        self.new, self.dirty, self.deleted = [], [], []
+        self.added, self.statements, self.events, self.batches = [], [], [], []
+        self.update_rowcount = 1
+        self.flush_error = None
+        self.failed = False
+        self.tracked = []
+
+    def in_transaction(self):
+        return self.active
+
+    def in_nested_transaction(self):
+        return self.nested
+
+    def get_transaction(self):
+        return self if self.active else None
+
+    @property
+    def no_autoflush(self):
+        return self
+
+    def __enter__(self):
+        self.events.append("no_autoflush.enter")
+        return self
+
+    def __exit__(self, kind, value, traceback):
+        self.events.append("no_autoflush.exit")
+
+    def execute(self, statement):
+        assert not self.failed, "no query/replay in a failed transport"
+        self.statements.append(statement)
+        self.events.append("execute")
+        if statement.is_update:
+            return RecordingSqlResult(rowcount=self.update_rowcount)
+        assert self.batches, "unexpected SQL transport read"
+        return RecordingSqlResult(self.batches.pop(0))
+
+    def query(self, model):
+        return RecordingSqlQuery(self, self.sql.select(model))
+
+    def add(self, row):
+        self.events.append("add")
+        self.added.append(row)
+        self.new.append(row)
+
+    def flush(self):
+        self.events.append("flush")
+        if self.flush_error is not None:
+            self.failed = True
+            raise self.flush_error
+        self.new.clear()
+        self.dirty.clear()
+
+    def refresh(self, row):
+        self.events.append("refresh")
+
+    def begin(self, *args, **kwargs):
+        raise AssertionError("adapter must not begin a transaction")
+
+    def begin_nested(self, *args, **kwargs):
+        raise AssertionError("adapter must not start a savepoint")
+
+    def commit(self):
+        raise AssertionError("adapter must not commit")
+
+    def rollback(self):
+        raise AssertionError("adapter must not roll back")
+
+
+def _sql_fixture(mode="write"):
+    module = _sql_module()  # Feature assertion precedes every SQLAlchemy import.
+    store_tree = ast.parse((BACKEND / "app/repositories/json_store.py").read_text(encoding="utf-8"))
+    store_class = next(node for node in store_tree.body if isinstance(node, ast.ClassDef) and node.name == "JsonStore")
+    store_init = next(node for node in store_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
+    assert {"commit_policy", "record_model"} <= {argument.arg for argument in store_init.args.kwonlyargs}, "T2b safe caller-owned store seam is missing"
+    sql = importlib.import_module("sqlalchemy")
+    orm = importlib.import_module("sqlalchemy.orm")
+    mysql = importlib.import_module("sqlalchemy.dialects.mysql.base")
+    work = importlib.import_module("app.models.teacher_work")
+    base = orm.declarative_base()
+
+    class DomainRecordFixture(base):
+        __tablename__ = "domain_records"
+        id = sql.Column(sql.Integer, primary_key=True, index=True, autoincrement=True)
+        module = sql.Column(sql.String(64), index=True, nullable=False)
+        record_type = sql.Column(sql.String(64), index=True, nullable=False)
+        record_key = sql.Column(sql.String(255), index=True, nullable=False)
+        owner_id = sql.Column(sql.String(255), index=True, default="")
+        role = sql.Column(sql.String(32), default="")
+        status = sql.Column(sql.String(64), default="")
+        payload = sql.Column(sql.Text, nullable=False)
+        created_at = sql.Column(sql.TIMESTAMP)
+        updated_at = sql.Column(sql.TIMESTAMP)
+
+    models = module.SqlWorkModels(task=work.WorkTask, owner_run_lease=work.OwnerRunLease,
+                                  package_version=work.PackageVersion, domain_record=DomainRecordFixture)
+    session = RecordingSqlTransport(sql, orm.SessionTransactionOrigin.BEGIN)
+    store_module = importlib.import_module("app.repositories.json_store")
+    store = store_module.JsonStore(session, commit_policy="caller_owned", record_model=DomainRecordFixture)
+    task_id = UUID("60000000-0000-0000-0000-000000000001")
+    payload = {"draft_id": "legacy-1", "title": "旧任务", "topic": "旧主题", "duration_minutes": 45,
+               "resource_ids": ["resource-1"], "content": lesson(), "status": "DRAFT",
+               "created_at": NOW.isoformat(), "updated_at": NOW.isoformat(),
+               "teacher_work": {"requirements": "", "base_version_id": None, "needs_normalization_fields": []}}
+    draft = DomainRecordFixture(id=1, module="teacher_lesson_prep", record_type="draft", record_key="legacy-1",
+                               owner_id="A", role="teacher", status="DRAFT", payload=importlib.import_module("json").dumps(payload, ensure_ascii=False),
+                               created_at=NOW.replace(tzinfo=None), updated_at=NOW.replace(tzinfo=None))
+    task = work.WorkTask(task_id=str(task_id), owner_subject="A", owner_storage_id=str(NS_A), institution_id=None,
+                        offering_id=None, title="旧任务", topic="旧主题", audience="合成对象", duration_minutes=45,
+                        target_slide_count=8, lesson_draft_id="legacy-1", input_revision=1, working_revision=1,
+                        current_outline_id=None, latest_version_id=None, skill_refs=[], plugin_ids=[], reference_ids=[],
+                        create_idempotency_key="课题 Key ".encode("utf-8"), create_request_digest="a" * 64,
+                        created_at=NOW.replace(tzinfo=None), updated_at=NOW.replace(tzinfo=None))
+    lease = work.OwnerRunLease(owner="A", owner_storage_id=str(NS_A), active_run_id=str(OWN_VERSION),
+                               process_instance=str(OTHER_VERSION), expires_at=NOW.replace(tzinfo=None), revision=3)
+    session.tracked = [draft, task, lease]
+    def authorize(owner, offering_id, institution_id):
+        session.events.append("footprint")
+        return _module().AuthorizedWorkScope(WorkActor(owner, "teacher", NS_A), None, None)
+    repository = module.build_sql_repository(session, models=models, draft_store=store,
+                                             authorize_locked=authorize, clock=lambda: NOW,
+                                             new_uuid=lambda: UUID("60000000-0000-0000-0000-000000000002"), mode=mode)
+    return {"module": module, "sql": sql, "orm": orm, "dialect": mysql.MySQLDialect(), "models": models,
+            "session": session, "store": store, "repository": repository, "task": task, "draft": draft,
+            "lease": lease, "task_id": task_id, "payload": payload, "authorize": authorize}
+
+
+def _compiled(fixture, statement):
+    compiled = statement.compile(dialect=fixture["dialect"])
+    return str(compiled), compiled.params
+
+
+def _sql_task_batches(fixture, drafts=None):
+    return [[fixture["task"]], [fixture["lease"]], [("A", str(NS_A))],
+            [fixture["draft"]] if drafts is None else drafts, [fixture["task"]]]
+
+
+def _sql_locked_owner(fixture):
+    repository, session = fixture["repository"], fixture["session"]
+    repository.authorize_locked("A", None, None)
+    session.batches = [[fixture["lease"]]]
+    repository.rows.lock_owner_lease("A")
+
+
+def test_sql_task_owner_draft_and_lock_predicates():
+    fixture = _sql_fixture("read")
+    repository, session = fixture["repository"], fixture["session"]
+    session.batches = _sql_task_batches(fixture)
+    task = repository.get_task("A", fixture["task_id"])
+    assert task.owner_subject == "A" and task.owner_storage_id == NS_A and task.created_at.tzinfo == timezone.utc
+    assert len(session.statements) == 5
+    statements = [_compiled(fixture, statement) for statement in session.statements]
+    assert "FOR UPDATE" not in statements[0][0] and "FOR UPDATE" in statements[1][0]
+    assert "domain_records" in statements[3][0] and "FOR UPDATE" in statements[3][0]
+    assert "teacher_work_tasks" in statements[4][0] and "FOR UPDATE" in statements[4][0]
+    for index in (0, 1, 3, 4):
+        assert "A" in statements[index][1].values()
+        assert session.statements[index].get_execution_options().get("populate_existing") is True
+    assert str(fixture["task_id"]) in statements[0][1].values()
+    assert {"teacher_lesson_prep", "draft", "legacy-1"} <= set(statements[3][1].values())
+    assert session.events.index("footprint") < session.events.index("execute", session.events.index("footprint"))
+    assert not session.added and "flush" not in session.events
+    session.batches = [[fixture["task"]], [fixture["lease"]], [("A", str(NS_A))], [fixture["draft"], fixture["draft"]]]
+    error = rejection("SQL_PERSISTENCE_UNAVAILABLE", lambda: repository.get_task("A", fixture["task_id"]))
+    assert error.status_code == 503
+
+
+def test_sql_working_cas_expected_revision_predicate():
+    fixture = _sql_fixture()
+    repository, session = fixture["repository"], fixture["session"]
+    session.batches = _sql_task_batches(fixture)
+    saved = repository.patch_working("A", fixture["task_id"], patch(1, {"requirements": "SQL合成要求"}))
+    assert saved.working_revision == saved.input_revision == 2
+    update = next(statement for statement in session.statements if statement.is_update)
+    text, params = _compiled(fixture, update)
+    assert "teacher_work_tasks.owner_subject" in text and "teacher_work_tasks.task_id" in text
+    assert "teacher_work_tasks.working_revision" in text and "WHERE" in text
+    assert params["owner_subject_1"] == "A" and params["task_id_1"] == str(fixture["task_id"])
+    assert params["working_revision_1"] == 1 and params["working_revision"] == 2
+    assert "create_idempotency_key" not in text.split("WHERE")[0] and "owner_storage_id" not in text.split("WHERE")[0]
+    assert session.events.count("flush") == 1
+    fixture = _sql_fixture()
+    repository, session = fixture["repository"], fixture["session"]
+    session.batches = _sql_task_batches(fixture)
+    session.update_rowcount = 0
+    before = fixture["draft"].payload
+    error = rejection("REVISION_CONFLICT", lambda: repository.patch_working("A", fixture["task_id"], patch(1, {"requirements": "失败候选"})))
+    assert error.status_code == 409 and "flush" not in session.events
+    # Caller-only supplied restoration, not a real rollback/commit assertion.
+    fixture["draft"].payload = before
+    assert fixture["draft"].payload == before
+
+
+def test_sql_create_receipt_unique_and_pair_contract():
+    fixture = _sql_fixture()
+    repository, session, models = fixture["repository"], fixture["session"], fixture["models"]
+    assert models.owner_run_lease.__table__.c.owner_storage_id.nullable is False
+    assert any(tuple(constraint.columns.keys()) == ("owner_storage_id",)
+               for constraint in models.owner_run_lease.__table__.constraints if isinstance(constraint, fixture["sql"].UniqueConstraint))
+    _sql_locked_owner(fixture)
+    session.batches = [[fixture["task"]]]
+    row = repository.rows.find_task("A", fixture["task_id"])
+    assert row.create_idempotency_key == "课题 Key " and row.create_request_digest == "a" * 64
+    repository.rows.insert_task(row)
+    inserted = session.added[-1]
+    assert inserted.create_idempotency_key == "课题 Key ".encode("utf-8")
+    assert inserted.create_request_digest == "a" * 64
+    assert not {"lesson", "content", "resource_ids", "requirements"} & set(models.task.__table__.c.keys())
+    session.batches = [[fixture["task"]]]
+    repository.rows.find_task_by_create_key("A", "课题 Key ")
+    assert "课题 Key ".encode("utf-8") in _compiled(fixture, session.statements[-1])[1].values()
+    imported = _module().TaskRecord(row.task, None, None)
+    repository.rows.insert_task(imported)
+    assert session.added[-1].create_idempotency_key is session.added[-1].create_request_digest is None
+    fixture["task"].create_idempotency_key = b"\xff"
+    session.batches = [[fixture["task"]]]
+    rejection("SQL_PERSISTENCE_UNAVAILABLE", lambda: repository.rows.find_task("A", fixture["task_id"]))
+    fixture = _sql_fixture()
+    fixture["repository"].authorize_locked("A", None, None)
+    fixture["session"].batches = [[]]
+    fixture["repository"].rows.lock_owner_lease("A")
+    initialized = fixture["session"].added[-1]
+    assert initialized.owner == "A" and initialized.owner_storage_id == str(NS_A)
+    assert initialized.active_run_id is initialized.process_instance is initialized.expires_at is None
+    assert initialized.revision == 1 and fixture["session"].events.index("footprint") < fixture["session"].events.index("add")
+    fixture = _sql_fixture()
+    fixture["lease"].owner_storage_id = str(NS_B)
+    fixture["repository"].authorize_locked("A", None, None)
+    fixture["session"].batches = [[fixture["lease"]]]
+    rejection("OWNER_NAMESPACE_MISMATCH", lambda: fixture["repository"].rows.lock_owner_lease("A"))
+    assert not fixture["session"].added and "flush" not in fixture["session"].events
+
+
+def test_sql_duplicate_receipt_replay_is_constraint_specific():
+    fixture = _sql_fixture()
+    integrity_error = importlib.import_module("sqlalchemy.exc").IntegrityError
+    cases = ((1062, "uq_tw_task_owner_create_key", True), (1062, "uq_tw_task_owner_draft", True),
+             (1452, "foreign_key", False), (1062, "uq_tw_lease_storage_namespace", False),
+             (1062, "other_constraint", False))
+    for errno, constraint, expected in cases:
+        fixture = _sql_fixture()
+        repository, session = fixture["repository"], fixture["session"]
+        _sql_locked_owner(fixture)
+        session.batches = [[fixture["task"]]]
+        row = repository.rows.find_task("A", fixture["task_id"])
+        repository.rows.insert_task(row)
+        original = Exception(errno, f"Duplicate entry 'uq_tw_task_owner_create_key' for key 'teacher_work_tasks.{constraint}'")
+        error = integrity_error("synthetic INSERT", {}, original)
+        session.flush_error = error
+        before_queries = len(session.statements)
+        with pytest.raises(Exception) as caught:
+            repository.uow.flush()
+        if expected:
+            assert isinstance(caught.value, fixture["module"].SqlReservationConflict)
+            assert caught.value.constraint == constraint and caught.value.requires_fresh_transaction is True
+        else:
+            assert caught.value is error
+        assert len(session.statements) == before_queries and session.failed
+    # No failed-session lookup/replay or new transaction is performed here.
+
+
+def test_sql_json_store_caller_owned_flush_only():
+    fixture = _sql_fixture()
+    session, store = fixture["session"], fixture["store"]
+    session.batches = [[]]
+    saved = store.upsert("teacher_lesson_prep", "draft", "legacy-new", {"draft_id": "legacy-new", "status": "DRAFT"}, owner_id="A", role="teacher", status="DRAFT")
+    assert saved["draft_id"] == "legacy-new" and session.events[-3:] == ["add", "flush", "refresh"]
+    assert store.db is session and store.commit_policy == "caller_owned" and store.record_model is fixture["models"].domain_record
+    session.active = False
+    before = list(session.events)
+    with pytest.raises(ValueError):
+        store.upsert("teacher_lesson_prep", "draft", "legacy-new", {"status": "DRAFT"}, owner_id="A")
+    assert session.events == before
+    session.active = True
+    build = fixture["module"].build_sql_repository
+    arguments = {"models": fixture["models"], "draft_store": store, "authorize_locked": fixture["authorize"],
+                 "clock": lambda: NOW, "new_uuid": lambda: MISSING, "mode": "write"}
+    for attribute, invalid, valid in (("active", False, True), ("nested", True, False),
+                                     ("origin", fixture["orm"].SessionTransactionOrigin.AUTOBEGIN, fixture["orm"].SessionTransactionOrigin.BEGIN)):
+        setattr(session, attribute, invalid)
+        with pytest.raises(ValueError):
+            build(session, **arguments)
+        setattr(session, attribute, valid)
+    session.new.append(object())
+    with pytest.raises(ValueError):
+        build(session, **arguments)
+    session.new.clear()
+    other = RecordingSqlTransport(fixture["sql"], fixture["orm"].SessionTransactionOrigin.BEGIN)
+    with pytest.raises(ValueError):
+        build(other, **arguments)
+    assert session.events == before
+    tree = ast.parse((BACKEND / "app/repositories/json_store.py").read_text(encoding="utf-8"))
+    atomic = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "atomic_store")
+    calls = {getattr(node.func, "attr", "") for node in ast.walk(atomic) if isinstance(node, ast.Call)}
+    assert {"commit", "rollback"} <= calls  # Existing outer legacy owner remains source-aligned, never executed here.
+    constructor = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "JsonStore")
+    init = next(node for node in constructor.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
+    assert any(isinstance(value, ast.Constant) and value.value == "legacy" for value in init.args.kw_defaults)
+
+
+def test_sql_original_draft_strict_binding_and_preservation():
+    fixture = _sql_fixture()
+    _sql_locked_owner(fixture)
+    repository, session, draft = fixture["repository"], fixture["session"], fixture["draft"]
+    failures = (("owner_id", "B"), ("module", "another"), ("record_type", "another"),
+                ("record_key", "another"), ("payload", "{"), ("payload", "[]"),
+                ("payload", '{"draft_id":"another"}'))
+    for name, value in failures:
+        old = getattr(draft, name)
+        setattr(draft, name, value)
+        session.batches = [[draft]]
+        with pytest.raises(_module().WorkRepositoryError) as caught:
+            repository.drafts.lock_draft("A", "legacy-1")
+        assert caught.value.status_code in (404, 503)
+        setattr(draft, name, old)
+    session.batches = [[draft]]
+    error = rejection("DRAFT_ALREADY_EXISTS", lambda: repository.drafts.create_draft(_module().DraftRecord("A", "legacy-1", fixture["payload"])))
+    assert error.status_code == 409 and not session.added
+    fixture = _sql_fixture()
+    repository, session, draft = fixture["repository"], fixture["session"], fixture["draft"]
+    json = importlib.import_module("json")
+    original = {**fixture["payload"], "created_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00",
+                "content": {**lesson(), "unknown_paragraph": {"text": ["原文"]}, "model": "old-model"}}
+    draft.payload = json.dumps(original, ensure_ascii=False)
+    physical_before = (draft.created_at, draft.updated_at)
+    session.batches = [[], [fixture["lease"]], [], [draft], []]
+    task = repository.from_legacy("A", "legacy-1")
+    stored = json.loads(draft.payload)
+    assert stored["content"] == original["content"] and stored["created_at"] == stored["updated_at"] == original["created_at"]
+    assert (draft.created_at, draft.updated_at) == physical_before
+    assert task.lesson_draft_id == "legacy-1" and "unknown_paragraph" in stored["teacher_work"]["needs_normalization_fields"]
+    assert len(session.added) == 1 and isinstance(session.added[0], fixture["models"].task)
+    declared = ast.parse((BACKEND / "app/models/domain_record.py").read_text(encoding="utf-8"))
+    model = next(node for node in declared.body if isinstance(node, ast.ClassDef) and node.name == "DomainRecord")
+    fields = {node.targets[0].id for node in model.body if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)}
+    assert fields == set(fixture["models"].domain_record.__table__.c.keys())
+
+
+def test_sql_read_does_not_initialize_owner():
+    fixture = _sql_fixture("read")
+    repository, session = fixture["repository"], fixture["session"]
+    session.batches = [[fixture["task"]], []]
+    error = rejection("OWNER_NAMESPACE_UNAVAILABLE", lambda: repository.get_task("A", fixture["task_id"]))
+    assert error.status_code == 503 and not session.added and "flush" not in session.events
+    assert all(not statement.is_update for statement in session.statements)
+    fixture = _sql_fixture("read")
+    repository, session, lease = fixture["repository"], fixture["session"], fixture["lease"]
+    original = (lease.owner_storage_id, lease.active_run_id, lease.process_instance, lease.expires_at, lease.revision)
+    session.batches = _sql_task_batches(fixture)
+    task = repository.get_task("A", fixture["task_id"])
+    assert (lease.owner_storage_id, lease.active_run_id, lease.process_instance, lease.expires_at, lease.revision) == original
+    assert task.working_revision == task.input_revision == 1 and not session.added and "flush" not in session.events
+
+
+def test_sql_original_draft_rejects_duplicate_json_keys():
+    fixture = _sql_fixture()
+    _sql_locked_owner(fixture)
+    json = importlib.import_module("json")
+    outer = json.dumps(fixture["payload"], ensure_ascii=False)[:-1] + ',"draft_id":"legacy-1"}'
+    content = json.dumps(lesson(), ensure_ascii=False)[:-1] + ',"unknown_paragraph":{"text":["first"]},"unknown_paragraph":{"text":["second"]}}'
+    envelope = {key: value for key, value in fixture["payload"].items() if key != "content"}
+    nested = json.dumps(envelope, ensure_ascii=False)[:-1] + ',"content":' + content + '}'
+    for raw in (outer, nested):
+        fixture["draft"].payload = raw
+        fixture["session"].batches = [[fixture["draft"]]]
+        error = rejection("SQL_PERSISTENCE_UNAVAILABLE", lambda: fixture["repository"].drafts.lock_draft("A", "legacy-1"))
+        assert error.status_code == 503 and fixture["draft"].payload == raw
+        assert not fixture["session"].added and "flush" not in fixture["session"].events
+
+
+def test_sql_caller_owned_store_rejects_non_json_structures():
+    for opaque in ({1: "first", "1": "second"}, (1, 2)):
+        fixture = _sql_fixture()
+        session = fixture["session"]
+        payload = {"draft_id": "legacy-new", "opaque": opaque}
+        original = deepcopy(payload)
+        session.batches = [[]]  # A broken serializer would attempt this read.
+        with pytest.raises((TypeError, ValueError)):
+            fixture["store"].upsert("teacher_lesson_prep", "draft", "legacy-new", payload, owner_id="A", role="teacher", status="DRAFT")
+        assert payload == original and session.events == session.statements == session.added == []
+    fixture = _sql_fixture()
+    fixture["session"].batches = [[]]
+    payload = {"draft_id": "legacy-new", "opaque": {"1": [1, 2, None, True, "原文"]}}
+    saved = fixture["store"].upsert("teacher_lesson_prep", "draft", "legacy-new", payload, owner_id="A", role="teacher", status="DRAFT")
+    assert saved["opaque"] == payload["opaque"]
+    assert fixture["session"].events[-3:] == ["add", "flush", "refresh"]

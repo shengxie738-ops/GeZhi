@@ -433,7 +433,7 @@ def test_metadata_unique_contract():
         "PackageVersion": (("task_id", "version_no"), ("run_id",)),
         "Artifact": (("version_id", "kind"),),
         "PreviewState": (("version_id", "artifact_kind", "kind"),),
-        "OwnerRunLease": (("owner",),),
+        "OwnerRunLease": (("owner",), ("owner_storage_id",)),
         "CatalogSelection": (("owner",),),
     }
     required_tables = set(expected) | {"OutlineSnapshot", "OutlineApproval", "EvidenceSnapshot", "VersionReview"}
@@ -460,6 +460,15 @@ def test_metadata_unique_contract():
     assert ("owner_subject", "create_idempotency_key") in contract["unique"]
     assert contract["checks"]["ck_tw_task_create_receipt"] in checks
     assert not {"create_idempotency_key", "create_request_digest"} & set(_schema("WorkTaskDTO").model_fields)
+    lease_columns = {node.targets[0].id: node.value for node in classes["OwnerRunLease"].body
+                     if isinstance(node, ast.Assign) and len(node.targets) == 1
+                     and isinstance(node.targets[0], ast.Name)}
+    assert "owner_storage_id" in lease_columns, "Durable owner namespace is missing"
+    assert any(keyword.arg == "nullable" and isinstance(keyword.value, ast.Constant) and keyword.value.value is False
+               for keyword in lease_columns["owner_storage_id"].keywords)
+    lease_contract = _symbol("app.services.teacher_work.schema", "TEACHER_WORK_SCHEMA_CONTRACT")["tables"]["teacher_work_owner_run_leases"]
+    assert lease_contract["columns"]["owner_storage_id"] == {"type": "varchar(36)", "nullable": False}
+    assert ("owner_storage_id",) in lease_contract["unique"]
 
 
 

@@ -245,11 +245,14 @@ class CatalogSelection(TeacherWorkBase):
 class OwnerRunLease(TeacherWorkBase):
     __tablename__ = "teacher_work_owner_run_leases"
     owner = Column(String(255), primary_key=True)
+    # Durable, immutable namespace. Run cleanup must never delete/reset this row.
+    owner_storage_id = Column(String(36), nullable=False)
     active_run_id = Column(String(36), ForeignKey("teacher_work_runs.run_id"), nullable=True)
     process_instance = Column(String(36), nullable=True)
     expires_at = Column(UTC_DATETIME, nullable=True)
     revision = Column(Integer, nullable=False, default=1)
-    __table_args__ = (CheckConstraint("revision >= 1", name="ck_tw_lease_revision"), TABLE_OPTIONS)
+    __table_args__ = (UniqueConstraint("owner_storage_id", name="uq_tw_lease_storage_namespace"),
+                      CheckConstraint("revision >= 1", name="ck_tw_lease_revision"), TABLE_OPTIONS)
 
 
 class TeacherWorkSchemaVersion(TeacherWorkBase):
