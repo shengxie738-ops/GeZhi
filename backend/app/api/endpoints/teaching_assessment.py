@@ -1,14 +1,15 @@
 """Strict finite B2 HTTP adapter; source/synthetic readiness only.
 
-Reuse B1's dedicated request Session, real current-account dependency, no-store
-error envelope and commit-before-success helper. Every production write remains
+Reads retain B1's dedicated dependency. The seven B2 mutations use one
+explicit B2 request owner, the real current-account resolver, no-store errors
+and the shared guarded commit-before-success helper. Every production write remains
 unconditionally refused by the shared write-safety gate. No startup or activation.
 """
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.teaching import (
-    TeachingRoute, _no_query, _query, _response, commit_write,
+    TeachingRoute, _no_query, _query, _response, commit_write, commit_owned_b2_write, get_teaching_account,
     get_teaching_db, get_teaching_request_account,
 )
 from app.models.user_account import UserAccount
@@ -20,8 +21,26 @@ from app.schemas.teaching_assessment import (
 )
 from app.services.teaching import assignments, releases, submissions
 from app.services.teaching.types import exact_identifier
+from app.services.teaching.sessions import B2RequestOwner, open_b2_teaching_session
 
 router = APIRouter(prefix='/teaching', tags=['teaching-assessment'], route_class=TeachingRoute)
+
+
+async def get_b2_write_owner():
+    # No test-support import, switch, startup or second identity Session.
+    from app.core.database import engine
+    with open_b2_teaching_session(engine) as owner:
+        yield owner
+
+
+def get_b2_db(owner: B2RequestOwner = Depends(get_b2_write_owner)) -> Session:
+    return owner.session
+
+
+async def get_b2_request_account(
+    authorization: str | None = Header(default=None), db: Session = Depends(get_b2_db),
+) -> UserAccount:
+    return get_teaching_account(authorization, db)
 
 
 def _paths(*identifiers):
@@ -33,16 +52,16 @@ def _read(result):
     return _response(200, 'ok', result.model_dump(mode='json'))
 
 
-def _assignment_write(db, account, purpose, command, key, *, offering_id=None, assignment_id=None):
+def _assignment_write(db, account, purpose, command, key, owner, *, offering_id=None, assignment_id=None):
     intent, operation = assignments.prepare_assignment_write(
         db, account.username, offering_id, assignment_id, purpose, command, key)
-    return commit_write(db, intent, intent.scope, operation)
+    return commit_owned_b2_write(owner, intent, intent.scope, operation)
 
 
-def _release_write(db, account, assignment_id, purpose, command, key):
+def _release_write(db, account, assignment_id, purpose, command, key, owner):
     intent, operation = releases.prepare_release_write(
         db, account.username, assignment_id, purpose, command, key)
-    return commit_write(db, intent, intent.scope, operation)
+    return commit_owned_b2_write(owner, intent, intent.scope, operation)
 
 
 @router.get('/offerings/{offering_id}/assignments')
@@ -55,9 +74,10 @@ async def list_assignments(offering_id: str, request: Request,
 @router.post('/offerings/{offering_id}/assignments')
 async def create_assignment(offering_id: str, request: Request, command: CreateAssignmentCommand,
                             key: str = Header(alias='Idempotency-Key'),
-                            account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                            account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(offering_id)
-    return _assignment_write(db, account, 'create', command, key, offering_id=offering_id)
+    return _assignment_write(db, account, 'create', command, key, owner, offering_id=offering_id)
 
 
 @router.get('/assignments/{assignment_id}/draft')
@@ -70,9 +90,10 @@ async def read_assignment_draft(assignment_id: str, request: Request,
 @router.patch('/assignments/{assignment_id}/draft')
 async def replace_assignment_draft(assignment_id: str, request: Request, command: ReplaceAssignmentDraftCommand,
                                    key: str = Header(alias='Idempotency-Key'),
-                                   account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                                   account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(assignment_id)
-    return _assignment_write(db, account, 'replace_public', command, key, assignment_id=assignment_id)
+    return _assignment_write(db, account, 'replace_public', command, key, owner, assignment_id=assignment_id)
 
 
 @router.get('/assignments/{assignment_id}/private-draft')
@@ -85,9 +106,10 @@ async def read_private_draft(assignment_id: str, request: Request,
 @router.put('/assignments/{assignment_id}/private-draft')
 async def replace_private_draft(assignment_id: str, request: Request, command: ReplacePrivateDraftCommand,
                                 key: str = Header(alias='Idempotency-Key'),
-                                account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                                account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(assignment_id)
-    return _assignment_write(db, account, 'replace_private', command, key, assignment_id=assignment_id)
+    return _assignment_write(db, account, 'replace_private', command, key, owner, assignment_id=assignment_id)
 
 
 @router.get('/assignments/{assignment_id}/versions')
@@ -100,9 +122,10 @@ async def list_assignment_versions(assignment_id: str, request: Request,
 @router.post('/assignments/{assignment_id}/versions')
 async def freeze_assignment(assignment_id: str, request: Request, command: FreezeAssignmentCommand,
                             key: str = Header(alias='Idempotency-Key'),
-                            account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                            account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(assignment_id)
-    return _assignment_write(db, account, 'freeze', command, key, assignment_id=assignment_id)
+    return _assignment_write(db, account, 'freeze', command, key, owner, assignment_id=assignment_id)
 
 
 @router.get('/assignments/{assignment_id}/versions/{version_id}')
@@ -122,9 +145,10 @@ async def read_private_spec(assignment_id: str, version_id: str, request: Reques
 @router.post('/assignments/{assignment_id}/release-previews')
 async def preview_release(assignment_id: str, request: Request, command: ReleasePreviewCommand,
                           key: str = Header(alias='Idempotency-Key'),
-                          account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                          account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(assignment_id)
-    return _release_write(db, account, assignment_id, 'preview', command, key)
+    return _release_write(db, account, assignment_id, 'preview', command, key, owner)
 
 
 @router.get('/assignments/{assignment_id}/release-previews/{preview_id}')
@@ -144,9 +168,10 @@ async def list_preview_recipients(assignment_id: str, preview_id: str, request: 
 @router.post('/assignments/{assignment_id}/releases')
 async def confirm_release(assignment_id: str, request: Request, command: ConfirmReleaseCommand,
                           key: str = Header(alias='Idempotency-Key'),
-                          account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                          account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(assignment_id)
-    return _release_write(db, account, assignment_id, 'confirm', command, key)
+    return _release_write(db, account, assignment_id, 'confirm', command, key, owner)
 
 
 @router.get('/offerings/{offering_id}/releases')
@@ -173,10 +198,11 @@ async def list_historical_recipients(release_id: str, request: Request,
 @router.post('/releases/{release_id}/submissions')
 async def create_submission(release_id: str, request: Request, command: CreateSubmissionCommand,
                              key: str = Header(alias='Idempotency-Key'),
-                             account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+                             account: UserAccount = Depends(get_b2_request_account), db: Session = Depends(get_b2_db),
+                            owner: B2RequestOwner = Depends(get_b2_write_owner)):
     _no_query(request); _paths(release_id)
     intent, operation = submissions.prepare_submission_write(db, account.username, release_id, command, key)
-    return commit_write(db, intent, intent.scope, operation)
+    return commit_owned_b2_write(owner, intent, intent.scope, operation)
 
 
 @router.get('/releases/{release_id}/my-submission-head')

@@ -1,6 +1,6 @@
 """B2 signed-token, isolated ASGI source/synthetic evidence only.
 
-The request app overrides only the dedicated DB dependency. Real signatures and
+The request app overrides the dedicated read DB and finite B2 owner dependencies. Real signatures and
 current persisted UserAccount resolution run. b2case retains its exactly five
 reviewed fixture-local substitutions; closed boundaries restore real gates.
 No aggregate/startup/server/browser import or production-readiness claim.
@@ -20,6 +20,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.exc import OperationalError
 
 from tests.test_teaching_assessment_authorization import b2case, feature, NOW, PUBLIC, PRIVATE, policy
+from tests.test_teaching_bounded_write_finalization import accept_pending
 
 
 def sync_asgi(function):
@@ -38,11 +39,18 @@ def app_for(case):
     app.include_router(assessment.router, prefix='/api')
     async def fixture_db():
         return db
+    async def fixture_owner():
+        sessions = feature('app.services.teaching.sessions')
+        with sessions.B2RequestOwner(db, db.connection()) as owner:
+            yield owner
     app.dependency_overrides[adapter.get_teaching_db] = fixture_db
-    assert set(app.dependency_overrides) == {adapter.get_teaching_db}
+    app.dependency_overrides[assessment.get_b2_write_owner] = fixture_owner
+    assert set(app.dependency_overrides) == {adapter.get_teaching_db, assessment.get_b2_write_owner}
     assert assessment.get_teaching_request_account is adapter.get_teaching_request_account
     assert assessment.get_teaching_db is adapter.get_teaching_db
     assert assessment.commit_write is adapter.commit_write
+    assert assessment.get_b2_db.__defaults__[0].dependency is assessment.get_b2_write_owner
+    assert assessment.get_b2_request_account.__defaults__[1].dependency is assessment.get_b2_db
     return app, adapter
 
 
@@ -210,13 +218,15 @@ async def test_commit_failure_is_unknown_and_same_key_recovery(b2case,monkeypatc
     with monkeypatch.context() as patch:
         patch.setattr(db,'commit',fail_commit)
         response = await request(app,'POST','/api/teaching/offerings/o/assignments',key='unknown-original',json={'public_spec':PUBLIC})
-    shown = data(response,503)
-    assert response.json()['message'] == 'write_outcome_unknown'
     expected = {'action':'assignment_create','scope_type':'offering','scope_id':'o','key':'unknown-original'}
-    assert shown == {'recovery':expected} and 'PRIVATE COMMIT TEXT' not in response.text
+    shown = data(response,201 if committed else 503)
+    assert response.json()['message'] == ('ok' if committed else 'write_outcome_unknown')
+    if not committed: assert shown == {'recovery':expected}
+    assert 'PRIVATE COMMIT TEXT' not in response.text
     recovered = await request(app,'GET','/api/teaching/receipts',params=expected)
     if committed:
         original = data(recovered)
+        assert original['receipt'] == shown['receipt'] and original['result'] == shown['result']
         retry = data(await request(app,'POST','/api/teaching/offerings/o/assignments',key='unknown-original',json={'public_spec':PUBLIC}))
         assert retry['replayed'] and retry['receipt'] == original['receipt'] and retry['result'] == original['result']
     else:
@@ -465,7 +475,7 @@ async def test_original_receipt_detail_rejects_queries_and_malformed_ids(b2case)
     db, _, _, engine, *_ = b2case
     service = feature('app.services.teaching.assignments')
     intent, operation = service.prepare_assignment_write(db,'owner','o',None,'create',{'public_spec':PUBLIC},'strict-receipt-original')
-    accepted_result = engine.execute_write(db,intent,intent.scope,operation); db.commit()
+    accepted_result = accept_pending(db,engine.execute_write(db,intent,intent.scope,operation),intent)
     app = FastAPI(); app.include_router(adapter.router,prefix='/api')
     async def fixture_db():
         return db

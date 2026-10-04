@@ -448,6 +448,60 @@ def validate_assessment_new(context, action, command, at):
             _error(503,'invalid_assessment_state')
 
 
+def validate_assessment_final(context, action, command, at, authorization, policy):
+    """Pure B2 t1 checks against the pre-write baseline, never advanced heads.
+
+    Candidate shape/receipt/event bindings keep context.authorization at t0.
+    Accepted replay skips new-intent predicates and historical expiries entirely.
+    """
+    if action not in ASSESSMENT_WRITE_ACTIONS:
+        _error(503,'invalid_lock_footprint')
+    if context.receipt is not None:
+        return
+    base=context.pre_mutation['assessment_baseline']; rows=context.assessment
+    spec=context.lock_plan.assessment
+    allowed={'draft','active'} if action in {TeachingAction.ASSIGNMENT_CREATE,TeachingAction.ASSIGNMENT_UPDATE,TeachingAction.ASSIGNMENT_PRIVATE_UPDATE} else {'active'}
+    if context.offering.state not in allowed: _error(409,'lifecycle_conflict')
+    if 'expected_revision' in command and command['expected_revision']!=base['assignment']['draft_revision']:
+        _error(409,'revision_conflict')
+    if action==TeachingAction.ASSIGNMENT_FREEZE and base['version'] is not None:
+        _error(409,'version_already_frozen')
+    if action in {TeachingAction.RELEASE_PREVIEW,TeachingAction.RELEASE_CREATE}:
+        for subject in spec.recipient_ids:
+            account=context.accounts.get(subject); enrollment=context.enrollments.get(subject)
+            if (subject not in authorization.learner_ceiling or account is None or account.username!=subject
+                    or account.role not in {'student','teacher'} or not access._active(enrollment,at)
+                    or enrollment.source_kind!='deployment_roster' or enrollment.source_teacher_id!=policy.source_teacher_id
+                    or subject not in policy.source_roster.members):
+                _error(422,'unavailable_or_out_of_scope')
+        if not spec.recipient_ids or len(context.assessment_shape.audience)!=len(spec.recipient_ids):
+            _error(422,'unavailable_or_out_of_scope')
+        if action==TeachingAction.RELEASE_CREATE:
+            preview=base['release_preview']
+            if at>=dto.parse_assessment_utc(preview['expires_at']): _error(409,'preview_expired')
+            if base['release'] is not None: _error(409,'version_already_released')
+            due=dto.parse_assessment_utc(preview['due_at'])
+        else:
+            # This candidate is an append, not rows.release_preview. Bind its
+            # own expiry to the engine's exact t0 expected append values.
+            appends,_=_expected_business(context)
+            expected=next(values for model,values in appends if model is ReleasePreview)
+            expiry=dto.parse_assessment_utc(expected['expires_at'])
+            if expiry!=context.authorization.checked_at+timedelta(minutes=15):
+                _error(503,'invalid_mutation_result')
+            if at>=expiry: _error(409,'preview_expired')
+            due=dto.parse_assessment_utc(expected['due_at'])
+        if due is not None and due<=at: _error(409,'deadline_closed')
+    if action==TeachingAction.SUBMISSION_CREATE:
+        due=dto.parse_assessment_utc(base['release']['due_at'])
+        if due is not None and due<=at: _error(409,'deadline_closed')
+        head=base['head']; parent=base['parent_submission']
+        if command['expected_parent_id']!=head['submission_id']: _error(409,'parent_conflict')
+        if (head['submission_id'] is None and head['revision']!=0 or head['submission_id'] is not None
+                and (parent is None or parent['sequence']!=head['revision'])):
+            _error(503,'invalid_assessment_state')
+
+
 def row_values(row):
     if row is None: return None
     return {column.name:_w()._canonical(access._utc(value) if isinstance(value:=getattr(row,column.name),datetime) else value)

@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import update
 
 from tests.test_teaching_assessment_authorization import b2case, PUBLIC, PRIVATE, NOW, policy, denied
+from tests.test_teaching_bounded_write_finalization import accept_pending
 
 
 def assignments():
@@ -27,7 +28,7 @@ def write(case, purpose, command, *, actor='owner', assignment_id='a', key=None)
         'o' if purpose == 'create' else None, None if purpose == 'create' else assignment_id,
         purpose, command, key or f'task3-{purpose}')
     result = engine.execute_write(db, intent, intent.scope, operation)
-    db.commit()
+    result = accept_pending(db,result,intent)
     return result, intent
 
 
@@ -77,6 +78,7 @@ def test_new_write_archive_refused_but_authorized_original_receipt_recovers(b2ca
     db.execute(update(m.Offering).where(m.Offering.id=='o').values(state='archived')); db.commit()
     denied(lambda:write(b2case,'replace_public',{'expected_revision':4,'public_spec':PUBLIC},key='archived-new'),409,'lifecycle_conflict')
     replay = engine.execute_write(db,intent,intent.scope,assignments().prepare_assignment_write(db,'owner',None,'a','replace_public',{'expected_revision':3,'public_spec':{**PUBLIC,'title':'Accepted'}},intent.idempotency_key)[1])
+    replay = accept_pending(db,replay,intent)
     assert replay.replayed and replay.receipt.id == first.receipt.id and replay.result == first.result
     assert db.query(b.AssessmentEvent).count() == 1
     db.execute(update(m.TeachingRole).where(m.TeachingRole.subject_id=='owner').values(permissions=['RELEASE'])); db.commit()

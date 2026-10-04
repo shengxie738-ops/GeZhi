@@ -11,6 +11,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import logging
 import re
 from types import MappingProxyType
 from uuid import uuid4
@@ -19,6 +20,7 @@ from fastapi import HTTPException
 from sqlalchemy import event, text, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import object_session
 
 from app.models.teaching import AccessEvent, Course, Enrollment, Offering, RosterPreview, TeachingRole, WriteReceipt
 from app.models.user_account import UserAccount
@@ -29,7 +31,10 @@ from app.services.teaching.types import (
     LockPlan, LockedContext, MutationResult, PreviewFootprint, ReceiptLookup,
     ScopeRef, TeachingAction, WriteIntent, WriteOperation, WriteResult,
     exact_identifier, ASSESSMENT_ACTIONS, ASSESSMENT_WRITE_ACTIONS,
+    B2PendingWrite, B2FinalizedWrite,
 )
+
+logger = logging.getLogger(__name__)
 
 WRITE_ACTIONS = frozenset({TeachingAction.CREATE_COURSE, TeachingAction.UPDATE_COURSE,
     TeachingAction.CREATE_OFFERING, TeachingAction.COURSE_MANAGE,
@@ -348,7 +353,7 @@ def _no_mutation(session):
             event.remove(target, name, listener)
 
 
-def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
+def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=None, lookup=None, object_ref=None, write=False, b2_owner=None):
     _require_transaction(session)
     # Trusted identity/policy/schema preflight precedes operation collection.
     # Dialect reflection has its own read-only statements (e.g. SQLite PRAGMA);
@@ -367,12 +372,21 @@ def _lock_context(session, actor_id, action, scope, *, intent=None, mutation=Non
     _require_same_transaction(connection, transaction)
     with _no_mutation(session):
         return _collect_locked_context(session, action, scope, actor=actor, initial=initial,
-            intent=intent, mutation=mutation, lookup=lookup, object_ref=object_ref, write=write)
+            intent=intent, mutation=mutation, lookup=lookup, object_ref=object_ref, write=write, b2_owner=b2_owner)
 
 
-def _collect_locked_context(session, action, scope, *, actor, initial, intent=None, mutation=None, lookup=None, object_ref=None, write=False):
+def _collect_locked_context(session, action, scope, *, actor, initial, intent=None, mutation=None, lookup=None, object_ref=None, write=False, b2_owner=None):
     if write:
-        _require_write_safety(session)
+        if b2_owner is None:
+            _require_write_safety(session)
+        else:
+            # This capability comes only from the finite trusted-owner entry.
+            # It is neither a client selector nor an unconditional kernel bypass.
+            from app.services.teaching.sessions import B2RequestOwner
+            if (not isinstance(b2_owner, B2RequestOwner) or intent is None
+                    or action not in ASSESSMENT_WRITE_ACTIONS or intent.action != action):
+                _error(503, 'invalid_b2_owner')
+            b2_owner.require_admission(session, intent, scope, mutation)
     if not isinstance(scope, ScopeRef) or scope.institution_id != initial.institution_id:
         _error(404, "not_found")
     action = access._action(action)
@@ -616,8 +630,352 @@ def _validate_mutation(result, *, action: TeachingAction):
     return original, effects
 
 
+class _B2WriteGuard:
+    """One engine-issued B2 lifetime; never a Session.info admission switch."""
+    def __init__(self, session, context, intent):
+        from app.services.teaching.assessment_writes import assessment_mutation_boundary, protected_assessment_rows
+        if intent.action not in ASSESSMENT_WRITE_ACTIONS or context.assessment is None:
+            _error(503, 'invalid_lock_footprint')
+        self.session, self.context, self.intent = session, context, intent
+        self.connection = session.connection()
+        self.transaction = self.connection.get_transaction()
+        self.session_transaction = session.get_transaction()
+        self.phase, self.flushing = 'staging', False
+        self.clock_armed, self.clock_used = False, False
+        self.commit_dispatched = False
+        self.commit_confirmed = False
+        self.pending = self.finalized = None
+        self.own_appends, self.rows, self.row_snapshots = set(), (), ()
+        self.staged_rows = []
+        self.held_rows = tuple(row for row in (context.course, context.offering, context.receipt,
+            *context.accounts.values(), *context.roles.values(), *context.enrollments.values(),
+            *protected_assessment_rows(context)) if row is not None)
+        self.check, self.complete = assessment_mutation_boundary(context)
+        self.listeners, self.watched_models = [], set()
+        self._same_transaction()
+        for target, name, listener in (
+                (session, 'do_orm_execute', self._orm_sql),
+                (session, 'before_flush', self._before_flush),
+                (session, 'after_flush_postexec', self._after_flush),
+                (session, 'before_attach', self._before_attach),
+                (session, 'before_commit', self._before_commit),
+                (session, 'after_transaction_create', self._new_session_transaction),
+                (self.connection, 'before_cursor_execute', self._statement),
+                (self.connection, 'savepoint', self._reject_nested),
+                (self.connection, 'commit', self._connection_commit)):
+            self._listen(target, name, listener)
+        # Session after_commit runs only after the bound physical transaction's
+        # commit returns. Prepend our marker before any owner cleanup listener.
+        self._listen(session, 'after_commit', self._confirmed_commit, insert=True)
+        for row in session.identity_map.values():
+            self._watch_model(type(row))
+
+    def _listen(self, target, name, listener, **options):
+        event.listen(target, name, listener, **options)
+        self.listeners.append((target, name, listener))
+
+    def _watch_model(self, model):
+        if model in self.watched_models:
+            return
+        self.watched_models.add(model)
+        for prop in model.__mapper__.column_attrs:
+            self._listen(getattr(model, prop.key), 'set', self._attribute)
+
+    def _attribute(self, target, value, oldvalue, initiator):
+        if self.phase != 'staging' and object_session(target) is self.session:
+            _error(503, 'undeclared_mutation')
+
+    def _same_transaction(self):
+        if self.session.in_nested_transaction() or self.connection.in_nested_transaction():
+            _error(503, 'nested_write_transaction_forbidden')
+        _require_same_transaction(self.connection, self.transaction)
+        if self.session.get_transaction() is not self.session_transaction:
+            _error(503, 'transaction_changed')
+
+    def _new_session_transaction(self, session, transaction):
+        if transaction.nested:
+            _error(503, 'nested_write_transaction_forbidden')
+        if transaction.parent is None:
+            _error(503, 'transaction_changed')
+
+    def _reject_nested(self, connection, name):
+        _error(503, 'nested_write_transaction_forbidden')
+
+    def _before_attach(self, session, row):
+        if self.phase != 'staging':
+            _error(503, 'undeclared_mutation')
+        self._watch_model(type(row))
+        self.staged_rows.append(row)
+
+    def _orm_sql(self, execute_state):
+        if (self.phase != 'final_clock' or self.clock_armed or self.clock_used
+                or str(execute_state.statement) != 'SELECT UTC_TIMESTAMP(6)'
+                or execute_state.parameters):
+            _error(503, 'post_clock_query_forbidden')
+        require_clean_transaction(self.session)
+        self._same_transaction()
+        self.clock_armed = True
+
+    def _statement(self, connection, cursor, statement, parameters, execution_context, executemany):
+        self._same_transaction()
+        if self.phase == 'staging' and self.flushing and statement.lstrip().upper().startswith(('INSERT ', 'UPDATE ', 'DELETE ')):
+            return
+        if (self.phase == 'final_clock' and self.clock_armed and not self.clock_used
+                and statement == 'SELECT UTC_TIMESTAMP(6)' and not parameters and not executemany):
+            self.clock_armed, self.clock_used = False, True
+            return
+        _error(503, 'post_clock_query_forbidden')
+
+    def _before_flush(self, session, flush_context, instances):
+        self._same_transaction()
+        if self.phase != 'staging':
+            _error(503, 'undeclared_mutation')
+        self.check(session, self.own_appends)
+        self.flushing = True
+
+    def _after_flush(self, session, flush_context):
+        self.flushing = False
+
+    def _before_commit(self, session):
+        if self.phase != 'committing':
+            _error(503, 'service_commit_forbidden')
+        self._unchanged()
+
+    def _connection_commit(self, connection):
+        if connection is not self.connection or self.phase != 'committing' or self.commit_dispatched:
+            _error(503, 'service_commit_forbidden')
+        self._unchanged()
+        self.commit_dispatched = True
+
+    def _confirmed_commit(self, session):
+        # The connection's commit event alone is pre-dispatch, not proof.
+        # An inactive failed root can remain attached; require its successful
+        # removal as well as the post-commit Session event and sole dispatch.
+        if (self.phase != 'committing' or not self.commit_dispatched
+                or self.transaction.is_active or self.connection.get_transaction() is not None):
+            _error(503, 'unconfirmed_write_commit')
+        self.commit_confirmed = True
+
+    def allow_append(self, row):
+        if self.phase != 'staging':
+            _error(503, 'undeclared_mutation')
+        self.own_appends.add(id(row))
+
+    def handoff(self, projection):
+        self.check(self.session, self.own_appends)
+        self.complete()
+        require_clean_transaction(self.session)
+        self._same_transaction()
+        self.phase = 'pending'
+        # Strong references also preserve every newly staged immutable row for
+        # the entire owner lifetime, including detached response construction.
+        from app.services.teaching.assessment_writes import row_values
+        # Only the complete held footprint and staged rows are shape inputs.
+        # Unrelated expired identity-map objects must never trigger discovery.
+        self.rows = tuple({id(row): row for row in (*self.held_rows, *self.staged_rows)}.values())
+        self.row_snapshots = tuple(row_values(row) for row in self.rows)
+        self.projection_snapshot = _json({'receipt': projection.receipt.model_dump(mode='json'),
+            'result': projection.result, 'replayed': projection.replayed})
+        self.pending = B2PendingWrite(projection, self)
+        return self.pending
+
+    def _issued(self, session, pending):
+        if session is not self.session or pending is not self.pending or type(pending) is not B2PendingWrite:
+            _error(503, 'invalid_pending_write')
+        self._same_transaction()
+        if session.connection() is not self.connection:
+            _error(503, 'transaction_changed')
+
+    def _unchanged(self):
+        require_clean_transaction(self.session)
+        self._same_transaction()
+        from app.services.teaching.assessment_writes import row_values
+        if tuple(row_values(row) for row in self.rows) != self.row_snapshots:
+            _error(503, 'undeclared_mutation')
+        if _json({'receipt': self.pending.receipt.model_dump(mode='json'),
+                'result': self.pending.result, 'replayed': self.pending.replayed}) != self.projection_snapshot:
+            _error(503, 'invalid_mutation_result')
+
+    def finalize(self, session, pending):
+        self._issued(session, pending)
+        if self.phase != 'pending':
+            _error(503, 'invalid_pending_write')
+        self._unchanged()
+        context = self.context
+        inputs = access._final_inputs(session, context.policy.inputs)
+        policy = read_teaching_policy(inputs, context.policy.source_teacher_id,
+            actor_id=context.authorization.actor_id, target_subject_id=context.lock_plan.target_subject_id)
+        if context.receipt is None and (policy.digest, policy.generation) != (context.policy.digest, context.policy.generation):
+            _error(503, 'lock_footprint_changed')
+        self._unchanged()
+        self.phase = 'final_clock'
+        try:
+            at = _server_clock(session)
+        finally:
+            self.phase = 'pending'
+            self.clock_armed = False
+        if not isinstance(at, datetime) or at.tzinfo is None:
+            _error(503, 'invalid_authorization_clock')
+        at = access._utc(at)
+        if at < context.authorization.checked_at:
+            _error(503, 'invalid_authorization_clock')
+        # Do not replace the candidate's t0 context.authorization: every
+        # immutable shape, receipt and event remains bound to that snapshot.
+        authorization = access.authorize_locked_action(context, policy, self.intent.action, at)
+        from app.services.teaching.assessment_writes import validate_assessment_final
+        validate_assessment_final(context, self.intent.action, self.intent.canonical_payload,
+            at, authorization, policy)
+        self._unchanged()
+        self.finalized = B2FinalizedWrite(pending, authorization)
+        self.phase = 'sealed'
+        return self.finalized
+
+    def commit(self, session, finalized):
+        self._issued(session, finalized.pending)
+        if finalized is not self.finalized or type(finalized) is not B2FinalizedWrite or self.phase != 'sealed':
+            _error(503, 'invalid_pending_write')
+        self._unchanged()
+        self.phase = 'committing'
+        session.commit()
+        if not self.commit_confirmed:
+            _error(503, 'unconfirmed_write_commit')
+        # An inactive failed root is not terminal proof. Only successful owner
+        # completion or successful rollback/disposal may release the guards.
+        if not self._release_guards():
+            self.rollback()
+
+    def rollback(self):
+        terminal = False
+        try:
+            self.session.rollback()
+            terminal = self._terminal()
+        except Exception as exc:
+            logger.error('B2 cleanup failure phase=%s exception_class=%s', self.phase, type(exc).__name__)
+        if not terminal:
+            try:
+                self.session.invalidate()
+                terminal = self._terminal()
+            except Exception as invalidation:
+                logger.error('B2 invalidation failure exception_class=%s', type(invalidation).__name__)
+        if terminal:
+            self._release_guards()
+        else:
+            self.phase = 'cleanup_failed'
+
+    def _terminal(self):
+        return (self.session.get_transaction() is None
+            and (self.connection.closed or self.connection.invalidated
+                 or self.connection.get_transaction() is None))
+
+    def _release_guards(self):
+        try:
+            self.close()
+            return True
+        except Exception as exc:
+            logger.error('B2 guard cleanup failure exception_class=%s', type(exc).__name__)
+            self.phase = 'cleanup_failed'
+            return False
+
+    def close(self):
+        while self.listeners:
+            target, name, listener = self.listeners[-1]
+            event.remove(target, name, listener)
+            self.listeners.pop()
+        self.phase = 'completed'
+
+
+def finalize_pending_write(session, pending):
+    """Server-owned B2 final clock/authority/seal; grants no write admission."""
+    if type(pending) is not B2PendingWrite or type(pending._controller) is not _B2WriteGuard:
+        _error(503, 'invalid_pending_write')
+    return pending._controller.finalize(session, pending)
+
+
+def commit_finalized_write(session, finalized):
+    """The sole bounded B2 COMMIT, after the HTTP owner has encoded its bytes."""
+    if type(finalized) is not B2FinalizedWrite or type(finalized.pending._controller) is not _B2WriteGuard:
+        _error(503, 'invalid_pending_write')
+    finalized.pending._controller.commit(session, finalized)
+
+
+def rollback_pending_write(session, pending):
+    """Tranche 1 owner-helper containment, not request dependency teardown."""
+    if type(pending) is not B2PendingWrite or type(pending._controller) is not _B2WriteGuard or pending._controller.session is not session:
+        _error(503, 'invalid_pending_write')
+    pending._controller.rollback()
+
+
+def _execute_owned_b2_write(owner, intent, authorization_scope, mutation):
+    """Private trusted-owner entry to the identical seven-action B2 kernel.
+
+    Ordinary execute_write still reaches the unconditional production gate.
+    A production owner also refuses; native test support owns its own admission.
+    """
+    from app.services.teaching.sessions import B2RequestOwner
+    if (not isinstance(owner, B2RequestOwner) or type(intent) is not WriteIntent
+            or intent.action not in ASSESSMENT_WRITE_ACTIONS):
+        _error(503, 'invalid_b2_owner')
+    owner.require_admission(owner.session, intent, authorization_scope, mutation)
+    return _execute_b2_write(owner.session, intent, authorization_scope, mutation, b2_owner=owner)
+
+
+def _execute_b2_write(session, intent, authorization_scope, mutation, *, b2_owner=None):
+    guard = None
+    try:
+        require_clean_transaction(session)
+        if intent.scope != authorization_scope or intent.canonicalization_version != 1:
+            _error(422, 'validation_error')
+        validate_key(intent.idempotency_key)
+        if canonical_request_hash(intent.action, intent.scope, intent.target_id, intent.canonical_payload) != intent.request_hash:
+            _error(422, 'validation_error')
+        with _no_commit(session):
+            context = _lock_context(session, intent.actor_id, intent.action, authorization_scope,
+                intent=intent, mutation=mutation, write=True, b2_owner=b2_owner)
+            require_clean_transaction(session)
+            guard = _B2WriteGuard(session, context, intent)
+            if context.receipt is not None:
+                if context.receipt.request_hash != intent.request_hash:
+                    _error(409, 'idempotency_conflict')
+                return guard.handoff(_result(context.receipt, True))
+            from app.services.teaching.assessment_writes import (
+                validate_assessment_new, validate_assessment_binding, build_assessment_event)
+            at = context.authorization.checked_at
+            validate_assessment_new(context, intent.action, intent.canonical_payload, at)
+            mutation.validate_new(context, intent.canonical_payload, at)
+            result = mutation.apply_new(context, intent.canonical_payload, at)
+            _validate_mutation(result, action=intent.action)
+            original, effects = validate_assessment_binding(context, result)
+            session.flush()  # Complete all business DML before the receipt.
+            receipt = WriteReceipt(id=str(uuid4()), institution_id=intent.scope.institution_id,
+                actor_id=context.authorization.actor_id, action=intent.action.value,
+                scope_type=intent.scope.kind, scope_id=intent.scope.id,
+                target_type=result.result_type, target_id=result.result_id,
+                idempotency_key=intent.idempotency_key, canonicalization_version=1,
+                request_hash=intent.request_hash, result_type=result.result_type,
+                result_id=result.result_id, accepted_at=at, http_status=result.http_status,
+                original_result=original)
+            guard.allow_append(receipt)
+            session.add(receipt)
+            session.flush()
+            assessment_event = build_assessment_event(receipt, context, result)
+            guard.allow_append(assessment_event)
+            session.add(assessment_event)
+            session.flush()
+            return guard.handoff(_result(receipt, False))
+    except (OperationalError, IntegrityError):
+        if guard is not None: guard.rollback()
+        else: session.rollback()
+        _error(503, 'database_unavailable')
+    except Exception:
+        if guard is not None: guard.rollback()
+        else: session.rollback()
+        raise
+
+
 def execute_write(session: Session, intent: WriteIntent, authorization_scope: ScopeRef, mutation: WriteOperation) -> WriteResult:
-    """Return a provisional detached projection; only the HTTP owner commits."""
+    """B1 retains its result path; B2 returns a continuously guarded candidate."""
+    if isinstance(intent, WriteIntent) and intent.action in ASSESSMENT_WRITE_ACTIONS:
+        return _execute_b2_write(session, intent, authorization_scope, mutation)
     try:
         require_clean_transaction(session)
         if not isinstance(intent, WriteIntent) or intent.scope != authorization_scope or intent.canonicalization_version != 1:

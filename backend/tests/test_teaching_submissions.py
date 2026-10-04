@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import delete, update
 
 from tests.test_teaching_assessment_authorization import b2case, NOW, policy, denied
+from tests.test_teaching_bounded_write_finalization import accept_pending
 
 
 def submissions():
@@ -33,7 +34,7 @@ def write(case, body=None, *, actor='assistant', release='r', key='task5-first',
     intent, operation = service.prepare_submission_write(db,actor,release,command() if body is None else body,key)
     result = engine.execute_write(db,intent,intent.scope,operation)
     if commit:
-        db.commit()
+        result = accept_pending(db,result,intent)
     return result,intent
 
 
@@ -298,9 +299,9 @@ def test_own_editor_and_history_remain_own_for_dual_role_or_teacher(b2case):
 
 def test_ordinary_submission_rollback_leaves_no_partial_acceptance(b2case):
     submissions()
-    db, _, _, _, _, m, b, *_ = b2case
+    db, _, _, engine, _, m, b, *_ = b2case
     accepted,_ = write(b2case,commit=False)
-    db.rollback()
+    engine.rollback_pending_write(db,accepted)
     assert db.get(b.Submission,accepted.result['submission_id']) is None
     head = db.get(b.SubmissionHead,('r','assistant'))
     assert head.submission_id is None and head.revision == 0
