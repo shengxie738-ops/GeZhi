@@ -1,4 +1,108 @@
 import { API_BASE_URL } from '../config/env.js';
+import { createTeachingError, safeTeachingHttpReason } from './teachingStatus.js';
+
+const B1_RECOVERY_SCOPES = Object.freeze({
+    course_create: 'institution', course_update: 'course', offering_create: 'course',
+    course_manage: 'offering', roster_manage: 'offering', roles_manage: 'offering'
+});
+const teachingIdentifier = (value, max = 36) => typeof value === 'string'
+    && [...value].length >= 1 && [...value].length <= max && value === value.trim()
+    && value !== '.' && value !== '..' && !/[\p{C}/\\%?#]/u.test(value);
+
+function registeredTeachingRead(url) {
+    if (typeof url !== 'string' || !url.startsWith('/teaching/') || url.includes('#')) return false;
+    const parts = url.split('?');
+    if (parts.length > 2) return false;
+    const path = parts[0], query = new URLSearchParams(parts[1] || '');
+    const pairs = [...query.entries()];
+    if (new Set(pairs.map(([key]) => key)).size !== pairs.length) return false;
+    const keys = pairs.map(([key]) => key);
+    const only = allowed => keys.every(key => allowed.includes(key));
+    const page = () => (!query.has('cursor') || teachingIdentifier(query.get('cursor')))
+        && (!query.has('limit') || /^(?:[1-9]|[1-9][0-9]|100)$/.test(query.get('limit')));
+    const membership = () => !query.has('membership') || ['teaching', 'learning', 'all'].includes(query.get('membership'));
+    if (parts.length === 2 && (!parts[1] || query.toString() !== parts[1])) return false;
+    if (path === '/teaching/capabilities') return keys.length === 0;
+    if (path === '/teaching/courses') return only(['membership', 'cursor', 'limit']) && page() && membership();
+    if (path === '/teaching/offerings') return only(['membership', 'course_id', 'cursor', 'limit']) && page() && membership()
+        && (!query.has('course_id') || teachingIdentifier(query.get('course_id')));
+    if (path === '/teaching/receipts') {
+        const action = query.get('action'), scope = query.get('scope_type');
+        return keys.length === 4 && only(['action', 'scope_type', 'scope_id', 'key'])
+            && Object.hasOwn(B1_RECOVERY_SCOPES, action) && B1_RECOVERY_SCOPES[action] === scope
+            && teachingIdentifier(query.get('scope_id'), scope === 'institution' ? 64 : 36)
+            && /^[A-Za-z0-9._:-]{8,128}$/.test(query.get('key') || '');
+    }
+    const match = /^\/teaching\/(courses|offerings|receipts)\/([^/]+)(?:\/(enrollment|roster|roles))?$/.exec(path);
+    if (!match) return false;
+    let id;
+    try { id = decodeURIComponent(match[2]); } catch { return false; }
+    if (!teachingIdentifier(id) || encodeURIComponent(id) !== match[2]) return false;
+    if (match[3] && match[1] !== 'offerings') return false;
+    return match[3] === 'roster' ? only(['cursor', 'limit']) && page() : keys.length === 0;
+}
+
+// This branch is deliberately before all legacy URL/error construction and
+// logging. It cannot accept public headers, bodies, foreign routes or writes.
+async function teachingGet(url, options) {
+    if (!registeredTeachingRead(url) || Object.keys(options).some(key => !['teachingTransport', 'method', 'signal'].includes(key))
+        || (options.method !== undefined && options.method !== 'GET')
+        || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) {
+        throw createTeachingError('validation_error');
+    }
+    let token, status = 0, phase = 'session';
+    const current = () => !options.signal?.aborted && (localStorage.getItem('token') || '') === (token || '');
+    const fence = () => { if (!current()) throw createTeachingError('request_aborted'); };
+    try {
+        token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        fence();
+        phase = 'fetch';
+        const response = await fetch(`${API_BASE_URL}${url}`, { method: 'GET', headers, ...(options.signal ? { signal: options.signal } : {}) });
+        fence();
+        status = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599 ? response.status : 0;
+        phase = 'body';
+        const text = await response.text();
+        fence();
+        let envelope;
+        try { envelope = JSON.parse(text); } catch { envelope = null; }
+        const object = envelope != null && typeof envelope === 'object' && !Array.isArray(envelope);
+        if (status < 200 || status >= 300) {
+            if (status === 401) {
+                const currentToken = localStorage.getItem('token') || '';
+                const currentAuthorization = currentToken ? `Bearer ${currentToken}` : '';
+                if (!options.signal?.aborted && (headers.Authorization || '') === currentAuthorization) {
+                    window.dispatchEvent(new CustomEvent('auth-expired'));
+                }
+            }
+            const consistent = object && envelope.code === status;
+            const correlation = consistent ? envelope.data?.correlation_id : undefined;
+            const queryValues = [...new URLSearchParams(url.split('?')[1] || '').values()];
+            const routeId = url.split('?')[0].split('/')[3];
+            const privateValues = [token, ...queryValues, ...(routeId ? [decodeURIComponent(routeId)] : [])];
+            // Shape validation alone is insufficient when a UUID-shaped
+            // locator/key/token is reflected into the correlation field.
+            throw createTeachingError(consistent ? safeTeachingHttpReason(envelope.message) : 'request_failed', status,
+                privateValues.includes(correlation) ? undefined : correlation);
+        }
+        if (status !== 200 || !object || envelope.code !== 200 || envelope.message !== 'ok'
+            || Object.keys(envelope).length !== 3 || !Object.hasOwn(envelope, 'data')) {
+            throw createTeachingError('invalid_response', status);
+        }
+        return { httpStatus: status, envelope };
+    } catch (error) {
+        // Never expose a caught exception, body or its cause. Session changes
+        // take precedence over any pending reply, including a late 401.
+        let sameSession;
+        try { sameSession = current(); } catch { throw createTeachingError('request_failed', status); }
+        if (!sameSession) throw createTeachingError('request_aborted');
+        if (error?.name === 'TeachingError' || error?.name === 'AbortError' && error?.reason === 'request_aborted') {
+            throw createTeachingError(error.reason, error.status, error.correlationId);
+        }
+        throw createTeachingError(phase === 'fetch' ? 'network_error' : 'request_failed', status);
+    }
+}
 
 /**
  * 统一的 Fetch 网络请求封装
@@ -7,6 +111,7 @@ import { API_BASE_URL } from '../config/env.js';
  * @returns {Promise<any>}
  */
 export const request = async (url, options = {}) => {
+    if (options.teachingTransport === true) return teachingGet(url, options);
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const defaultHeaders = {};
     

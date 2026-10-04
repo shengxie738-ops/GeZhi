@@ -45,7 +45,10 @@ def _domain_error(exc, data=None):
 
 def _private_error():
     correlation = str(uuid4())
-    logger.exception("B1 private error correlation=%s", correlation)
+    import sys
+    exception_type = sys.exc_info()[0]
+    logger.error("Teaching private error correlation=%s exception_class=%s",
+                 correlation, exception_type.__name__ if exception_type else "UnknownError")
     return _response(500, "internal_error", {"correlation_id": correlation})
 
 
@@ -244,8 +247,9 @@ async def recover_by_key(request: Request, account: UserAccount = Depends(get_te
 
 
 @router.get("/receipts/{receipt_id}")
-async def recover_by_id(receipt_id: str, account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
-    if not 1 <= len(receipt_id) <= 36:
+async def recover_by_id(receipt_id: str, request: Request, account: UserAccount = Depends(get_teaching_request_account), db: Session = Depends(get_teaching_db)):
+    _no_query(request)
+    if not exact_identifier(receipt_id, 36):
         raise HTTPException(404, "not_found")
     result = get_receipt(db, account.username, receipt_id)
     return _response(200, "ok", _write_data(result))

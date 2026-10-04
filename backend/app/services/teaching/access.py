@@ -16,7 +16,7 @@ from app.services.current_identity import load_current_account
 from app.services.teaching.policy import TeachingPolicy, read_teaching_policy
 from app.services.teaching.schema import TeachingSchemaError, require_teaching_schema
 from app.services.teaching.types import (
-    ACTION_PERMISSION, ASSESSMENT_PERMISSIONS, DEFAULT_POLICY_INPUTS,
+    ACTION_PERMISSION, ASSESSMENT_PERMISSIONS, ASSESSMENT_ACTIONS, DEFAULT_POLICY_INPUTS,
     AuthorizationContext, AuthorizationSnapshot, LockedContext, ObjectRef,
     Permission, ScopeRef, TeachingAction, TeachingPolicyInputs, exact_identifier,
     CourseVisibilitySnapshot, ReadonlyOffering, ReadonlyTeachingRole, ReadonlyEnrollment,
@@ -266,6 +266,9 @@ def _course_shell_visible(context, policy, at):
 
 def _evaluate(context, policy, action, at):
     action = _action(action)
+    if action in ASSESSMENT_ACTIONS:
+        from app.services.teaching.assessment_access import authorize_assessment_locked
+        return authorize_assessment_locked(context, policy, action, at)
     _validate_action_scope(action, context.scope)
     _validate_roots(context)
     if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() != timezone.utc.utcoffset(at):
@@ -347,6 +350,14 @@ def _policy(context, inputs):
 
 
 def authorize_action(session: Session, actor_id: str, action: TeachingAction, scope: ScopeRef, object_ref: ObjectRef | None = None, *, lock: bool = False) -> AuthorizationSnapshot:
+    if _action(action) in ASSESSMENT_ACTIONS:
+        from app.services.teaching.assessment_access import authorize_assessment_read
+        if object_ref is None:
+            _deny(404, "not_found")
+        decision, _ = authorize_assessment_read(session, actor_id, _action(action), object_ref)
+        if decision.scope != scope:
+            _deny(404, "not_found")
+        return decision
     if lock:
         from app.services.teaching.writes import locked_authorization
         return locked_authorization(session, actor_id, action, scope, object_ref)
@@ -404,6 +415,14 @@ def authorize_receipt_access(session: Session, actor_id: str, receipt: WriteRece
         scope = ScopeRef(row.institution_id, row.scope_type, row.scope_id)
     except ValueError:
         _deny(403, "unsupported_receipt_scope")
+    if _action(row.action) in ASSESSMENT_ACTIONS:
+        from app.services.teaching.types import ReceiptLookup
+        from app.services.teaching.writes import _lock_context
+        lookup = ReceiptLookup(actor.username, _action(row.action), scope, row.idempotency_key)
+        context = _lock_context(session, actor.username, lookup.action, scope, lookup=lookup)
+        if context.receipt is None or context.receipt.id != row.id:
+            _deny(404, "receipt_not_found")
+        return context.authorization
     return authorize_action(session, actor.username, _action(row.action), scope)
 
 
@@ -586,10 +605,34 @@ def get_capabilities(session: Session, actor_id: str) -> CapabilityDTO:
     def stage(configured, dependency):
         return StageDTO(configured=configured, installed=False, available=False,
                         reason="feature_disabled" if not configured else "dependency_disabled" if not dependency else "stage_unavailable")
+    assignments = stage(inputs.assignments_enabled, available)
+    if available and inputs.assignments_enabled:
+        from app.services.teaching.assessment_access import require_assessment_available
+        from app.services.teaching.assessment_schema import (
+            B2_CONTRACT_HASH, B2_SCHEMA_VERSION, inspect_assessment_schema,
+        )
+        # Importing B2 or substituting a test readiness function never establishes
+        # installation: inspect the actual supplied connection's shape and ledger.
+        report = inspect_assessment_schema(session.connection())
+        installed = (report.shape_valid and report.ledger_present
+                     and report.version == B2_SCHEMA_VERSION
+                     and report.contract_hash == B2_CONTRACT_HASH)
+        if not installed:
+            assignments = StageDTO(configured=True, installed=False, available=False,
+                                   reason="assessment_schema_incompatible" if report.issues else "assessment_schema_missing")
+        else:
+            try:
+                require_assessment_available(session, inputs)
+            except HTTPException as exc:
+                if exc.status_code != 503:
+                    raise
+                assignments = StageDTO(configured=True, installed=True, available=False, reason=exc.detail)
+            else:
+                assignments = StageDTO(configured=True, installed=True, available=True, reason="read_ready")
     return CapabilityDTO(account_role=actor.role, configured=inputs.enabled, available=available,
                          can_create_course=available and actor.role == "teacher" and policy.source_roster.valid,
                          reason=reason or "available",
-                         assignments=stage(inputs.assignments_enabled, available),
+                         assignments=assignments,
                          feedback=stage(inputs.feedback_enabled, available and inputs.assignments_enabled),
                          revisions=stage(inputs.revisions_enabled, available and inputs.assignments_enabled and inputs.feedback_enabled))
 
