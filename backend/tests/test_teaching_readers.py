@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import update
+from sqlalchemy import inspect, update
 
 from tests.test_teaching_authorization import NOW, dbcase, deny, feature, offering_scope, snapshot
 
@@ -88,16 +88,31 @@ def test_roles_inspection_reports_effectiveness_not_global_profiles(dbcase):
     assert "password_hash" not in roles.model_dump_json()
 
 
-def test_assessment_flags_or_permissions_never_look_like_installed_endpoints(dbcase):
+@pytest.mark.parametrize("future_stages", [False, True])
+def test_assessment_flags_or_permissions_never_look_like_installed_endpoints(dbcase, future_stages):
     db, a, t, _, _, _ = dbcase
-    db.info["teaching_policy_provider"] = lambda: dataclasses.replace(snapshot(), assignments_enabled=True, feedback_enabled=True, revisions_enabled=True)
+    db.info["teaching_policy_provider"] = lambda: dataclasses.replace(snapshot(), assignments_enabled=True, feedback_enabled=future_stages, revisions_enabled=future_stages)
+    assessment_schema = feature("app.services.teaching.assessment_schema")
+    connection = db.connection()
+    before = set(inspect(connection).get_table_names())
+    # dbcase installs only synthetic B1 tables. Importing B2 models is not installation.
+    report = assessment_schema.inspect_assessment_schema(connection)
+    assert set(report.missing_tables) == {table.name for table in assessment_schema.b2_tables()}
+    assert not report.issues and not report.ledger_present
     dto = a.get_offering(db, "owner", "o1")
     assert t.Permission.REVIEW in dto.access.configured_permissions
     assert set(dto.access.available_actions) == {t.TeachingAction.COURSE_MANAGE, t.TeachingAction.ROSTER_MANAGE, t.TeachingAction.ROLES_MANAGE}
     capability = a.get_capabilities(db, "owner")
     assert capability.available and capability.can_create_course
-    assert capability.assignments.reason == "stage_unavailable" and not capability.assignments.available
-    assert not capability.feedback.available and not capability.revisions.available
+    assert capability.assignments.configured and not capability.assignments.installed
+    assert capability.assignments.reason == "assessment_schema_missing" and not capability.assignments.available
+    for stage in (capability.feedback, capability.revisions):
+        assert stage.configured is future_stages and not stage.installed and not stage.available
+        assert stage.reason == ("stage_unavailable" if future_stages else "feature_disabled")
+        assert not stage.writes_available and stage.write_reason == "write_safety_unproven"
+    assert not capability.writes_available and capability.write_reason == "write_safety_unproven"
+    assert not capability.assignments.writes_available and capability.assignments.write_reason == "write_safety_unproven"
+    assert set(inspect(connection).get_table_names()) == before
 
 
 def test_disabled_capability_queries_no_teaching_tables(dbcase):

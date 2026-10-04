@@ -1,7 +1,6 @@
 """B1 synthetic metadata contract. Never import startup or application routers."""
 import ast
 import importlib
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +13,62 @@ from sqlalchemy.orm import Session
 
 BACKEND = Path(__file__).resolve().parents[1]
 DOMAIN = ("Course", "Offering", "Enrollment", "TeachingRole", "RosterPreview", "WriteReceipt", "AccessEvent")
+PUBLIC_TEACHING_DEFAULTS = {
+    "TEACHING_ENABLED": False,
+    "TEACHING_ASSIGNMENTS_ENABLED": False,
+    "TEACHING_FEEDBACK_ENABLED": False,
+    "TEACHING_REVISIONS_ENABLED": False,
+    "TEACHING_INSTITUTION_ID": "",
+    "TEACHING_TRUSTED_DELEGATIONS": "{}",
+}
+
+
+def assert_public_teaching_configuration(source):
+    """Check actual Settings declarations without importing settings or a local manifest."""
+    tree = ast.parse(source)
+    settings = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Settings"]
+    assert len(settings) == 1, "exactly one actual Settings class is required"
+    settings = settings[0]
+    for name, expected in PUBLIC_TEACHING_DEFAULTS.items():
+        declarations = [n for n in settings.body
+                        if (isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.target.id == name)
+                        or (isinstance(n, ast.Assign) and any(isinstance(target, ast.Name) and target.id == name for target in n.targets))]
+        assert len(declarations) == 1, f"{name} must have exactly one declaration"
+        declaration = declarations[0]
+        assert isinstance(declaration, ast.AnnAssign), f"{name} must be a typed field"
+        assert isinstance(declaration.annotation, ast.Name) and declaration.annotation.id == type(expected).__name__, f"{name} has an unexpected type"
+        assert isinstance(declaration.value, ast.Constant), f"{name} must have a literal default"
+        value = declaration.value.value
+        assert type(value) is type(expected) and value == expected, f"{name} has an unsafe default"
+    return settings
+
+
+@pytest.mark.parametrize("defect", ["duplicate_annotation", "plain_reassignment", "missing", "enabled", "wrong_literal_type", "wrong_annotation", "nonliteral", "nested_decoy", "duplicate_class"])
+def test_public_teaching_configuration_guard_rejects_unsafe_source(defect):
+    source = "class Settings:\n" + "\n".join(
+        f"    {name}: {type(value).__name__} = {value!r}" for name, value in PUBLIC_TEACHING_DEFAULTS.items())
+    assert_public_teaching_configuration(source)
+    first = "TEACHING_ENABLED: bool = False"
+    if defect == "duplicate_annotation":
+        source += "\n    " + first
+    elif defect == "plain_reassignment":
+        source += "\n    TEACHING_ENABLED = False"
+    elif defect == "missing":
+        source = source.replace("    TEACHING_REVISIONS_ENABLED: bool = False", "")
+    elif defect == "enabled":
+        source = source.replace(first, "TEACHING_ENABLED: bool = True")
+    elif defect == "wrong_literal_type":
+        source = source.replace(first, "TEACHING_ENABLED: bool = 0")
+    elif defect == "wrong_annotation":
+        source = source.replace(first, "TEACHING_ENABLED: int = False")
+    elif defect == "nonliteral":
+        source = source.replace(first, "TEACHING_ENABLED: bool = bool(0)")
+    elif defect == "nested_decoy":
+        source = source.replace("class Settings:", "class Other:") + "\nclass Settings:\n    pass"
+    else:
+        source += "\nclass Settings:\n    pass"
+    with pytest.raises(AssertionError):
+        assert_public_teaching_configuration(source)
 
 
 def feature(module):
@@ -30,13 +85,8 @@ def tables():
 
 
 def test_flags_default_off_and_capability_disabled_without_tables():
-    tree = ast.parse((BACKEND / "app/core/config.py").read_text())
-    settings = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Settings")
+    settings = assert_public_teaching_configuration((BACKEND / "app/core/config.py").read_text())
     defaults = {n.target.id: ast.literal_eval(n.value) for n in settings.body if isinstance(n, ast.AnnAssign) and isinstance(n.value, ast.Constant)}
-    flags = ("TEACHING_ENABLED", "TEACHING_ASSIGNMENTS_ENABLED", "TEACHING_FEEDBACK_ENABLED", "TEACHING_REVISIONS_ENABLED")
-    assert all(defaults.get(flag) is False for flag in flags), "All four teaching flags must exist and default off"
-    assert defaults["TEACHING_INSTITUTION_ID"] == ""
-    assert defaults["TEACHING_TRUSTED_DELEGATIONS"] == "{}"
     assert "ANALYTICS_RECORDED_TIMEZONE" in defaults
     schema = feature("app.services.teaching.schema")
     class ForbiddenSession:
@@ -68,11 +118,6 @@ def test_flags_default_off_and_capability_disabled_without_tables():
                 for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
                     if isinstance(call.func, ast.Attribute) and call.func.attr == "include_router":
                         assert "teaching" not in ast.unparse(call)
-    manifest = json.loads((BACKEND.parent / "stage-manifest.json").read_text())
-    declarations = manifest["public_teaching_configuration_contract"]["declarations"]
-    for name in (*flags, "TEACHING_INSTITUTION_ID", "TEACHING_TRUSTED_DELEGATIONS"):
-        assert declarations[name]["total_declarations"] == 1
-        assert declarations[name]["matching_default_declarations"] == 1
 
 
 def test_startup_selector_excludes_registered_teaching_and_future_assessment_tables():

@@ -1,5 +1,6 @@
-import { ref, reactive, computed, watch, onMounted, onUnmounted, getCurrentScope, onScopeDispose } from 'vue';
+import { ref, reactive, computed, readonly, watch, onMounted, onUnmounted, getCurrentScope, onScopeDispose } from 'vue';
 import request from '../utils/request.js';
+import { getTeachingMenuInfo } from '../controllers/teachingNavigation.js';
 
 const studentMenus = [
     { id: 'dashboard', name: '仪表盘', icon: 'ph-squares-four', title: '学习数据总览', desc: '您的专属智能学习进度报表' },
@@ -35,6 +36,7 @@ export function useAuth(showToast, onLoginSuccess) {
     try { storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch { localStorage.removeItem('currentUser'); }
     const currentUser = ref(storedUser);
     const authVerified = ref(false);
+    const authEpoch = ref(0);
     const authError = ref('');
     let sessionVersion = 0;
     const isRegistering = ref(false);
@@ -54,6 +56,8 @@ export function useAuth(showToast, onLoginSuccess) {
     // 外语学习工作台没有侧栏菜单项，入口在工作台模式分流页；挂载期间顶部信息回落到"工作台"菜单
     const VIEW_MENU_ALIASES = { 'foreign-lang': 'workspace' };
     const currentMenuInfo = computed(() => {
+        const teachingMenu = getTeachingMenuInfo(currentView.value);
+        if (teachingMenu) return teachingMenu;
         const target = VIEW_MENU_ALIASES[currentView.value] || currentView.value;
         const menu = activeMenus.value.find(m => m.id === target);
         if (!menu) {
@@ -71,6 +75,7 @@ export function useAuth(showToast, onLoginSuccess) {
 
     const handleLogout = (onLogout) => {
         sessionVersion++;
+        authEpoch.value++;
         authVerified.value = false;
         isLoggedIn.value = false;
         currentUser.value = null;
@@ -90,6 +95,7 @@ export function useAuth(showToast, onLoginSuccess) {
 
     const verifySession = async () => {
         const version = ++sessionVersion;
+        authEpoch.value++;
         authVerified.value = false;
         authError.value = '';
         if (!localStorage.getItem('token')) { expireSession(); return; }
@@ -119,7 +125,14 @@ export function useAuth(showToast, onLoginSuccess) {
         void verifySession();
     };
     window.addEventListener('storage', synchronizeSession);
-    if (getCurrentScope()) onScopeDispose(() => window.removeEventListener?.('storage', synchronizeSession));
+    if (getCurrentScope()) onScopeDispose(() => {
+        sessionVersion++;
+        authEpoch.value++;
+        authVerified.value = false;
+        window.removeEventListener?.('storage', synchronizeSession);
+        window.removeEventListener?.('auth-expired', expireSession);
+        window.removeEventListener?.('force-logout', expireSession);
+    });
     onMounted(verifySession);
     onUnmounted(() => {
         window.removeEventListener('auth-expired', expireSession);
@@ -153,6 +166,7 @@ export function useAuth(showToast, onLoginSuccess) {
     return {
         isLoggedIn,
         authVerified,
+        authEpoch: readonly(authEpoch),
         authError,
         verifySession,
         currentUser,
