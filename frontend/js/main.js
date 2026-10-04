@@ -121,7 +121,9 @@ const app = createApp({
         const teachingAvailability = teachingWorkbench.availability;
         const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
         const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
-        const studentNavigation = useStudentNavigationPresentation(auth.currentRole);
+        const studentNavigation = useStudentNavigationPresentation(auth.currentRole, {
+            isVisible: () => auth.isLoggedIn.value && auth.authVerified.value && !isTeachingView.value && teachingWorkbench.legacyRenderAllowed.value
+        });
 
 
         // 5. 仿真监控 Hook (传入真实的响应式 currentRole 和 currentView)

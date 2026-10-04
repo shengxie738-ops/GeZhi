@@ -1,7 +1,7 @@
 import { ref, shallowRef, computed, watch } from 'vue';
 
 // Isolated presentation state. This hook has no task, chat, navigation or storage dependency.
-export function useStudentNavigationPresentation(currentRole) {
+export function useStudentNavigationPresentation(currentRole, { isVisible = () => true } = {}) {
     const studentNavCollapsed = ref(false);
     const focusOwner = shallowRef(null);
     const hoverOwner = shallowRef(null);
@@ -10,8 +10,10 @@ export function useStudentNavigationPresentation(currentRole) {
     const boundsRevision = ref(0);
     const studentNavHoverLabel = computed(() => {
         boundsRevision.value;
-        if (currentRole.value !== 'student' || !studentNavCollapsed.value || dismissed.value) return null;
-        const owner = hoverOwner.value || focusOwner.value;
+        if (currentRole.value !== 'student' || !isVisible() || !studentNavCollapsed.value || dismissed.value) return null;
+        const owner = [hoverOwner.value, focusOwner.value].find(candidate =>
+            candidate?.target && candidate.target.isConnected !== false
+        );
         const bounds = owner?.target?.getBoundingClientRect?.();
         return bounds ? { label: owner.label, top: bounds.top + bounds.height / 2 } : null;
     });
@@ -22,7 +24,7 @@ export function useStudentNavigationPresentation(currentRole) {
         dismissed.value = false;
     };
     const showStudentNavLabel = (event, label, source = 'hover') => {
-        if (currentRole.value !== 'student' || !studentNavCollapsed.value) return;
+        if (currentRole.value !== 'student' || !isVisible() || !studentNavCollapsed.value || event.currentTarget?.isConnected === false) return;
         const owner = { label, target: event.currentTarget };
         if (source === 'focus') focusOwner.value = owner;
         else {
@@ -53,6 +55,7 @@ export function useStudentNavigationPresentation(currentRole) {
     };
     watch(studentNavCollapsed, resetOwners, { flush: 'sync' });
     watch(currentRole, resetOwners, { flush: 'sync' });
+    watch(isVisible, visible => { if (!visible) resetOwners(); }, { flush: 'sync' });
     return { studentNavCollapsed, studentNavHoverLabel, showStudentNavLabel, hideStudentNavLabel,
         keepStudentNavTooltip, leaveStudentNavTooltip, updateStudentNavLabelPosition, dismissStudentNavLabel };
 }
