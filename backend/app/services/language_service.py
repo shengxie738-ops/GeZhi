@@ -10,6 +10,7 @@
 import asyncio
 import base64
 import json
+import math
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -23,6 +24,7 @@ SPEAKING_AGENT_ID = "agent_speaking"
 READING_MAX_CHARS = 9000
 WRITING_MAX_CHARS = 6000
 OMNI_JSON_MAX_TOKENS = 4000
+SPEAKING_ASR_UNAVAILABLE = "当前模型仅支持语音转写，无法评测发音和语调，未生成评分"
 
 
 # ---------------------------------------------------------------- JSON 工具
@@ -175,41 +177,10 @@ async def omni_json(
     audio_format: str = "wav",
     temperature: float = 0.2,
 ) -> dict:
-    """全模态/语音评测调用：若为 ASR 模型则先高精转写，再结合大语言模型输出结构化评测 JSON。"""
+    """音频评测调用；仅支持转写的 ASR 模型不能提供发音或语调评测。"""
     config = get_model_config(model_id, category="omni")
     if "qwen-audio" in config.model_id or "paraformer" in config.model_id:
-        transcript = ""
-        words = []
-        if audio_base64:
-            try:
-                transcript, words = await transcribe_audio_speech(model_id, audio_base64, audio_format)
-            except Exception as e:
-                transcript = ""
-
-        llm_prompt = (
-            f"{prompt}\n\n"
-            f"【学生录音转写文本】:\n{transcript or '（音频发音较短或存在杂音，请基于发音整体情况评分）'}\n\n"
-            "请结合以上录音转写和发音表现，严格按要求的 JSON schema 输出结构化评测结果。"
-        )
-        try:
-            eval_result = await asyncio.wait_for(
-                chat_json("qwen3.7-flash", system="你是专业的英语口语与发音评测专家。严格输出 JSON。", user=llm_prompt, temperature=temperature, max_tokens=1500),
-                timeout=25.0
-            )
-        except Exception:
-            eval_result = {
-                "transcript": transcript,
-                "scores": {"overall": 80, "pronunciation": 82, "fluency": 78, "accuracy": 85, "intonation": 79},
-                "scoreEvidence": {"pronunciation": "发音清晰自然", "fluency": "语流整体连贯", "accuracy": "词汇识别准确", "intonation": "语调自然"},
-                "words": [{"word": w.get("text", ""), "status": "correct", "problemsZh": []} for w in words[:10]] if words else [],
-                "feedbackZh": "语音已完成高精识别，发音清晰自然，请继续保持练习。",
-                "suggestionsZh": ["注意连读与弱读", "保持平稳语速"]
-            }
-        if transcript:
-            eval_result["transcript"] = transcript
-        if words and not eval_result.get("words"):
-            eval_result["words"] = [{"word": w.get("text", ""), "status": "correct", "problemsZh": []} for w in words[:15]]
-        return eval_result
+        raise ValueError(SPEAKING_ASR_UNAVAILABLE)
 
     client, provider_model = build_omni_client(model_id)
     content: list[dict] = [{"type": "text", "text": prompt}]
@@ -473,17 +444,31 @@ async def analyze_speaking(
         "语速与停顿由系统从音频实测，你的 fluency 分数侧重节奏与连贯性。"
     )
     # 评分类调用温度降到 0.1：同一段录音重复评测的波动主要来自温度
-    data = await omni_json(
-        model_id,
-        prompt=prompt,
-        audio_base64=audio_base64,
-        audio_format=audio_format,
-        temperature=0.1,
-    )
-    data.setdefault("transcript", "")
-    scores = data.get("scores") or {}
-    for key in ("overall", "pronunciation", "fluency", "accuracy", "intonation"):
-        scores.setdefault(key, 0)
+    try:
+        data = await omni_json(
+            model_id,
+            prompt=prompt,
+            audio_base64=audio_base64,
+            audio_format=audio_format,
+            temperature=0.1,
+        )
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc) == SPEAKING_ASR_UNAVAILABLE:
+            raise
+        # 端点会显示异常消息；不向用户透传提供方错误或用默认分数掩盖失败。
+        raise ValueError("口语评测暂不可用，未生成评分") from None
+    if not isinstance(data, dict) or not isinstance(data.get("transcript"), str):
+        raise ValueError("口语评测结果无效，未生成评分")
+    scores = data.get("scores")
+    try:
+        valid_scores = isinstance(scores, dict) and all(
+            type(scores.get(key)) in (int, float) and math.isfinite(scores[key])
+            for key in ("pronunciation", "fluency", "accuracy", "intonation")
+        )
+    except (OverflowError, TypeError, ValueError):
+        valid_scores = False
+    if not valid_scores:
+        raise ValueError("口语评测结果无效，未生成评分")
     data["scores"] = scores
     data.setdefault("words", [])
     data.setdefault("feedbackZh", "")
