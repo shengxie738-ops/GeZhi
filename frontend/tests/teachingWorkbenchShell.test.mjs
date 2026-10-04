@@ -5,6 +5,7 @@ import * as Vue from 'vue';
 import { compile } from '@vue/compiler-dom';
 import { renderToString } from '@vue/server-renderer';
 import { readFileSync, existsSync } from 'node:fs';
+import { fixtures as assessmentFixtures,clone as assessmentClone } from './fixtures/teachingAssessmentFixtures.mjs';
 
 const storage=new Map(),listeners=new Map();
 globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
@@ -113,7 +114,7 @@ test('dashboard disabled entry and auth loss fence late aggregate results and in
  try{const disabledRead=hook.refreshDashboard();await settle();assert.equal(calls,0);await disabledRead;enabled.value=true;await settle();assert.equal(calls,1);enabled.value=false;await settle();resolve();await settle();assert.equal(hook.homeworkList.value.length,0);assert.equal(hook.dashboardLoading.value,false);assert.equal(calls,1);}finally{if(resolve)resolve();app.unmount();if(original)analyticsApi.getStudentInteractions=original;else delete analyticsApi.getStudentInteractions;globalThis.fetch=()=>{throw Error('Unregistered network work');};}
 });
 test('static authenticated mount is exclusive and main wires F2 authority and guarded hash seam',()=>{
- const html=source('index.html'),main=source('js/main.js'),orchestration=source('js/hooks/useTeachingWorkbench.js');assert.match(html,/teaching-workbench-shell[\s\S]*v-if="isLoggedIn && authVerified && isTeachingView"/);assert.match(html,/v-else-if="isLoggedIn && authVerified"[^>]*home-bg-container/);assert.match(html,/styles\/teaching-workbench\.css/);assert.match(main,/useTeachingWorkbench\(auth, navigateView/);assert.match(orchestration,/useTeachingContext\(auth/);assert.match(orchestration,/createTeachingNavigation\(/);assert.match(orchestration,/parseTeachingLocation/);assert.match(orchestration,/hashchange/);assert.match(orchestration,/navigation\.openObject/);assert.match(main,/enabled:[\s\S]*auth\.authVerified\.value[\s\S]*!isTeachingView\.value/);assert.match(main,/enabled: \(\) => auth\.authVerified\.value === true && auth\.currentRole\.value === 'student' && !isTeachingView\.value && !teachingWorkbench\.teachingEntryPending\.value/);assert.doesNotMatch(html,/集群监控激活|格至 AI 在线/);assert.doesNotMatch(main,/api\/teaching_assessment|teachingApi\.(?:create|release|submit)/);
+ const html=source('index.html'),main=source('js/main.js'),orchestration=source('js/hooks/useTeachingWorkbench.js');assert.match(html,/teaching-workbench-shell[\s\S]*v-if="isLoggedIn && authVerified && isTeachingView"/);assert.match(html,/v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed"[^>]*home-bg-container/);assert.match(html,/styles\/teaching-workbench\.css/);assert.match(main,/useTeachingWorkbench\(auth, navigateView/);assert.match(orchestration,/useTeachingContext\(auth/);assert.match(orchestration,/createTeachingNavigation\(/);assert.match(orchestration,/parseTeachingLocation/);assert.match(orchestration,/hashchange/);assert.match(orchestration,/navigation\.openObject/);assert.match(main,/enabled:[\s\S]*auth\.authVerified\.value[\s\S]*!isTeachingView\.value/);assert.match(main,/enabled: \(\) => auth\.authVerified\.value === true && auth\.currentRole\.value === 'student' && !isTeachingView\.value && !teachingWorkbench\.teachingEntryPending\.value/);assert.doesNotMatch(html,/集群监控激活|格至 AI 在线/);assert.doesNotMatch(main,/api\/teaching_assessment|teachingApi\.(?:create|release|submit)/);
 });
 test('desktop CSS owns namespaced typography scroll and safe single-column fallback',()=>{
  const css=source('styles/teaching-workbench.css');assert.match(css,/\.teaching-workbench\s*\{/);assert.match(css,/"PingFang SC"/);assert.match(css,/minmax\(0,\s*1fr\)/);assert.match(css,/min-width:\s*0/);assert.match(css,/min-height:\s*0/);assert.match(css,/overflow-y:\s*auto/);assert.match(css,/@container[^\n]*min-width:\s*960px/);assert.doesNotMatch(css,/:root|@media|linear-gradient|backdrop-filter|\.glass|\.sidebar\s*\{/);for(const line of css.split('\n').filter(line=>line.includes('{')&&!line.includes('@container'))){assert.ok(line.trim().startsWith('.teaching-workbench'),line);}
@@ -123,7 +124,7 @@ let useTeachingWorkbench;
 try {({useTeachingWorkbench}=await import('../js/hooks/useTeachingWorkbench.js'));}catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND')throw error;}
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const capability=()=>({account_role:'student',configured:true,available:true,reason:'available',assignments:{configured:false,installed:false,available:false,reason:'assessment_disabled'}});
-async function workbench({view='teaching-home',verified=true,hash='',api:overrides={}}={}){
+async function workbench({view='teaching-home',verified=true,hash='',api:overrides={},assignmentApi}={}){
  assert.equal(typeof useTeachingWorkbench,'function','F3 orchestration hook must exist');
  const {createNavigationGuard}=await import('../js/utils/navigationGuard.js');
  const auth={authVerified:Vue.ref(verified),authEpoch:Vue.ref(1),currentUser:Vue.ref({username:'S'}),currentRole:Vue.ref('student'),currentView:Vue.ref(view)};
@@ -133,7 +134,7 @@ async function workbench({view='teaching-home',verified=true,hash='',api:overrid
  const api={getCapabilities:async()=>{calls.push('capabilities');return capability();},listCourses:async query=>{calls.push(['courses',query.membership]);return{items:[course()],next_cursor:null,as_of:'2026-10-04T00:00:00Z'};},listOfferings:async query=>{calls.push(['offerings',query.courseId||null,query.membership]);return{items:[offering()],next_cursor:null,as_of:'2026-10-04T00:00:00Z'};},getOffering:async id=>{calls.push(['offering',id]);return offering(id);},getEnrollment:async()=>{throw Error('Assistant cannot fetch enrollment');},listRoster:async()=>{throw Error('No automatic roster');},listRoles:async()=>{throw Error('No automatic roles');},...overrides};
  let controller,leaveAllowed=true,examFlushes=0;const notices=[];
  const navigate=createNavigationGuard({getCurrentView:()=>auth.currentView.value,getExam:()=>auth.currentView.value==='exam'?{flushAnswers:async()=>{examFlushes++;return leaveAllowed;}}:null,setView:view=>auth.currentView.value=view,notify:(...args)=>notices.push(args)});
- const app=renderer.createApp({setup(){controller=useTeachingWorkbench(auth,navigate,{api,location,history,eventTarget,locatorStore:null});return()=>null;}});app.mount(node('root'));await settle();
+ const app=renderer.createApp({setup(){controller=useTeachingWorkbench(auth,navigate,{api,assignmentApi,location,history,eventTarget,locatorStore:null});return()=>null;}});app.mount(node('root'));await settle();
  return{auth,location,events,calls,controller,app,notices,get examFlushes(){return examFlushes;},setLeave:allowed=>leaveAllowed=allowed,close:()=>app.unmount()};
 }
 test('mounted orchestration waits for verification and preserves explicit legacy entry without teaching reads',async()=>{
@@ -282,4 +283,67 @@ test('capability retry recovers actual catalog reads with write gate still close
 });
 test('malformed initial saved exam can accept only through flush before unavailable shell with no reads',async()=>{
  const h=await workbench({view:'exam',hash:'#teaching/offerings/O?role=teacher'});try{assert.equal(h.examFlushes,1);assert.equal(h.auth.currentView.value,'teaching-home');assert.equal(h.location.hash,'#teaching/home');assert.equal(h.controller.locationUnavailable.value,true);assert.deepEqual(h.calls,[]);assert.equal(h.controller.context.value.offeringId,null);}finally{h.close();}
+});
+
+// Tranche B mounted task seam. Native browser/DB acceptance remains separate.
+const readReadyCapability=()=>({...capability(),assignments:{configured:true,installed:true,available:true,reason:'read_ready'}});
+function taskAPI(calls,{learning=false,dual=false,permissions=['AUTHOR','RELEASE']}={}){
+ const map=value=>{const data=assessmentClone(value);if(Array.isArray(data.items))data.items=data.items.map(map);if(data.offering_id)data.offering_id='O';if(data.version)data.version=map(data.version);return data;};
+ const get=(name,value)=>(...args)=>{calls.push([name,...args.slice(0,name==='getVersion'?2:1).filter(arg=>typeof arg==='string')]);return Promise.resolve(map(value));};
+ return{api:{getCapabilities:async()=>readReadyCapability(),getOffering:async id=>offering(id,{access:{teaching:!learning||dual,learning:learning||dual,role_scope:learning&&!dual?null:'offering',configured_permissions:permissions}}),getEnrollment:async id=>({id:'E',offering_id:id,student_id:'S',status:'active',revision:1,access_eligible:true,effective_from:'2026-10-04T00:00:00Z',effective_until:null})},assignmentApi:{listAssignments:get('listAssignments',assessmentFixtures.assignmentPage),getDraft:get('getDraft',assessmentFixtures.draft),listVersions:get('listVersions',assessmentFixtures.versionPage),getVersion:get('getVersion',assessmentFixtures.version),listReleases:get('listReleases',assessmentFixtures.releasePage),getRelease:get('getRelease',assessmentFixtures.release)}};
+}
+test('mounted ready tasks reads only after guarded selected current offering and never outside tasks',async()=>{
+ const reads=[],options=taskAPI(reads);const h=await workbench(options);try{assert.deepEqual(reads,[]);await h.controller.selectCourse('C');assert.deepEqual(reads,[]);await h.controller.selectOffering('O');assert.deepEqual(reads.map(x=>x[0]),['listAssignments','listReleases']);assert.equal(h.controller.assignments.assignmentPage.loadedCount,1);assert.equal(await h.controller.openSection('history'),true);assert.equal(h.controller.assignments.assignmentPage.items.length,0);const count=reads.length;await h.controller.openSection('home');assert.equal(reads.length,count);}finally{h.close();}
+});
+test('mounted supported draft and version locators install actual ancestry before clearing generic unavailable',async()=>{
+ const reads=[],h=await workbench({...taskAPI(reads),hash:'#teaching/offerings/O/assignments/assignment-A/draft'});try{await settle();assert.equal(h.controller.locationUnavailable.value,false);assert.equal(h.controller.assignments.draft.status,'ready');assert.ok(reads.some(x=>x[0]==='getDraft'));assert.equal(await h.controller.assignmentNavigation.selectVersion('version-A'),true);assert.equal(h.location.hash,'#teaching/offerings/O/assignments/assignment-A/versions/version-A');assert.equal(h.controller.assignments.version.data.id,'version-A');assert.equal(h.controller.locationUnavailable.value,false);}finally{h.close();}
+});
+test('mounted unknown locator cannot grant a detail request without installed current list ancestry',async()=>{
+ const reads=[],h=await workbench({...taskAPI(reads),hash:'#teaching/offerings/O/assignments/foreign/draft'});try{await settle();assert.equal(h.controller.locationUnavailable.value,true);assert.equal(reads.some(x=>x[0]==='getDraft'),false);assert.equal(h.controller.assignments.draft.data,null);}finally{h.close();}
+});
+test('mounted learning filters management rows and opens only public frozen release with no catalog or version request',async()=>{
+ const reads=[],h=await workbench(taskAPI(reads,{learning:true}));try{await h.controller.selectOffering('O');assert.deepEqual(reads.map(x=>x[0]),['listReleases']);assert.deepEqual(h.controller.assignments.releasePage.items.map(row=>row.id),['release-A']);assert.equal(await h.controller.assignmentNavigation.selectRelease('release-A'),true);assert.equal(h.location.hash,'#teaching/offerings/O/releases/release-A');assert.equal(h.controller.locationUnavailable.value,false);assert.equal(h.controller.assignments.release.data.version.id,'version-A');assert.equal(reads.some(x=>['listAssignments','getDraft','listVersions','getVersion'].includes(x[0])),false);}finally{h.close();}
+});
+test('mounted dual-mode choice and subsequent switch erase old detail locator with no role-derived access',async()=>{
+ const reads=[],h=await workbench(taskAPI(reads,{dual:true}));try{await h.controller.selectOffering('O');assert.deepEqual(reads,[]);await h.controller.selectMode('teaching');await h.controller.assignmentNavigation.selectAssignment('assignment-A');assert.equal(h.controller.assignments.draft.status,'ready');const previous=reads.length;assert.equal(await h.controller.selectMode('learning'),true);assert.equal(h.location.hash,'#teaching/offerings/O/tasks');assert.equal(h.controller.assignments.draft.data,null);assert.equal(h.controller.assignments.selection.assignmentId,null);assert.deepEqual(reads.slice(previous).map(x=>x[0]),['listReleases']);assert.equal(h.controller.context.value.mutationAllowed,false);}finally{h.close();}
+});
+test('mounted SUBMISSION_VIEW reads release list without author catalog version draft roster or private calls',async()=>{
+ const reads=[],h=await workbench(taskAPI(reads,{permissions:['SUBMISSION_VIEW']}));try{await h.controller.selectOffering('O');assert.deepEqual(reads.map(x=>x[0]),['listReleases']);assert.equal(h.controller.assignments.access.value.canReadCatalog,false);assert.equal(h.controller.assignments.access.value.canReadTeacherSubmissions,true);}finally{h.close();}
+});
+test('mounted AUTHOR alone reads catalog without release and task writes remain closed',async()=>{
+ const reads=[],h=await workbench(taskAPI(reads,{permissions:['AUTHOR']}));try{await h.controller.selectOffering('O');assert.deepEqual(reads.map(x=>x[0]),['listAssignments']);assert.equal(h.controller.assignments.access.value.canReadReleases,false);assert.equal(h.controller.assignments.access.value.mutationAllowed,false);}finally{h.close();}
+});
+test('mounted legacy exam exit aborts and fences pending task reply without changing confirmed hash',async()=>{
+ const reads=[],options=taskAPI(reads),pending=deferred();options.assignmentApi.listAssignments=(_id,{signal})=>{reads.push(['pending',signal]);return pending.promise;};const h=await workbench(options);try{const opening=h.controller.selectOffering('O');await settle();assert.equal(await h.controller.navigateToView('exam'),true);assert.equal(reads[0][1].aborted,true);pending.resolve({items:[],next_cursor:null,as_of:'2026-10-04T00:00:00Z'});assert.equal(await opening,false);assert.equal(h.controller.assignments.assignmentPage.items.length,0);assert.equal(h.controller.assignments.assignmentPage.status,'idle');assert.equal(h.location.hash,'');assert.equal(h.auth.currentView.value,'exam');}finally{h.close();}
+});
+
+test('explicit refresh preserves chosen dual mode only through fresh current offering membership',async()=>{
+ const reads=[],options=taskAPI(reads,{dual:true}),h=await workbench(options);try{await h.controller.selectOffering('O');await h.controller.selectMode('teaching');await h.controller.assignmentNavigation.selectAssignment('assignment-A');assert.equal(await h.controller.refresh(),true);assert.equal(h.controller.context.value.mode,'teaching');assert.equal(h.controller.assignments.draft.status,'ready');assert.equal(h.controller.locationUnavailable.value,false);}finally{h.close();}
+});
+test('mounted disabled task stage keeps implemented workspace gated and reports unavailable rather than unconnected task interface',async()=>{
+ const h=await workbench();try{await h.controller.selectOffering('O');const shell=await mount('TeachingWorkbenchShell',shellProps({section:'tasks',context:h.controller.context.value,accessMode:'teaching',offering:h.controller.offering,assignments:h.controller.assignments}));try{assert.match(textOf(shell.root),/课程作业功能尚未启用/);assert.doesNotMatch(textOf(shell.root),/课程作业读取界面尚未接入/);assert.equal(walk(shell.root).some(x=>x.tag==='button'&&textOf(x)==='重新读取任务'),false);}finally{shell.close();}}finally{h.close();}
+});
+// Actual legacy-root expression, compiled in isolation. No main runtime import.
+async function entryRenderHarness(initialHash){
+ const html=source('index.html'),gate=html.match(/<div v-else-if="([^"]+)" class="h-full w-full flex relative home-bg-container"/)[1];
+ const auth={authVerified:Vue.ref(false),authEpoch:Vue.ref(1),currentUser:Vue.ref({username:'S'}),currentRole:Vue.ref('student'),currentView:Vue.ref('exam')};
+ const location={hash:initialHash,pathname:'/frontend/index.html',search:''},events=new Map(),waiting=deferred(),errors=[],warnings=[];
+ const eventTarget={addEventListener:(key,fn)=>events.set(key,fn),removeEventListener:(key,fn)=>events.delete(key)},history={replaceState:(_d,_t,url)=>location.hash=url.includes('#')?url.slice(url.indexOf('#')):''};
+ let controller,examMounts=0,examUnmounts=0,overviewReads=0,flushes=0;const examRef=Vue.ref(null),root=node('root');
+ const ExamProbe={setup(_props,{expose}){Vue.onMounted(()=>{examMounts++;overviewReads++;});Vue.onScopeDispose(()=>examUnmounts++);expose({flushAnswers:async()=>{flushes++;return false;}});return()=>Vue.h('p','active-exam-probe');}};
+ const TeachingProbe={render:()=>Vue.h('p','generic-teaching-unavailable')};
+ const {createNavigationGuard}=await import('../js/utils/navigationGuard.js');
+ const guard=createNavigationGuard({getCurrentView:()=>auth.currentView.value,getExam:()=>examRef.value,setView:view=>auth.currentView.value=view,notify(){}});
+ const C={components:{ExamProbe,TeachingProbe},setup(){controller=useTeachingWorkbench(auth,async(view,options)=>{await waiting.promise;return guard(view,options);},{location,history,eventTarget,locatorStore:null,api:{getCapabilities:async()=>{throw Error('Invalid locator cannot request teaching APIs');}}});return{isLoggedIn:Vue.ref(true),authVerified:auth.authVerified,isTeachingView:controller.isTeachingView,teachingLegacyRenderAllowed:controller.legacyRenderAllowed||Vue.computed(()=>true),examRef};},render:Object.assign(new Function('Vue',compile(`<TeachingProbe v-if="isLoggedIn && authVerified && isTeachingView"/><ExamProbe v-else-if="${gate}" ref="examRef"/>`,{mode:'function'}).code)(Vue),{_rc:true})};
+ const app=renderer.createApp(C);app.config.errorHandler=e=>errors.push(e);app.config.warnHandler=e=>warnings.push(e);app.mount(root);await settle();
+ return{auth,location,events,root,waiting,get controller(){return controller;},get examMounts(){return examMounts;},get examUnmounts(){return examUnmounts;},get overviewReads(){return overviewReads;},get flushes(){return flushes;},get exam(){return examRef.value;},close(){app.unmount();assert.deepEqual(errors,[]);assert.deepEqual(warnings,[]);}};
+}
+test('malformed initial teaching intent never mounts saved legacy exam or initiates its overview during auth-confirmed guard wait',async()=>{
+ const h=await entryRenderHarness('#teaching/offerings/%2f/tasks');try{h.auth.authVerified.value=true;await settle();assert.equal(h.examMounts,0);assert.equal(h.overviewReads,0);assert.doesNotMatch(textOf(h.root),/active-exam-probe/);h.waiting.resolve();await settle();assert.equal(h.auth.currentView.value,'teaching-home');assert.equal(h.location.hash,'#teaching/home');assert.equal(h.controller.locationUnavailable.value,true);assert.equal(h.examMounts,0);assert.equal(h.overviewReads,0);assert.equal(h.flushes,0);assert.equal(h.controller.context.value.mutationAllowed,false);}finally{h.waiting.resolve();h.close();}
+});
+test('already active exam stays mounted during later teaching navigation and flush false preserves instance and empty confirmed hash',async()=>{
+ const h=await entryRenderHarness('');try{h.auth.authVerified.value=true;await settle();assert.equal(h.examMounts,1);assert.equal(h.overviewReads,1);const exam=h.exam;h.location.hash='#teaching/courses';const attempt=h.events.get('hashchange')();await settle();assert.equal(h.exam,exam);assert.equal(h.examUnmounts,0);assert.match(textOf(h.root),/active-exam-probe/);h.waiting.resolve();assert.equal(await attempt,false);await settle();assert.equal(h.flushes,1);assert.equal(h.auth.currentView.value,'exam');assert.equal(h.location.hash,'');assert.equal(h.exam,exam);assert.equal(h.examUnmounts,0);assert.equal(h.examMounts,1);assert.equal(h.overviewReads,1);}finally{h.waiting.resolve();h.close();}
+});
+test('main exposes startup legacy render eligibility and template uses it only for legacy mounting',()=>{
+ const main=source('js/main.js'),html=source('index.html');assert.match(main,/teachingLegacyRenderAllowed: teachingWorkbench\.legacyRenderAllowed/);assert.match(html,/<div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"/);assert.doesNotMatch(html,/<div v-else-if="[^"]*!teachingEntryPending/);
 });

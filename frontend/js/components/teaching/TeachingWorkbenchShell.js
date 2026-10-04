@@ -4,15 +4,16 @@ import TeachingCourseDirectory from './TeachingCourseDirectory.js';
 import TeachingCourseSelector from './TeachingCourseSelector.js';
 import TeachingResourceState from './TeachingResourceState.js';
 import TeachingAvailabilityNotice from './TeachingAvailabilityNotice.js';
+import TeachingAssignmentReadWorkspace from './TeachingAssignmentReadWorkspace.js';
 
 const sections=['home','courses','tasks','history'];
 const labels={teaching:['工作台','我的课程','作业与发布','提交记录'],learning:['当前任务','我的课程','作业','提交历史'],neutral:['工作台','我的课程','课程作业','提交记录']};
 export default {
     name:'TeachingWorkbenchShell',
-    components:{TeachingCourseDirectory,TeachingCourseSelector,TeachingResourceState,TeachingAvailabilityNotice},
+    components:{TeachingCourseDirectory,TeachingCourseSelector,TeachingResourceState,TeachingAvailabilityNotice,TeachingAssignmentReadWorkspace},
     props:{context:{type:Object,required:true},presentationRole:String,accessMode:String,section:{type:String,default:'home'},navigation:Object,
         courses:{type:Object,required:true},offerings:{type:Object,required:true},offering:{type:Object,required:true},enrollment:{type:Object,required:true},selectedCourseId:String,
-        availability:{type:Object,required:true},tools:{type:Array,default:()=>[]},locationUnavailable:Boolean},
+        assignments:Object,assignmentNavigation:Object,availability:{type:Object,required:true},tools:{type:Array,default:()=>[]},locationUnavailable:Boolean},
     emits:['navigate','refresh','select-course','select-offering','select-mode','load-more','retry','open-tool','logout'],
     setup(props,{emit}) {
         const contentRef=ref(null),toolsDetailsRef=ref(null),toolsListRef=ref(null),toolsMaxHeight=ref(null);
@@ -61,12 +62,13 @@ export default {
                         </section>
                         <section v-if="currentOffering && effectiveMode === 'learning'" class="tw-enrollment" aria-label="我的选课状态"><h2>我的选课状态</h2><template v-if="enrollment.status === 'ready'"><p>{{ enrollmentStatus }} · {{ enrollment.data.access_eligible ? '当前访问有效' : '当前不符合访问条件' }}</p><p class="tw-meta">生效时间（服务端 UTC）{{ enrollment.data.effective_from }}<span v-if="enrollment.data.effective_until"> 至 {{ enrollment.data.effective_until }}</span></p></template><TeachingResourceState v-else :state="enrollment.status" :reason="enrollment.error?.reason" /></section>
                         <TeachingCourseDirectory v-if="section === 'home' || section === 'courses'" :courses="courses" :offerings="offerings" :selected-course-id="selectedCourseId || context.courseId" :availability="availability" @select-course="$emit('select-course', $event)" @select-offering="$emit('select-offering', $event)" @load-more="$emit('load-more', $event)" @retry="$emit('retry', $event)" />
+                        <TeachingAssignmentReadWorkspace v-else-if="section === 'tasks' && currentOffering && effectiveMode && context.roleScope !== 'assigned' && context.assignments.readReady && assignments" :workspace="assignments" :navigation="assignmentNavigation" />
                         <section v-else class="tw-panel tw-stage-state" aria-label="课程记录读取状态">
                             <h2>{{ section === 'history' ? '提交记录' : '课程作业' }}</h2>
                             <p v-if="!currentOffering">请先打开一个可访问的开课记录</p>
                             <p v-else-if="context.roleScope === 'assigned'">当前为指定范围访问。课程级作业与提交记录不可访问；指定范围审查界面尚未接入</p>
                             <p v-else-if="!effectiveMode">请先选择本次教学或学习视图</p>
-                            <template v-else><TeachingResourceState v-if="!context.assignments.readReady" state="unavailable" :reason="context.assignments.reason" /><p>{{ section === 'history' ? '提交记录' : '课程作业' }}读取界面尚未接入，未请求或统计该类记录</p></template>
+                            <template v-else><TeachingResourceState v-if="!context.assignments.readReady" state="unavailable" :reason="context.assignments.reason" /><p v-if="section === 'history'">提交记录读取界面尚未接入，未请求或统计该类记录</p><p v-else-if="!assignments">课程作业读取界面尚未接入，未请求或统计该类记录</p><p v-else>当前开课的课程作业读取尚不可用，未请求或统计该类记录</p></template>
                         </section>
                     </template>
                 </main>

@@ -2581,6 +2581,7 @@
             :context="teachingContext" :presentation-role="currentRole" :access-mode="teachingContext.mode"
             :section="teachingSection" :courses="teachingCourses" :offerings="teachingOfferings"
             :offering="teachingOffering" :enrollment="teachingEnrollment"
+            :assignments="teachingAssignments" :assignment-navigation="teachingAssignmentNavigation"
             :selected-course-id="teachingSelectedCourseId" :availability="teachingAvailability"
             :tools="teachingTools" :location-unavailable="teachingLocationUnavailable"
             @navigate="teachingNavigate" @refresh="teachingRefresh"
@@ -2588,7 +2589,7 @@
             @select-mode="teachingSelectMode" @load-more="teachingLoadMore" @retry="teachingRetry"
             @open-tool="teachingOpenTool" @logout="handleLogout">
         </teaching-workbench-shell>
-        <div v-else-if="isLoggedIn && authVerified" class="h-full w-full flex relative home-bg-container">
+        <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container">
             <!-- Galaxy粒子背景 -->
             <canvas id="galaxyCanvas" class="absolute inset-0 z-0 pointer-events-none"></canvas>
             <!-- 极简侧边导航栏 -->

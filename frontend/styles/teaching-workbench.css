@@ -89,3 +89,28 @@
 }
 
 .teaching-workbench input::placeholder { color:var(--tw-secondary); opacity:1; }
+
+/* Desktop task reading: keep the existing editorial shell and native controls. */
+.teaching-workbench .tw-read-toolbar,.teaching-workbench .tw-list-heading { display:flex;align-items:center;justify-content:space-between;gap:1rem; }
+.teaching-workbench .tw-read-toolbar { margin:1.25rem 0; }
+.teaching-workbench .tw-read-columns { display:grid;grid-template-columns:minmax(0,1fr);gap:1.25rem;align-items:start; }
+.teaching-workbench .tw-read-directory,.teaching-workbench .tw-read-detail { min-width:0; }
+.teaching-workbench .tw-assignment-list { margin-bottom:1rem; }
+.teaching-workbench .tw-local-filter { display:block;font-size:.85rem;margin:.75rem 0; }
+.teaching-workbench .tw-local-filter input { display:block;width:100%;margin-top:.4rem;box-sizing:border-box; }
+.teaching-workbench .tw-read-rows { list-style:none;padding:0;margin:0; }
+.teaching-workbench .tw-read-rows li { display:flex;align-items:center;justify-content:space-between;gap:1rem;border-top:1px solid var(--tw-rule);padding:1rem 0; }
+.teaching-workbench .tw-read-rows li>div { min-width:0; }
+.teaching-workbench .tw-read-rows h3 { margin:0 0 .4rem;font-size:1rem;overflow-wrap:anywhere; }
+.teaching-workbench .tw-read-rows .tw-button { flex-shrink:0; }
+.teaching-workbench .tw-selected-row { border-left:3px solid var(--tw-accent);padding-left:.75rem!important; }
+.teaching-workbench .tw-load-more { margin-top:.75rem; }
+.teaching-workbench .tw-public-preview h2,.teaching-workbench .tw-public-preview p { overflow-wrap:anywhere; }
+.teaching-workbench .tw-public-preview section { border-top:1px solid var(--tw-rule);margin-top:1.25rem;padding-top:.75rem; }
+.teaching-workbench .tw-wire-text { white-space:pre-wrap;tab-size:4;line-height:1.75; }
+.teaching-workbench .tw-read-identifiers { margin-top:1.25rem;border-top:1px solid var(--tw-rule);padding-top:1rem; }
+.teaching-workbench .tw-read-identifiers summary { cursor:pointer; }
+.teaching-workbench .tw-digest { font-family:monospace;font-size:.8rem;overflow-wrap:anywhere; }
+.teaching-workbench .tw-history-stage { border-top:1px solid var(--tw-rule);padding-top:1rem;margin-top:1.25rem; }
+
+@container (min-width:960px) { .teaching-workbench .tw-read-columns { grid-template-columns:minmax(0,5fr) minmax(0,7fr); } }
