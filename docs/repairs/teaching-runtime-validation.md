@@ -324,3 +324,90 @@ NOT RUN. None is satisfied by B2 source, isolated ASGI or SQLite results.
 No native MySQL, migration execution, server/socket, browser, provider, external
 secret, package installation, paused Git semantics, commit, push, deployment,
 activation, B3/B4 feature or production acceptance is part of this checkpoint.
+
+## B2 staged/finalized protocol, Tranche 1 source checkpoint
+
+Only the seven finite B2 write actions use the new pending/finalized owner path.
+B1 execution, original-receipt recovery, self-revocation and HTTP commit semantics
+retain their existing path. The unconditional production `_require_write_safety`
+refusal and every public `writes_available=false` projection remain unchanged.
+No native validation owner, request/header/query switch or Session admission
+boolean is introduced by this tranche.
+
+The B2 candidate is established at database clock **t0**, after the held root,
+canonical account, relationship, assessment ancestry and original-receipt locks.
+The engine captures the pre-write draft/head/parent and release-existence baseline.
+For a new acceptance, it stages and separately flushes business changes, original
+receipt and AssessmentEvent. These DML stages may encounter database-internal
+constraint/index waits; they all finish before final admission.
+
+Continuously installed engine guards cover staging, pending handoff, detached
+response construction and actual JSONResponse byte encoding. Handoff permits no
+application SQL or mutation. The owner prebuilds both the fixed success response
+and the bounded original-tuple unknown-outcome response before the final clock.
+An encoding failure abandons the candidate before COMMIT.
+
+The same-transaction finalizer samples the complete current policy, permits only
+one exact owner-issued `SELECT UTC_TIMESTAMP(6)`, and obtains **t1**. Invalid or
+backward clocks fail closed. Pure current-authority checks use held accounts,
+roots and relationships and a distinct immutable t1 authorization snapshot.
+New-intent structural checks use the pre-write baseline, never the already
+advanced draft revision or submission head. Temporal checks cover actor periods,
+every release recipient's eligibility, confirmation-preview expiry, deadline and
+a newly created preview's own fixed `t0 + 15 minutes` expiry. Accepted same-key
+replay retains the original historical result and skips new-intent head/revision,
+audience and preview/deadline predicates, while rechecking current authority at t1.
+
+Successful admission atomically seals the transaction. No later SQL, DML,
+autoflush, allocation or second execution is allowed. Nested transactions and
+cross-session/repeated finalization are refused. Only the bounded owner's sole
+COMMIT or failure cleanup remains. No receipt, event, version, preview, release or
+submission timestamp is rewritten: existing immutable timestamps stay at t0 and
+become accepted historical values only after final admission and successful COMMIT.
+The deadline contract is validity at t1, **not physical durability before a
+specified deadline**. COMMIT can finish later.
+
+An exception from a possibly dispatched COMMIT remains `write_outcome_unknown`
+with the original action/scope/key. The connection's pre-COMMIT event is not proof
+of success. A first-installed Session after_commit marker additionally requires
+that the bound physical root's COMMIT returned and the root was removed; only
+then is acceptance confirmed. A later owner cleanup/listener failure preserves
+the already encoded accepted response rather than manufacturing ambiguity.
+Rollback/invalidation failures retain fail-closed guards until successful cleanup
+or disposal proves terminal completion. Private diagnostics contain only bounded
+phase/state and exception-class information, never authored content, credentials,
+SQL text/parameters or raw exception text.
+
+### Evidence boundary and deferred integration
+
+The bounded protocol and narrow existing direct-owner helper adaptations use only
+registered, immutable SQLite/synthetic selections. They retain the five historical
+fixture-local application targets; deliberate stage/commit/cleanup faults are
+separately labeled simulated. A genuine unpatched production hard-gate negative
+control is included. Synthetic success is not native FK/unique/index-wait,
+isolation, timeout/deadlock, physical durability or production acceptance proof.
+The excluded replay/lock-collection side-effect probe is not exercised.
+
+Owner-helper cleanup containment is the entire Tranche 1 claim. Real request
+and dependency teardown through rollback, `db.close()` and `connection.close()`
+remains a separately reviewed Tranche 2 integration requirement. Native validation
+owner construction, exact native environment/schema/seed/DDL approval, seven-action
+acceptance and wait evidence are also deferred. Account incarnation/username reuse,
+coherent multi-worker policy rollout and deployment activation remain unresolved
+production prerequisites. This checkpoint does not close all fourteen business
+validation categories or activate any teaching writes.
+
+**Explicit blocked observation.** The unchanged guarded runner permits only the
+original in-memory SQLite fixture. It refused the proposed file-backed synthetic
+fixture with `GuardDenied: Only original in-memory SQLite fixtures are allowed`.
+Both `test_confirmed_commit_survives_later_owner_cleanup_failure[after_commit]`
+and `[guard_cleanup]` therefore produced setup errors, not passes. Their frozen
+source/logs retain that history; no guard change, URI/DBAPI workaround or other
+executor was used. The unsupported fixture is absent from the final selected
+source. The separate `test_known_commit_owner_response_preserves_prepared_success`
+uses the historical memory fixture and proves only the prepared owner response,
+post-COMMIT marker, reached faults and guard retention/restored cleanup. It makes
+no observer or post-invalidation persistence assertion. Durable post-invalidation
+visibility remains **BLOCKED/UNPROVED**, to be addressed only in a separately
+reviewed supported acceptance environment; this narrower result does not close
+that gap or the real dependency-teardown requirement.

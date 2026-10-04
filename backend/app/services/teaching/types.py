@@ -318,6 +318,42 @@ class WriteResult:
     replayed: bool
 
 
+@dataclass(frozen=True)
+class B2PendingWrite:
+    """Detached B2 candidate plus continuously held, engine-owned guards.
+
+    Receipt/event times describe the candidate clock t0, not final admission or
+    durability. Only the bound owner may finalize and commit this candidate.
+    Construction by a caller grants no admission or transaction authority.
+    B1 keeps its existing WriteResult and single-clock owner contract.
+    """
+    projection: WriteResult
+    _controller: Any = field(repr=False, compare=False)
+
+    @property
+    def receipt(self):
+        return self.projection.receipt
+
+    @property
+    def result(self):
+        return self.projection.result
+
+    @property
+    def replayed(self):
+        return self.projection.replayed
+
+
+@dataclass(frozen=True)
+class B2FinalizedWrite:
+    """Immutable t1 authority decision, distinct from the t0 candidate.
+
+    Admission requires deadlines/authority at t1, not physical COMMIT durability
+    before a deadline. No row or historical timestamp may be rewritten at t1.
+    """
+    pending: B2PendingWrite
+    authorization: AuthorizationSnapshot
+
+
 class WriteOperation(Protocol):
     """Server-owned implementation, never selected or supplied by a client.
 

@@ -202,20 +202,22 @@ def run_ordinary(case, action, *, key='ordinary-key', command=None):
     db,a,aa,w,t,*_=case
     actor,target,payload=command or command_for(case,action)
     intent=w.make_write_intent(actor,t.TeachingAction(action),t.ScopeRef('school','offering','o'),target,key,payload)
-    return w.execute_write(db,intent,intent.scope,OrdinaryOperation()),intent
+    from tests.test_teaching_bounded_write_finalization import accept_pending
+    return accept_pending(db,w.execute_write(db,intent,intent.scope,OrdinaryOperation()),intent),intent
 
 
 @pytest.mark.parametrize('action',ACTIONS)
 def test_ordinary_acceptance_uses_exact_b2_event_and_original_receipt(b2case,action):
+    from tests.test_teaching_bounded_write_finalization import accept_pending
     db,a,aa,w,t,m,b,*_=b2case
-    first,intent=run_ordinary(b2case,action); db.commit()
+    first,intent=run_ordinary(b2case,action)
     assert not first.replayed
     event=db.query(b.AssessmentEvent).filter_by(receipt_id=first.receipt.id).one()
     assert event.action==action and event.target_id==first.receipt.result_id
     assert event.actor_id==first.receipt.original_result.get('actor_id',intent.actor_id)
     assert event.institution_id==intent.scope.institution_id and event.offering_id==intent.scope.id
     assert db.query(m.AccessEvent).count()==0
-    replay=w.execute_write(db,intent,intent.scope,OrdinaryOperation())
+    replay=accept_pending(db,w.execute_write(db,intent,intent.scope,OrdinaryOperation()),intent)
     assert replay.replayed and replay.receipt.id==first.receipt.id and replay.result==first.result
     assert db.query(b.AssessmentEvent).count()==1
 
@@ -245,7 +247,7 @@ def test_all_business_append_identities_precede_clock():
 def test_accepted_receipt_has_empty_business_shape(b2case):
     from dataclasses import replace
     db,a,aa,w,t,*_=b2case
-    first,intent=run_ordinary(b2case,'assignment_create'); db.commit()
+    first,intent=run_ordinary(b2case,'assignment_create')
     context=w._lock_context(db,intent.actor_id,intent.action,intent.scope,intent=intent,mutation=OrdinaryOperation(),write=True)
     shapes=feature('app.services.teaching.assessment_types')
     assert isinstance(context.assessment_shape,shapes.RecoveryOnlyShape)
@@ -275,11 +277,12 @@ def test_cross_route_assignment_is_part_of_request_hash(b2case):
 
 def test_release_recovery_ignores_later_deadline_archive_and_old_recipient_validity(b2case):
     from sqlalchemy import update
+    from tests.test_teaching_bounded_write_finalization import accept_pending
     db,a,aa,w,t,m,b,accounts,*_=b2case
-    result,intent=run_ordinary(b2case,'release_preview'); db.commit()
+    result,intent=run_ordinary(b2case,'release_preview')
     db.execute(update(m.Offering).where(m.Offering.id=='o').values(state='archived')); db.commit()
     db.info['teaching_policy_provider']=lambda:policy(t,roster=[])
-    replay=w.execute_write(db,intent,intent.scope,OrdinaryOperation())
+    replay=accept_pending(db,w.execute_write(db,intent,intent.scope,OrdinaryOperation()),intent)
     assert replay.receipt.id==result.receipt.id and replay.result==result.result
     assert w.get_receipt(db,'owner',result.receipt.id).result==result.result
 
@@ -292,7 +295,7 @@ def test_new_invalid_audience_fails_after_current_authority(b2case):
 
 def test_changed_valid_retry_resolves_original_summary_before_audience_or_hash(b2case):
     db,a,aa,w,t,m,b,*_=b2case
-    first,intent=run_ordinary(b2case,'release_preview'); db.commit()
+    first,intent=run_ordinary(b2case,'release_preview')
     db.info['teaching_policy_provider']=lambda:policy(t,roster=[])
     actor,target,command=command_for(b2case,'release_preview')
     changed={**command,'student_ids':['no-current-account'],'due_at':'2020-01-01T00:00:00Z'}
@@ -302,14 +305,15 @@ def test_changed_valid_retry_resolves_original_summary_before_audience_or_hash(b
 
 def test_submission_recovery_returns_older_acceptance_after_new_head_and_archive(b2case):
     from sqlalchemy import update
+    from tests.test_teaching_bounded_write_finalization import accept_pending
     db,a,aa,w,t,m,b,*_=b2case
-    first,intent=run_ordinary(b2case,'submission_create'); db.commit()
+    first,intent=run_ordinary(b2case,'submission_create')
     actor,target,command=command_for(b2case,'submission_create')
-    later,_=run_ordinary(b2case,'submission_create',key='later-key',command=(actor,target,{**command,'expected_parent_id':first.result['submission_id']})); db.commit()
+    later,_=run_ordinary(b2case,'submission_create',key='later-key',command=(actor,target,{**command,'expected_parent_id':first.result['submission_id']}))
     assert later.result['sequence']==3
     db.execute(update(m.Offering).where(m.Offering.id=='o').values(state='archived')); db.commit()
     assert w.get_receipt(db,actor,first.receipt.id).result==first.result
-    assert w.execute_write(db,intent,intent.scope,OrdinaryOperation()).result==first.result
+    assert accept_pending(db,w.execute_write(db,intent,intent.scope,OrdinaryOperation()),intent).result==first.result
 
 
 def test_frozen_receipt_uses_original_private_status_not_mutable_draft(b2case):

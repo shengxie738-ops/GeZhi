@@ -20,6 +20,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.exc import OperationalError
 
 from tests.test_teaching_assessment_authorization import b2case, feature, NOW, PUBLIC, PRIVATE, policy
+from tests.test_teaching_bounded_write_finalization import accept_pending
 
 
 def sync_asgi(function):
@@ -210,13 +211,15 @@ async def test_commit_failure_is_unknown_and_same_key_recovery(b2case,monkeypatc
     with monkeypatch.context() as patch:
         patch.setattr(db,'commit',fail_commit)
         response = await request(app,'POST','/api/teaching/offerings/o/assignments',key='unknown-original',json={'public_spec':PUBLIC})
-    shown = data(response,503)
-    assert response.json()['message'] == 'write_outcome_unknown'
     expected = {'action':'assignment_create','scope_type':'offering','scope_id':'o','key':'unknown-original'}
-    assert shown == {'recovery':expected} and 'PRIVATE COMMIT TEXT' not in response.text
+    shown = data(response,201 if committed else 503)
+    assert response.json()['message'] == ('ok' if committed else 'write_outcome_unknown')
+    if not committed: assert shown == {'recovery':expected}
+    assert 'PRIVATE COMMIT TEXT' not in response.text
     recovered = await request(app,'GET','/api/teaching/receipts',params=expected)
     if committed:
         original = data(recovered)
+        assert original['receipt'] == shown['receipt'] and original['result'] == shown['result']
         retry = data(await request(app,'POST','/api/teaching/offerings/o/assignments',key='unknown-original',json={'public_spec':PUBLIC}))
         assert retry['replayed'] and retry['receipt'] == original['receipt'] and retry['result'] == original['result']
     else:
@@ -465,7 +468,7 @@ async def test_original_receipt_detail_rejects_queries_and_malformed_ids(b2case)
     db, _, _, engine, *_ = b2case
     service = feature('app.services.teaching.assignments')
     intent, operation = service.prepare_assignment_write(db,'owner','o',None,'create',{'public_spec':PUBLIC},'strict-receipt-original')
-    accepted_result = engine.execute_write(db,intent,intent.scope,operation); db.commit()
+    accepted_result = accept_pending(db,engine.execute_write(db,intent,intent.scope,operation),intent)
     app = FastAPI(); app.include_router(adapter.router,prefix='/api')
     async def fixture_db():
         return db

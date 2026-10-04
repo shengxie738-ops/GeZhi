@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import update
 
 from tests.test_teaching_assessment_authorization import b2case, NOW, policy, denied
+from tests.test_teaching_bounded_write_finalization import accept_pending
 
 
 def releases():
@@ -37,7 +38,7 @@ def write(case,purpose,command,*,actor='owner',key=None,commit=True,assignment_i
     intent, operation = service.prepare_release_write(db,actor,assignment_id,purpose,command,key or 'task4-'+purpose)
     result = engine.execute_write(db,intent,intent.scope,operation)
     if commit:
-        db.commit()
+        result = accept_pending(db,result,intent)
     return result,intent
 
 
@@ -167,10 +168,10 @@ def test_release_creates_exact_recipients_and_empty_heads_atomically(b2case):
 def test_ordinary_confirmation_rollback_leaves_no_partial_acceptance(b2case):
     releases()
     shown,_,_ = preview(b2case)
-    db, _, _, _, _, m, b, *_ = b2case
+    db, _, _, engine, _, m, b, *_ = b2case
     accepted,_ = write(b2case,'confirm',confirm_command(shown),commit=False)
     rid = accepted.result['release_id']
-    db.rollback()
+    engine.rollback_pending_write(db,accepted)
     assert db.get(b.Release,rid) is None
     assert db.query(b.ReleaseRecipient).filter_by(release_id=rid).count() == 0
     assert db.query(b.SubmissionHead).filter_by(release_id=rid).count() == 0

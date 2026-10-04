@@ -22,8 +22,11 @@ from app.schemas.teaching import (
 from app.services.current_identity import resolve_current_account
 from app.services.teaching import access
 from app.services.teaching.sessions import open_teaching_session
-from app.services.teaching.types import ScopeRef, TeachingAction, exact_identifier
-from app.services.teaching.writes import execute_write, find_receipt, get_receipt, require_clean_transaction
+from app.services.teaching.types import ScopeRef, TeachingAction, exact_identifier, B2PendingWrite
+from app.services.teaching.writes import (
+    execute_write, find_receipt, get_receipt, require_clean_transaction,
+    finalize_pending_write, commit_finalized_write, rollback_pending_write,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +200,38 @@ def _recovery_data(intent):
     return {"recovery": query.model_dump(mode="json")}
 
 
+def commit_pending_write(db: Session, pending: B2PendingWrite, intent):
+    """Encode both bounded outcomes before t1; return success after COMMIT.
+
+    This is only the B2 owner-helper lifetime. Dedicated request/session teardown
+    containment belongs to the separately reviewed Tranche 2 integration.
+    """
+    if type(pending) is not B2PendingWrite or pending._controller.intent is not intent:
+        raise HTTPException(503, "invalid_pending_write")
+    try:
+        # Actual JSONResponse construction encodes bytes, including status and
+        # fixed no-store headers. No serialization remains after t1/COMMIT.
+        unknown = _response(503, "write_outcome_unknown", _recovery_data(intent))
+        success = _response(200 if pending.replayed else pending.receipt.http_status,
+            "ok", _write_data(pending))
+        finalized = finalize_pending_write(db, pending)
+    except Exception:
+        rollback_pending_write(db, pending)
+        raise
+    try:
+        commit_finalized_write(db, finalized)
+    except Exception as exc:
+        # Any exception from the sole COMMIT attempt is conservatively unknown,
+        # including non-SQLAlchemy transport/driver exceptions. Cleanup failure
+        # cannot replace the prepared original recovery tuple with generic 500.
+        confirmed = pending._controller.commit_confirmed
+        logger.error("B2 COMMIT completion failure confirmed=%s exception_class=%s",
+            confirmed, type(exc).__name__)
+        rollback_pending_write(db, pending)
+        return success if confirmed else unknown
+    return success
+
+
 def commit_write(db: Session, intent, authorization_scope, mutation):
     """Serialize provisionally, then commit once, then construct the success HTTP.
 
@@ -207,6 +242,8 @@ def commit_write(db: Session, intent, authorization_scope, mutation):
     try:
         recovery = _recovery_data(intent)
         result = execute_write(db, intent, authorization_scope, mutation)
+        if type(result) is B2PendingWrite:
+            return commit_pending_write(db, result, intent)
         data = _write_data(result)
         require_clean_transaction(db)
     except HTTPException as exc:
