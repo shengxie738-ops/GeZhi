@@ -1,4 +1,4 @@
-import { ref, watch, onBeforeUnmount, getCurrentInstance } from 'vue';
+import { ref, watch, getCurrentScope, onScopeDispose } from 'vue';
 import { radarOptionTemplate } from '../config/chartOptions.js';
 import { analyticsApi } from '../api/analytics.js';
 
@@ -78,43 +78,54 @@ export function buildStudentRadarOption(studentValues, classValues, indicators) 
     };
 }
 
-export function useMonitor(currentRole, currentView, showToast, profile = null, currentUser = null) {
+export function useMonitor(currentRole, currentView, showToast, profile = null, currentUser = null, {readLifetime=null}={}) {
     const studentRadarOption = ref(JSON.parse(JSON.stringify(radarOptionTemplate)));
     const activeTaskReasonId = ref(null);
     const radarLoading = ref(false);
     const myRadarEvidence = ref({});
 
-    const loadMyRadar = async () => {
-        const username = currentUser?.value?.username;
-        if (!username) return;
-        radarLoading.value = true;
-        try {
-            const data = await analyticsApi.getMyRadar(username);
-            const indicators = data.radarIndicators || SIX_DIM_INDICATORS;
-            const values = Array.isArray(data.radarValues) && data.radarValues.length === 6
-                ? data.radarValues
-                : [50, 50, 50, 0, 50, 0];
-            const classValues = Array.isArray(data.classRadarValues) && data.classRadarValues.length === 6
-                ? data.classRadarValues
-                : [60, 60, 60, 30, 65, 50];
-            myRadarEvidence.value = data.radarEvidence || {};
-            studentRadarOption.value = buildStudentRadarOption(values, classValues, indicators);
-        } catch (err) {
-            console.warn('[useMonitor] 同源雷达加载失败，保留当前图:', err);
-        } finally {
-            radarLoading.value = false;
-        }
+    const radarError = ref(null);
+    let disposed = false, generation = 0, pending = null;
+    const readKey = () => JSON.stringify([currentUser?.value?.username, readLifetime?.value?.active ?? true,
+        readLifetime?.value?.actorId ?? currentUser?.value?.username, readLifetime?.value?.authEpoch ?? null, readLifetime?.value?.foregroundEpoch ?? null]);
+    const readable = () => !disposed && typeof currentUser?.value?.username === 'string' && currentUser.value.username.length > 0
+        && (!readLifetime || readLifetime.value?.active === true && readLifetime.value.actorId === currentUser.value.username);
+    const invalidateRead = () => {
+        ++generation; pending = null; radarLoading.value = false; radarError.value = null; myRadarEvidence.value = {};
+        studentRadarOption.value = JSON.parse(JSON.stringify(radarOptionTemplate));
+    };
+    const loadMyRadar = () => {
+        if (!readable()) return Promise.resolve(false);
+        const key = readKey();
+        if (pending?.key === key) return pending.promise;
+        const task = {key, generation, promise: null}, username = currentUser.value.username;
+        pending = task; radarLoading.value = true; radarError.value = null;
+        const current = () => readable() && pending === task && task.generation === generation && key === readKey();
+        task.promise = (async () => {
+            try {
+                const data = await analyticsApi.getMyRadar(username);
+                if (!current()) return false;
+                const indicators = data.radarIndicators || SIX_DIM_INDICATORS;
+                const values = Array.isArray(data.radarValues) && data.radarValues.length === 6
+                    ? data.radarValues : [50, 50, 50, 0, 50, 0];
+                const classValues = Array.isArray(data.classRadarValues) && data.classRadarValues.length === 6
+                    ? data.classRadarValues : [60, 60, 60, 30, 65, 50];
+                myRadarEvidence.value = data.radarEvidence || {};
+                studentRadarOption.value = buildStudentRadarOption(values, classValues, indicators);
+                return true;
+            } catch {
+                if (current()) radarError.value = 'request_failed';
+                return false;
+            } finally {
+                if (current()) { radarLoading.value = false; pending = null; }
+            }
+        })();
+        return task.promise;
     };
 
-    // 登录用户变化时拉取同源六维
     if (currentUser) {
-        watch(
-            () => currentUser.value?.username,
-            (username) => {
-                if (username) loadMyRadar();
-            },
-            { immediate: true }
-        );
+        watch(readKey, invalidateRead, { immediate: true, flush: 'sync' });
+        watch(readKey, () => { if (readable()) void loadMyRadar(); }, { immediate: true, flush: 'post' });
     }
 
     // profile 变化时也尝试刷新（作业诊断回写后画像可能更新）
@@ -169,8 +180,9 @@ export function useMonitor(currentRole, currentView, showToast, profile = null, 
         window.addEventListener('radar-refresh', _onRadarRefresh);
     }
 
-    if (getCurrentInstance()) {
-        onBeforeUnmount(() => {
+    if (getCurrentScope()) {
+        onScopeDispose(() => {
+            disposed = true; invalidateRead();
             if (typeof window !== 'undefined') {
                 window.removeEventListener('agent-log', _onAgentLog);
                 window.removeEventListener('interaction-completed', _onRadarRefresh);
@@ -189,6 +201,7 @@ export function useMonitor(currentRole, currentView, showToast, profile = null, 
         activeTaskReasonId,
         agentLogs,
         radarLoading,
+        radarError,
         myRadarEvidence,
         loadMyRadar,
         toggleTaskReason

@@ -40,7 +40,7 @@ async function owner(options={}){
  globalThis.window=events;globalThis.document=doc;globalThis.localStorage=store;
  const calls=[],state={identity:()=>({username:'teacher-A',role}),caps:capabilities,offering:()=>offering(),enrollment:()=>enrollment(),...options.state};
  globalThis.fetch=async(url,q={})=>{assert.ok(url.endsWith('/auth/me'),'Only registered account GET is available');assert.equal(q.method||'GET','GET');calls.push({kind:'auth',url});const result=await state.identity();if(result?.http)return{ok:false,status:result.http,text:async()=>JSON.stringify({message:'RAW PRIVATE AUTH ERROR'})};return{ok:true,status:200,text:async()=>JSON.stringify({success:true,data:result})};};
- const api={getCapabilities:async q=>{calls.push({kind:'caps',q});return clone(await state.caps());},listCourses:async q=>{calls.push({kind:'courses',q});return page([course()]);},listOfferings:async q=>{calls.push({kind:'offerings',q});return page([await state.offering()]);},getOffering:async(id,q)=>{calls.push({kind:'offering',id,q});return clone(await state.offering());},getEnrollment:async(id,q)=>{calls.push({kind:'enrollment',id,q});return clone(await state.enrollment());},...options.api};
+ const api={getCapabilities:async q=>{calls.push({kind:'caps',q});return clone(await state.caps());},listCourses:async q=>{calls.push({kind:'courses',q});return clone(await(state.courses?state.courses():page([course()])));},listOfferings:async q=>{calls.push({kind:'offerings',q});return clone(await(state.offerings?state.offerings():page([await state.offering()])));},getOffering:async(id,q)=>{calls.push({kind:'offering',id,q});return clone(await state.offering());},getEnrollment:async(id,q)=>{calls.push({kind:'enrollment',id,q});return clone(await state.enrollment());},...options.api};
  const read=(kind,data)=>async(id,q)=>{calls.push({kind,id,q});return clone(await(state[kind]?state[kind]():data));};
  const assignmentApi={listAssignments:read('assignments',f.assignmentPage),listVersions:read('versions',f.versionPage),listReleases:read('releases',f.releasePage),getDraft:read('draft',f.draft),getVersion:read('version',f.version),getRelease:read('release',f.release),getOwnHead:read('head',f.head),listOwnHistory:read('own',f.history),listTeacherSubmissions:async(id,q)=>{calls.push({kind:'teacher',id,q});return clone(await(state.teacher?state.teacher(q):Object.hasOwn(q,'studentId')?f.teacherHistory:f.teacherHeads));},getSubmission:read('submission',f.teacherSubmission),...options.assignmentApi};
  let auth,w,navCalls=0,flushes=0,legacyMounts=0,legacyUnmounts=0,shellMounts=0;
@@ -114,4 +114,226 @@ test('13 detail restoration rechecks first page ancestry without old cursor exac
 });
 test('14 retained teaching shell blocks stale facts with local status retry and no background focus scroll or save',async()=>{
  focuses=0;scrolls=0;const o=await owner();try{await selected(o);const n=o.navCalls,wait=deferred();o.state.identity=()=>wait.promise;await o.events.emit('blur');assert.ok(o.w.offering.data);const returning=o.events.emit('focus');await settle();assert.equal(o.shellMounts,1);assert.equal(walk(o.root).some(e=>e.props['data-overlay']),false);assert.doesNotMatch(textOf(o.root),/A protected|cached-A|teacher-A|student-A/);wait.resolve({username:'teacher-A',role:'teacher'});await returning;await settle();assert.equal(o.navCalls,n);assert.equal(o.flushes,0);assert.equal(focuses,0);assert.equal(scrolls,0);assert.equal(o.w.context.value.mutationAllowed,false);}finally{o.close();}
+});
+
+
+test('15 dual learning return and each transient enrollment retry issue exactly one fresh own GET',async()=>{
+ const dual=()=>offering({access:{...offering().access,learning:true},enrollment:enrollment()});
+ const o=await owner({state:{offering:dual}});
+ try{
+  await selected(o,'learning');let before=o.calls.length;
+  await cycle(o);const fresh=o.calls.slice(before);
+  for(const kind of ['auth','caps','courses','offerings','offering','enrollment'])assert.equal(fresh.filter(c=>c.kind===kind).length,1,kind);
+  assert.equal(o.w.mode.value,'learning');assert.equal(o.w.enrollment.data.student_id,'teacher-A');
+  assert.ok(fresh.every(c=>!c.q||!Object.hasOwn(c.q,'studentId')&&!Object.hasOwn(c.q,'cursor')));
+  assert.equal(fresh.filter(c=>['draft','versions','assignments','teacher'].includes(c.kind)).length,0);
+  o.state.enrollment=()=>Promise.reject({status:503,reason:'database_unavailable'});
+  before=count(o,'enrollment');await cycle(o);assert.equal(count(o,'enrollment'),before+1);assert.equal(o.w.context.value.foreground.state,'read-error');
+  for(let retry=0;retry<3;retry++){
+   before=count(o,'enrollment');assert.equal(await o.w.refresh(),false);
+   assert.equal(count(o,'enrollment'),before+1,'exactly one own GET per failed retry');
+   assert.equal(o.w.context.value.foreground.state,'read-error');clean(o);
+  }
+  o.state.enrollment=()=>enrollment();before=count(o,'enrollment');
+  assert.equal(await o.w.refresh(),true);assert.equal(count(o,'enrollment'),before+1);
+  assert.equal(o.w.mode.value,'learning');assert.equal(o.w.enrollment.data.status,'active');
+ }finally{o.close();}
+});
+
+test('16 visible second blur during every deferred B1 and B2 stage waits for an observed return',async()=>{
+ const stages={caps:capabilities,courses:()=>page([course()]),offerings:()=>page([offering()]),offering:()=>offering(),enrollment:()=>enrollment(),assignments:()=>clone(f.assignmentPage),versions:()=>clone(f.versionPage),draft:()=>clone(f.draft),version:()=>clone(f.version),releases:()=>clone(f.releasePage),release:()=>clone(f.release),teacher:()=>clone(f.teacherHeads),submission:()=>clone(f.teacherSubmission)};
+ for(const [kind,result] of Object.entries(stages))for(const denial of [false,true]){
+  const dual=()=>offering({access:{...offering().access,learning:true},enrollment:enrollment()});
+  const o=await owner({state:{offering:kind==='enrollment'?dual:()=>offering()}});
+  try{
+   await selected(o,kind==='enrollment'?'learning':'teaching');
+   if(['versions','draft','version'].includes(kind)){
+    await o.w.assignmentNavigation.selectAssignment('assignment-A');
+    if(kind==='version')await o.w.assignmentNavigation.selectVersion('version-A');
+   }
+   if(['releases','release','teacher','submission'].includes(kind)){
+    await o.w.openSection('history');await o.w.submissionNavigation.selectRelease('release-A');await o.w.submissionNavigation.selectSubmission('submission-B');
+   }
+   const wait=deferred();if(kind==='offering')o.state.offerings=()=>page([offering()]);o.state[kind]=()=>wait.promise;const started=count(o,kind);
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   assert.equal(count(o,kind),started+1,'reached intended deferred stage: '+kind);
+   await o.events.emit('blur');await settle();const before=o.calls.length;
+   assert.equal(count(o,'auth'),2,'visible departed interval must not trigger trailing auth');
+   assert.equal(o.doc.hidden,false);await settle();assert.equal(o.calls.length,before);
+   if(denial)wait.reject({status:403,reason:'permission_denied'});else wait.resolve(result());
+   await first;await settle();assert.equal(o.calls.length,before);clean(o);
+   o.state[kind]=result;await o.events.emit('focus');await settle();
+   assert.equal(count(o,'auth'),3,'one newest observed return');
+   assert.equal(o.w.context.value.actorId,'teacher-A');assert.equal(o.w.offering.data?.id,'offering-A');
+   assert.equal(o.flushes,0);
+  }finally{o.close();}
+ }
+});
+
+test('17 blur cleanup before later hide stays quiet while hidden then show focus deduplicates return',async()=>{
+ const o=await owner();try{
+  await selected(o);const wait=deferred();o.state.caps=()=>wait.promise;
+  await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+  await o.events.emit('blur');await settle();assert.equal(count(o,'auth'),2);
+  await o.hide();const before=o.calls.length;clean(o);wait.resolve(capabilities());await first;await settle();
+  assert.equal(o.calls.length,before);clean(o);o.state.caps=capabilities;
+  await Promise.all([o.show(),o.events.emit('focus')]);await settle();assert.equal(count(o,'auth'),3);
+ }finally{o.close();}
+});
+
+test('18 return before cancellation cleanup is retained but a genuinely newer departure invalidates it',async()=>{
+ for(const newer of [false,true]){
+  const o=await owner();try{
+   await selected(o);const wait=deferred();o.state.caps=()=>wait.promise;
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   const hiding=o.hide();o.state.caps=capabilities;const showing=o.show(),focusing=o.events.emit('focus');
+   if(newer)void o.events.emit('blur');
+   await settle();assert.equal(count(o,'auth'),newer?2:3);
+   if(newer){clean(o);await o.events.emit('focus');await settle();assert.equal(count(o,'auth'),3);}
+   wait.resolve(capabilities());await Promise.all([first,hiding,showing,focusing]);await settle();
+   assert.equal(count(o,'auth'),3);assert.equal(o.w.offering.data?.id,'offering-A');
+  }finally{o.close();}
+ }
+});
+
+test('19 pending observed return is canceled by latest deliberate view hash disposal or storage owner',async()=>{
+ for(const action of ['teaching','legacy','hash','dispose','storage']){
+  const o=await owner();let closed=false;try{
+   await selected(o);const wait=deferred();o.state.caps=()=>wait.promise;
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   void o.hide();o.state.caps=capabilities;void o.show();
+   if(action==='teaching')await o.w.openSection('courses');
+   if(action==='legacy')await o.w.navigateToView('exam');
+   if(action==='hash'){o.location.hash='#teaching/courses';await o.events.emit('hashchange');}
+   if(action==='dispose'){o.close();closed=true;}
+   if(action==='storage'){o.storage.set('token','token-B');o.state.identity=()=>({username:'teacher-B',role:'teacher'});await o.events.emit('storage',{key:'token'});}
+   await settle();const before=o.calls.length,installed=o.w.offering.data;
+   assert.equal(count(o,'auth'),action==='storage'?3:2,'no trailing replay over newer owner');
+   wait.resolve(capabilities());await first;await settle();
+   assert.equal(o.calls.length,before);assert.equal(o.flushes,0);assert.deepEqual(o.w.offering.data,installed);
+   if(['legacy','dispose','storage'].includes(action))assert.equal(o.w.offering.data,null);
+   if(['teaching','hash'].includes(action))assert.equal(o.location.hash,'#teaching/courses');
+   if(action==='storage')assert.equal(o.auth.currentUser.value.username,'teacher-B');
+   if(closed){for(const event of ['blur','focus','hashchange'])assert.equal(o.events.count(event),0);assert.equal(o.doc.count('visibilitychange'),0);}
+  }finally{if(!closed)o.close();}
+ }
+});
+
+test('20 one fresh own GET cannot restore withdrawn mismatched denied or lost learning membership',async()=>{
+ for(const outcome of ['withdrawn','mismatch','denied','lost']){
+  const dual=()=>offering({access:{...offering().access,learning:true},enrollment:enrollment()});const o=await owner({state:{offering:dual}});
+  try{
+   await selected(o,'learning');const before=count(o,'enrollment');
+   if(outcome==='withdrawn')o.state.enrollment=()=>enrollment('teacher-A',{status:'withdrawn',access_eligible:false});
+   if(outcome==='mismatch')o.state.enrollment=()=>enrollment('teacher-B');
+   if(outcome==='denied')o.state.enrollment=()=>Promise.reject({status:403,reason:'permission_denied'});
+   if(outcome==='lost')o.state.offering=()=>offering();
+   await cycle(o);assert.equal(count(o,'enrollment'),before+(outcome==='lost'?0:1));
+   assert.equal(o.w.context.value.offeringId,null);assert.equal(o.w.mode.value,null);assert.equal(o.w.enrollment.data,null);
+   assert.equal(o.w.assignments.release.data,null);assert.equal(o.auth.isLoggedIn.value,true);
+  }finally{o.close();}
+ }
+});
+
+test('21 queued storage return isolates changed actor intent through the next manual refresh and retains same actor retry',async()=>{
+ for(const actor of ['teacher-A','teacher-B'])for(const identityTiming of ['immediate','after-cleanup']){
+  const o=await owner();try{
+   await selected(o);await o.w.openSection('history');await o.w.submissionNavigation.selectRelease('release-A');await o.w.submissionNavigation.selectSubmission('submission-B');
+   const old=deferred(),identity=deferred();o.state.caps=()=>old.promise;
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   void o.hide();o.state.caps=capabilities;void o.show();void o.events.emit('focus');
+   const before=o.calls.length,offeringReads=count(o,'offering'),submissionReads=count(o,'submission');
+   o.storage.set('token','token-B');o.state.identity=()=>identityTiming==='immediate'?{username:actor,role:'teacher'}:identity.promise;
+   await o.events.emit('storage',{key:'token'});
+   if(identityTiming==='after-cleanup'){
+    await first;await settle();assert.equal(o.auth.authVerified.value,false);assert.equal(o.calls.length,before+1,'only pending storage auth');
+    assert.equal(o.w.context.value.foreground.blocked,true);assert.equal(await o.w.refresh(),false,'manual refresh cannot supersede pending identity owner');
+    assert.equal(o.calls.length,before+1);identity.resolve({username:actor,role:'teacher'});
+   }
+   await settle();await first;await settle();assert.equal(count(o,'auth'),3);
+   assert.equal(o.calls.length,before+1,'confirmed owner remains explicitly recoverable without automatic reads');
+   assert.equal(o.w.context.value.foreground.blocked,true);assert.equal(o.w.context.value.foreground.retryAllowed,true);
+   if(actor==='teacher-B'){assert.equal(o.location.hash,'#teaching/home');assert.equal(o.w.section.value,'home');assert.equal(o.storage.has('teaching-offering'),false);}
+   const blocked=o.calls.length;old.resolve(capabilities());await settle();assert.equal(o.calls.length,blocked);clean(o);
+   assert.equal(await o.w.refresh(),true);assert.equal(count(o,'auth'),4,'only explicit retry adds verification');
+   if(actor==='teacher-B'){
+    assert.equal(o.w.context.value.offeringId,null);assert.equal(o.w.mode.value,null);assert.equal(o.w.assignments.release.data,null);assert.equal(o.w.submissions.detail.data,null);
+    assert.equal(o.location.hash,'#teaching/home');assert.equal(count(o,'offering'),offeringReads);assert.equal(count(o,'submission'),submissionReads);
+   }else{assert.equal(o.w.offering.data?.id,'offering-A');assert.equal(o.w.mode.value,'teaching');assert.equal(o.w.submissions.detail.data?.id,'submission-B');}
+   assert.equal(o.flushes,0);
+  }finally{o.close();}
+ }
+});
+
+test('22 queued recovery follows only latest storage epoch and deliberate intent cancels its continuation',async()=>{
+ for(const action of ['latest','courses','legacy','hash','dispose']){
+  const o=await owner();let closed=false;try{
+   await selected(o);const old=deferred(),b=deferred(),c=deferred();o.state.caps=()=>old.promise;
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   void o.hide();o.state.caps=capabilities;void o.show();o.storage.set('token','token-B');o.state.identity=()=>b.promise;await o.events.emit('storage',{key:'token'});await first;await settle();
+   const before=o.calls.length;
+   if(action==='latest'){
+    o.storage.set('token','token-C');o.state.identity=()=>c.promise;await o.events.emit('storage',{key:'token'});await settle();
+    b.resolve({username:'teacher-A',role:'teacher'});await settle();assert.equal(o.auth.authVerified.value,false);assert.equal(o.calls.length,before+1);
+    c.resolve({username:'teacher-B',role:'teacher'});await settle();assert.equal(o.auth.currentUser.value.username,'teacher-B');assert.equal(o.w.context.value.foreground.retryAllowed,true);
+    assert.equal(o.location.hash,'#teaching/home');assert.equal(o.storage.has('teaching-offering'),false);assert.equal(count(o,'auth'),4);
+   }else{
+    if(action==='courses')await o.w.openSection('courses');if(action==='legacy')await o.w.navigateToView('exam');
+    if(action==='hash'){o.location.hash='#teaching/courses';await o.events.emit('hashchange');}
+    if(action==='dispose'){o.close();closed=true;}
+    b.resolve({username:'teacher-B',role:'teacher'});await settle();assert.equal(o.calls.length,before);assert.equal(o.w.offering.data,null);
+    if(!closed){assert.equal(o.w.context.value.foreground.blocked,false);assert.equal(o.storage.has('teaching-offering'),false);}
+   }
+   const settled=o.calls.length;old.resolve(capabilities());await settle();assert.equal(o.calls.length,settled);assert.equal(o.flushes,0);
+  }finally{if(!closed)o.close();}
+ }
+});
+
+test('23 hidden or newer visible departure keeps queued storage recovery gated until its own observed return',async()=>{
+ for(const departure of ['hidden','blur']){
+  const o=await owner();try{
+   await selected(o);const old=deferred(),identity=deferred();o.state.caps=()=>old.promise;
+   await o.events.emit('blur');const first=o.events.emit('focus');await settle();void o.hide();o.state.caps=capabilities;void o.show();
+   o.storage.set('token','token-B');o.state.identity=()=>identity.promise;await o.events.emit('storage',{key:'token'});
+   if(departure==='hidden')await o.hide();else await o.events.emit('blur');
+   await first;const before=o.calls.length;identity.resolve({username:'teacher-B',role:'teacher'});await settle();
+   assert.equal(o.calls.length,before);assert.equal(o.auth.authVerified.value,true);assert.equal(await o.w.refresh(),false,'departed queued recovery cannot start reads');
+   old.resolve(capabilities());await settle();assert.equal(o.calls.length,before);
+   if(departure==='hidden')await o.show();await o.events.emit('focus');await settle();
+   assert.equal(o.calls.length,before,'observed return completes existing identity ownership without new auth');
+   assert.equal(o.w.context.value.foreground.retryAllowed,true);assert.equal(o.location.hash,'#teaching/home');assert.equal(o.storage.has('teaching-offering'),false);
+  }finally{o.close();}
+ }
+});
+
+test('24 manual refresh after changed queued storage owner never reopens previous actor offering or detail',async()=>{
+ const o=await owner();try{
+  await selected(o);await o.w.openSection('history');await o.w.submissionNavigation.selectRelease('release-A');await o.w.submissionNavigation.selectSubmission('submission-B');
+  const old=deferred();o.state.caps=()=>old.promise;await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+  void o.hide();o.state.caps=capabilities;void o.show();o.storage.set('token','token-B');o.state.identity=()=>({username:'teacher-B',role:'teacher'});await o.events.emit('storage',{key:'token'});await first;await settle();
+  assert.equal(o.auth.currentUser.value.username,'teacher-B');const offeringReads=count(o,'offering'),details=count(o,'submission');
+  old.resolve(capabilities());await settle();assert.equal(await o.w.refresh(),true);
+  assert.equal(count(o,'offering'),offeringReads,'next explicit refresh cannot reuse prior actor navigation or saved offering');
+  assert.equal(count(o,'submission'),details);assert.equal(o.w.context.value.offeringId,null);assert.equal(o.location.hash,'#teaching/home');assert.equal(o.storage.has('teaching-offering'),false);
+ }finally{o.close();}
+});
+
+test('25 storage identity can finish before canceled foreground public settlement without losing recovery',async()=>{
+ for(const actor of ['teacher-A','teacher-B']){
+  const o=await owner();try{
+   await selected(o);const old=deferred();o.state.caps=()=>old.promise;await o.events.emit('blur');const first=o.events.emit('focus');await settle();
+   let canceledSettled=false,identityBeforeSettlement=false;void first.then(()=>{canceledSettled=true;});
+   const stop=Vue.watch(()=>o.auth.authVerified.value,available=>{if(available)identityBeforeSettlement=!canceledSettled;},{flush:'sync'});
+   o.storage.set('token','token-B');o.state.identity=()=>({username:actor,role:'teacher'});void o.events.emit('storage',{key:'token'});
+   // Let the existing auth transport advance, then construct a queued return
+   // while its verified identity can settle ahead of canceled public completion.
+   await Promise.resolve();await Promise.resolve();assert.equal(o.auth.authVerified.value,false);
+   void o.hide();o.state.caps=capabilities;void o.show();void o.events.emit('focus');
+   await first;await settle();stop();assert.equal(identityBeforeSettlement,true,'actual auth result precedes canceled public promise settlement');
+   assert.equal(count(o,'auth'),3);assert.equal(o.w.context.value.foreground.retryAllowed,true);assert.equal(o.w.offering.data,null);
+   if(actor==='teacher-B'){assert.equal(o.location.hash,'#teaching/home');assert.equal(o.storage.has('teaching-offering'),false);}
+   const before=o.calls.length;old.resolve(capabilities());await settle();assert.equal(o.calls.length,before);
+   assert.equal(await o.w.refresh(),true);if(actor==='teacher-B')assert.equal(o.w.context.value.offeringId,null);else assert.equal(o.w.offering.data?.id,'offering-A');
+  }finally{o.close();}
+ }
 });
