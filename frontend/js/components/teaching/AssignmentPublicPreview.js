@@ -9,7 +9,7 @@ export default {
         return{frozen,spec,policy,formatTeachingTime};
     },
     template:`<article class="tw-panel tw-public-preview" :aria-label="kind === 'draft' ? '只读公开草稿' : '只读固定版本'">
-        <p class="tw-meta">{{ kind === 'draft' ? '草稿 · 只读公开内容' : '固定版本 · 公开内容保持不变' }}</p><h2>{{ spec.title }}</h2>
+        <p class="tw-meta">{{ kind === 'draft' ? '草稿 · 只读公开内容' : '固定版本 · 公开内容保持不变' }}</p><h2 tabindex="-1" data-tw-read-heading>{{ spec.title }}</h2>
         <p v-if="kind === 'draft'" class="tw-meta">草稿修订 {{ data.draft_revision }} · 更新 {{ formatTeachingTime(data.updated_at) }}</p>
         <p v-else class="tw-meta">固定版本 {{ frozen.version_number }} · 来源草稿修订 {{ frozen.source_draft_revision }}</p>
         <section v-if="kind === 'release'" class="tw-release-facts" aria-label="发布事实"><h3>发布记录</h3><p>{{ data.due_at ? '截止 ' + formatTeachingTime(data.due_at, data.timezone) : '无截止时间' }}</p><p class="tw-meta">发布 {{ formatTeachingTime(data.released_at, data.timezone) }} · 逾期策略：拒绝</p></section>

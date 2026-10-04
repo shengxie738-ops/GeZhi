@@ -1,4 +1,5 @@
 import { ref,computed,unref,watch } from 'vue';
+import { useTeachingReadDetailFocus } from '../../hooks/useTeachingReadDetailFocus.js';
 import TeachingResourceState from './TeachingResourceState.js';
 import TeachingAssignmentList from './TeachingAssignmentList.js';
 import AssignmentPublicPreview from './AssignmentPublicPreview.js';
@@ -12,11 +13,16 @@ export default {
         const release=computed(()=>unref(props.workspace.releaseReady)&&props.assignments.release.status==='ready'?props.assignments.release.data:null);
         const subject=computed(()=>unref(props.workspace.studentId)),selectedId=computed(()=>unref(props.workspace.selectedSubmissionId));
         const denied=computed(()=>['head','ownHistory','teacherHeads','teacherHistory','detail'].some(k=>props.workspace[k].status==='unavailable'));
-        const choose=(kind,id)=>(props.navigation?.[kind]||props.workspace[kind])?.(id);
+        const detailRef=ref(null),detailFocus=useTeachingReadDetailFocus({getContainer:()=>detailRef.value,getResource:()=>props.workspace.detail});
+        const choose=(kind,id)=>{
+            const fn=props.navigation?.[kind]||props.workspace[kind];
+            if(kind!=='selectSubmission'){detailFocus.cancel();return fn?.(id);}
+            return detailFocus.open(()=>fn?.(id),()=>access.value.ready && Boolean(release.value) && !denied.value && selectedId.value===id);
+        };
         const editSelector=value=>{selector.value=value;props.workspace.clearStudentSelection();};
         const readStudent=()=>{if(access.value.canReadTeacherSubmissions&&release.value)return props.workspace.loadTeacherHistory(selector.value);};
         watch(()=>[access.value.mode,access.value.canReadTeacherSubmissions,props.assignments.selection.releaseId,denied.value],()=>selector.value='',{flush:'sync'});
-        return{access,selector,release,subject,selectedId,denied,choose,readStudent,editSelector};
+        return{access,selector,release,subject,selectedId,denied,choose,readStudent,editSelector,detailRef};
     },
     template:`<div class="tw-read-workspace" aria-label="提交记录只读工作区">
         <TeachingResourceState v-if="!access.ready" state="unavailable" :reason="access.reason" />
@@ -41,7 +47,7 @@ export default {
                                 <SubmissionHistoryPanel v-if="subject !== null" kind="teacherHistory" :resource="workspace.teacherHistory" :selected-id="selectedId" :timezone="release.timezone" @select="choose('selectSubmission',$event)" @load-more="workspace.loadMore('teacherHistory')" @retry="workspace.loadTeacherHistory(subject)" />
                             </template>
                         </div>
-                        <div class="tw-read-detail"><SubmissionFactsPanel v-if="workspace.detail.status === 'ready'" :data="workspace.detail.data" :timezone="release.timezone" /><TeachingResourceState v-else :state="workspace.detail.status" :reason="workspace.detail.error?.reason" @retry="choose('selectSubmission',selectedId)" /></div>
+                        <div ref="detailRef" class="tw-read-detail"><SubmissionFactsPanel v-if="workspace.detail.status === 'ready'" :data="workspace.detail.data" :timezone="release.timezone" /><TeachingResourceState v-else :state="workspace.detail.status" :reason="workspace.detail.error?.reason" @retry="choose('selectSubmission',selectedId)" /></div>
                     </div>
                 </template>
             </template>

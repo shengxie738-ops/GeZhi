@@ -1,4 +1,5 @@
-import { computed,unref } from 'vue';
+import { computed,unref,ref } from 'vue';
+import { useTeachingReadDetailFocus } from '../../hooks/useTeachingReadDetailFocus.js';
 import TeachingResourceState from './TeachingResourceState.js';
 import TeachingAssignmentList from './TeachingAssignmentList.js';
 import AssignmentPublicPreview from './AssignmentPublicPreview.js';
@@ -7,10 +8,7 @@ export default {
     props:{workspace:{type:Object,required:true},navigation:Object},
     setup(props) {
         const access=computed(()=>unref(props.workspace.access));
-        const choose=(kind,id)=>{
-            const fn=props.navigation?.[kind]||props.workspace[kind];
-            return fn?.(id);
-        };
+        const detailRef=ref(null);
         const selectedResource=computed(()=>props.workspace.selection.releaseId?props.workspace.release:props.workspace.selection.versionId?props.workspace.version:props.workspace.selection.assignmentId?props.workspace.draft:[props.workspace.release,props.workspace.version,props.workspace.draft].find(resource=>['error','unavailable'].includes(resource.status))||null);
         const preview=computed(()=>{
             const resource=selectedResource.value;
@@ -18,11 +16,19 @@ export default {
             const kind=props.workspace.selection.releaseId?'release':props.workspace.selection.versionId?'version':'draft';
             return{kind,data:resource.data};
         });
+        const detailFocus=useTeachingReadDetailFocus({getContainer:()=>detailRef.value,getResource:()=>selectedResource.value});
+        const choose=(kind,id)=>{
+            const fn=props.navigation?.[kind]||props.workspace[kind];
+            const selected=()=>access.value.ready && Boolean(preview.value) && (kind==='selectRelease'
+                ?props.workspace.selection.releaseId===id:kind==='selectVersion'
+                ?props.workspace.selection.versionId===id:props.workspace.selection.assignmentId===id && !props.workspace.selection.releaseId);
+            return detailFocus.open(()=>fn?.(id),selected);
+        };
         const retryDetail=()=>{
             const s=props.workspace.selection;
             return s.releaseId?choose('selectRelease',s.releaseId):s.versionId?choose('selectVersion',s.versionId):s.assignmentId?choose('selectAssignment',s.assignmentId):props.workspace.refresh();
         };
-        return{access,choose,preview,selectedResource,retryDetail};
+        return{access,choose,preview,selectedResource,retryDetail,detailRef};
     },
     template:`<div class="tw-read-workspace" aria-label="当前课程任务只读工作区">
         <TeachingResourceState v-if="!access.ready" state="unavailable" :reason="access.reason" />
@@ -35,7 +41,7 @@ export default {
                     <TeachingAssignmentList v-if="access.canReadVersions && workspace.selection.assignmentId" kind="versionPage" :resource="workspace.versionPage" :selected-id="workspace.selection.versionId" @select="choose('selectVersion', $event)" @load-more="workspace.loadMore('versionPage')" @retry="workspace.loadVersions()" />
                     <TeachingAssignmentList v-if="access.canReadReleases" kind="releasePage" :resource="workspace.releasePage" :selected-id="workspace.selection.releaseId" @select="choose('selectRelease', $event)" @load-more="workspace.loadMore('releasePage')" @retry="workspace.loadReleases()" />
                 </div>
-                <div class="tw-read-detail">
+                <div ref="detailRef" class="tw-read-detail">
                     <TeachingResourceState v-if="selectedResource && selectedResource.status !== 'ready'" :state="selectedResource.status" :reason="selectedResource.error?.reason" @retry="retryDetail" />
                     <AssignmentPublicPreview v-if="preview" :data="preview.data" :kind="preview.kind" />
                     <p v-else-if="!selectedResource" class="tw-panel tw-meta">从已读取的列表打开任务，查看公开说明与固定版本</p>
