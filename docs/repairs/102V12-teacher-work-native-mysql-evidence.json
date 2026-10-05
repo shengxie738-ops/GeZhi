@@ -93,8 +93,197 @@
     "backend/app/services/teacher_work/schema.py": "e9c47d5d30ce52a4eaf38d304015663a10ed149eb69d85323b459069d81672be",
     "backend/tests/test_teacher_work_mysql_schema.py": "205f20003c50bcc7f913c1a7f5bc49159f77e16f38bf02e0f2d2da7088478ff6",
     "backend/tests/native_teacher_work_mysql.py": "67f0bfa22e899e8feebd2743469ae994b9a647daa541b7ddbb164334c1941533",
-    "backend/tests/requirements-native-teacher-work.txt": "869b475198a66267fcc3894b0bb447228a0713647805be1c6b023f0d2db65eaf"
+    "backend/tests/requirements-native-teacher-work.txt": "869b475198a66267fcc3894b0bb447228a0713647805be1c6b023f0d2db65eaf",
+    "backend/tests/native_teacher_work_repository.py": "9bba542093e74033591fa0572b9206c5f4a695b06e393fe3fda22885acedfbcd",
+    "backend/app/models/domain_record.py": "0211fdb4bb54d2b1ce81f99ab4440a3d44f5982797bf0380e7de18047b25b88f",
+    "backend/app/repositories/teacher_work_sql.py": "a5d792cf2ec132d1a2eb5f956396515c830819b52a3f09c20a4fe779cec52ad0",
+    "backend/app/repositories/teacher_work.py": "ae6cef2fbd9222687a6b7ce8c501d89b6ef8d521e98f1853a7bcf213f7e3f4d1",
+    "backend/app/repositories/json_store.py": "bba8a5159870bcffcf1b7970770f64d3691388aa9d326585edbed311c2dde602",
+    "backend/app/services/teacher_work/bootstrap.py": "e11edfb43340932834939c9d29284df119ba517a78ebe0d9a63614ea0e7bf31d",
+    "backend/app/services/teacher_work/run_persistence.py": "d8d6786b57420f9efabfe771300178cc0c4d68585c30642b99186503ea6d3aac"
   },
   "production_admission": "TEACHER_WORK_LIVE_GATES_UNVERIFIED (unchanged)",
-  "ci": "Checked separately after each push; absence of runs is not passing CI."
+  "ci": "Checked separately after each push; absence of runs is not passing CI.",
+  "native_repository": {
+    "command": "PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_repository.py",
+    "result": "7 passed in 37.95s",
+    "exit_code": 0,
+    "facts": {
+      "first_sql": 1,
+      "version": "8.4.10",
+      "connection_id": 8,
+      "server_uuid": "00fac9fe-c108-11f1-9664-ccf771503c3c",
+      "datadir": "/var/lib/mysql/",
+      "socket": "/run/gezhi-native/mysql.sock",
+      "skip_networking": 1,
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "isolation": "REPEATABLE-READ",
+      "foreign_key_checks": 1,
+      "unique_checks": 1
+    },
+    "cleanup": {
+      "container": "gezhi-tw-native-8349464f438848e48fc100b1f06c99e8",
+      "container_id": "5e2f010454ffeb73d1d0192ceb0e428c28561fd366398a2b84b268b8de8bc2ba",
+      "stopped": true,
+      "exit_code": 0,
+      "creation_not_observed": false,
+      "removed_with_volumes": true,
+      "baseline_preserved": true
+    },
+    "evidence_directory": "/tmp/gezhi-tw-native-ixfgwhoz",
+    "authorization": "finite synthetic private actor; no live authentication evidence",
+    "draft_model": "current DomainRecord declarations with isolated Base; no core.database import",
+    "json_store": "binding only; mutation methods not exercised"
+  },
+  "targeted_unit_command": "PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/test_teacher_work_mysql_schema.py backend/tests/test_teacher_work_repository.py backend/tests/test_teacher_work_authorization.py backend/tests/test_teacher_work_run_sql.py backend/tests/test_teacher_work_run_sql_poison.py backend/tests/test_teacher_work_run_persistence.py backend/tests/test_teacher_work_wiring.py",
+  "targeted_unit_passed": 74,
+  "stage1_commit": "9df4fa5de88727ecd9fb6c2d6b90516f12604edb",
+  "stage1_ci": {
+    "cli": "Forbidden for Actions/check-runs/status",
+    "authorized_github_connector": {
+      "workflow_runs_total_count": 0,
+      "check_runs_total_count": 0,
+      "statuses": []
+    },
+    "passing_ci_evidence": false
+  },
+  "owned_mysql_instances": [
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-27jre488",
+      "server_uuid": "550a15f7-c106-11f1-9f06-359654df6458",
+      "cleanup": {
+        "container": "gezhi-tw-native-10bf984d065b47c1a5bd657e6e8e1701",
+        "container_id": "dd694ed39f7f66081d6ad6cb6d4b6aef359169f275c4ddfde12d433bd5b5c5da",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-7v145205",
+      "server_uuid": "2e23b827-c106-11f1-9cf8-1c32a7b2837b",
+      "cleanup": {
+        "container": "gezhi-tw-native-531d5cb1898747bd9dbcc4780f8c0acc",
+        "exit_code": 137,
+        "stopped": true,
+        "removed_with_volumes": true,
+        "manual_cleanup_after_initial_fixture_failure": true,
+        "evidence": "docker inspect exited 137; exact-name docker rm -v returned success; final docker inventory empty"
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-dq8en2pr",
+      "server_uuid": "1ccf7a7b-c107-11f1-9f6d-39a9a5404ec5",
+      "cleanup": {
+        "container": "gezhi-tw-native-6c68d988e1ff44028f4d6366c05ed879",
+        "container_id": "b0feb07cf4c894ca7ce9eff504c426c751d125647ba296769086ba284d679cb8",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": false
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-ixfgwhoz",
+      "server_uuid": "00fac9fe-c108-11f1-9664-ccf771503c3c",
+      "cleanup": {
+        "container": "gezhi-tw-native-8349464f438848e48fc100b1f06c99e8",
+        "container_id": "5e2f010454ffeb73d1d0192ceb0e428c28561fd366398a2b84b268b8de8bc2ba",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-j5cto93r",
+      "server_uuid": "66bf996f-c107-11f1-adea-e76131d1862c",
+      "cleanup": {
+        "container": "gezhi-tw-native-faacec1fa78c4a069f36f41e506968aa",
+        "container_id": "377c62a54caa4ac86581beaf9e531ac5b322bae5120e1f3312b99f6a8df661ca",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-kg9i3y1y",
+      "server_uuid": "7f66f80f-c106-11f1-8af6-44d3573918cc",
+      "cleanup": {
+        "container": "gezhi-tw-native-df643f0e0d95404cabb5ef4cfbddb386",
+        "container_id": "c356a829e32fdbb14733767b226ec8c76dae359ff533e93efa8cf14e5b4f5f17",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-pll95qv7",
+      "server_uuid": "0bf9ff78-c107-11f1-81d2-d61f171834bc",
+      "cleanup": {
+        "container": "gezhi-tw-native-714efd3139f04d2fa3815aec6029adb0",
+        "container_id": "19508ccb9039ce89503207002be43a191ff82555f40a9f5e8a7ecdc0a9c93b1d",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-tw-native-u4prj3cj",
+      "server_uuid": "b8c28be3-c107-11f1-9240-9b3125254903",
+      "cleanup": {
+        "container": "gezhi-tw-native-d3db1aae546f4b6d8fa78d76e834e695",
+        "container_id": "7d06a95a5e47bb3be5b5612fba57c8ab06a26ac6587108401227288644acf55c",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "evidence_directory": "/tmp/gezhi-mysql-native/evidence",
+      "server_uuid": "a5c4e466-c105-11f1-9aed-04d211de2930",
+      "cleanup": {
+        "container": "gezhi-native-mysql-20261005",
+        "container_id": "5048d952c26f0360488cc44ecdf562a6f418d0bca131f31b945523aae3da5214",
+        "stopped": true,
+        "exit_code": 0,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    }
+  ],
+  "final_docker_inventory": {
+    "containers": [],
+    "volumes": [],
+    "existing_services_modified": false,
+    "cleanup_selection": "exact own random names only; rm -v of each own anonymous volume"
+  },
+  "log_sha256": {
+    "targeted-final-accepted.log": "b54c13b8f9cbc4f822c4eede0f09a6b1bc1755e3d1b091bf81fa12f22035a715",
+    "native-repository-final-accepted.log": "9ec3e1b9a98272199244b4b1ed4d4abdca41d0552ed89085bd49d3b74e72d350",
+    "dependencies.txt": "980e93d2714fb9051417d7292434d2acdfcd636ed431e34cf6d30a8b7b84b620",
+    "native-schema-final-accepted.log": "c100ad03e0db1f12b0d94c33c9b8bda3701949d0e099f7c1f6c282df57e93570",
+    "unintended-collection-errors.json": "cabcd99dd1eaea252e6e91563e3b6fe7c3efb3e610a2e8d30e80f76b42ca8d79",
+    "default-discovery.log": "fc7dd0dd515558aebd68cca816a94452c72d0ae59b8c8d28cb9b2edfda111ec8",
+    "cleanup-inventory-red.log": "95d6ad997b95ade40d35678c159b8d6d6f73036fc7fa7317d8128629617504be",
+    "native-schema-accepted.log": "10826fa3c663b9c664e608a14d4007c9278f53008dc1243f77de1ab764e64c4d",
+    "cleanup.json": "cc20949e43839ba53fb762ba69d5a778ec5b2434d6616050bba7df512b1c746a",
+    "mysql.log": "73b1dd39c70ed52e7b7f03805b4fa1a9537422c9ea6fb609c783df08792588b5",
+    "targeted-final.log": "553076aa5387d34b6e5504d9403716353ce006c7e0ba5a7dddc9d30491d95c7d",
+    "native-schema-reviewed.log": "560de71c224c0b91ff181fe1095e98f9a6e95e18699173b79f62c1d28d0c9889",
+    "native-repository.log": "c10f7cf9732f47d46f71da0d3d984f54d769bf88ac1f879c9d482d5e5c3d6839",
+    "native-schema-final.log": "935f3a3cf253293453c91a6208c759b10801570a8b5fd171394f32bf720a4767",
+    "targeted-unit.log": "f0905c827edcbc7e83c4e19957ac2df06b10b3880648f324832939715698c53d",
+    "native-schema-green.log": "7dafa0b7f50315f4066f05c105a8a7cc4d9a8ae6b4e9fecd333e744d4fb8d224",
+    "native-red.log": "cb7554a3e0eff10497fde844cc287dd1ed96cd6a59dc1178a8a99e5a7ebe0ad7",
+    "serializer-red.log": "d68c2c0fde893f4575902261bd6248901659df3a06eb5146300a6d89e945f20d",
+    "first-sql.json": "ef1f526687604c7fd2bc4fd10f75fa2a795010ed9bf1976bb37102a6504679dd"
+  }
 }

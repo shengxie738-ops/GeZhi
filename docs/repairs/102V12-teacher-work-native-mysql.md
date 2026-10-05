@@ -37,9 +37,34 @@ PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/t
 
 本阶段原生入口共 **22 项**：20 项实际数据库断言，另 2 项使用实际创建但未启动的临时容器，注入日志／容器查询失败，验证清理仍删除容器和数据卷。验收覆盖：fresh-v2 的全 13 表与独立连接持久回执、精确重放只读、四种身份不符、保留调用者事务、部分结构拒绝、两种会话检查关闭、临时表遮蔽、独立 commit/rollback、实际 1062/3819/1452 错误、JSON、默认值、DATETIME(6)、VARBINARY(512) 全长键及索引。
 
+最终串行验收：**22 passed in 65.07s**，退出码 0，清理退出码 0，baseline_preserved=true。阶段一提交：`9df4fa5de88727ecd9fb6c2d6b90516f12604edb`，已普通推送至 `102V12`。
+
 真实驱动将 CHECK 错误 `3819` 映射为 `OperationalError`，唯一键 `1062` 和 FK `1452` 为 `IntegrityError`；测试分别严格断言实际异常类别及原生整数错误码。
 
 只串行运行原生入口。若两个独立测试进程同时运行，一个正常退出可能使另一个的既有容器基线检查失败；不削弱该检查，不宣称支持并行原生批次。
+
+## 阶段二：有限私有任务 repository 验收
+
+新增 `backend/tests/native_teacher_work_repository.py`；直接执行当前 `build_sql_repository`、coordinator、SQL rows 和真实 SQLAlchemy Session。Work ORM 直接导入；`DomainRecord` 的现有声明源码不变，只将 `app.core.database` 的 Base 导入替换为测试独立 registry，避免读取 Settings 或构造应用 engine。所有 SQL 与 ORM 操作真实执行；没有模拟数据库查询或提交。
+
+```bash
+PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_repository.py
+PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/test_teacher_work_mysql_schema.py backend/tests/test_teacher_work_repository.py backend/tests/test_teacher_work_authorization.py backend/tests/test_teacher_work_run_sql.py backend/tests/test_teacher_work_run_sql_poison.py backend/tests/test_teacher_work_run_persistence.py backend/tests/test_teacher_work_wiring.py
+```
+
+串行最终 repository 回归：**7 passed in 37.95s**，退出码 0，清理退出码 0；覆盖私有创建、提交前独立连接不可见、精确幂等重放且不发 DML、请求摘要冲突 409、真实 CAS rowcount=1、陈旧 revision 拒绝、实际 CAS 谓词不匹配返回 false、创建回滚 task/draft/lease、patch 回滚两行、真实 CHECK 失败后 UoW 污染与回滚、实际重复键解析为指定约束的 fresh reconciliation。
+
+独立观察连接重新读取提交的数据；回滚前后的 task/draft 完整行比较，没有将内存恢复当作数据库回滚。有限目标没有发现新的 repository 缺陷，因此本阶段不修改其生产实现。
+
+授权回调仅供应合成 private `WorkActor`，不证明真实鉴权／request owner acceptance。`JsonStore` 仅作为 caller-owned binding；实际 draft mutation 由 `SqlOriginalDrafts` 执行，本阶段不声称验收 JsonStore 的 upsert/get 等方法。run persistence 仅执行既有记录端口回归，不声称真实聊天验收。
+
+相关七个普通测试文件共 **74 passed**（其中 18 是 observer，56 是 repository/request owner/run persistence/wiring）；有一个既有 Pydantic instance.model_fields 弃用警告，不是运行失败。没有执行全仓库或其他功能的测试。
+
+独立复核两轮均确认有限 repository 断言成立，提出的两个清理失败路径均已用 RED→GREEN 回归修复；最后整批串行结果保留全部清理检查。
+
+阶段一 CI：CLI 的 Actions/check-runs/status 接口返回 `Forbidden`。通过可用且已授权的 GitHub 连接器进一步读取精确提交的所有事件 Actions 记录及 check-runs：两者 `total_count=0`，combined statuses 也为空。没有 CI 通过证据，也没有触发／重跑工作流。
+
+全部 9 个本次 MySQL 实例均已停止，匿名数据卷随各自容器移除；初次失败实例退出码为 137，其他实例正常退出码为 0。清理故障回归创建但未启动的容器也已移除。最终 `docker ps -aq` 和 `docker volume ls -q` 都为空。删除只选择本次确切名称及其匿名数据卷，没有操作已有服务。
 
 ## 失败记录与证据边界
 
