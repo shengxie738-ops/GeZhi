@@ -22,6 +22,7 @@ from app.services.gitea_account_service import RepoPermission, ensure_repository
 from app.services.gitea_service import GiteaService, is_stale_gitea_url, normalize_repo_slug
 from app.utils.datetime import format_chinese_datetime
 from app.services.git_workflow_rules import evaluate_git_workflow
+from app.services.student_git_guidance import build_student_git_guidance
 from app.services.student_git_workflow import (
     validate_git_branch, reassign_task, bind_task_observation, merge_task_observations,
     project_task_evidence, summarize_task_states, needs_submission_reminder, reconcile_task_observations,
@@ -405,72 +406,7 @@ def _project_current_task_evidence(project):
 
 
 def _workflow_steps(repo: dict[str, Any], member: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    repo_name = repo.get("repoName") or "huffman-coding-team"
-    task_branch = (member or {}).get("branch") or repo.get("taskBranch") or "feature/task"
-    default_branch = repo.get("defaultBranch") or "main"
-    fallback_urls = _repo_urls(repo_name, repo.get("giteaOwner") or "campus")
-    clone_url = repo.get("cloneUrl") or ""
-    html_url = (repo.get("htmlUrl") or fallback_urls["htmlUrl"]).rstrip("/")
-    clone_done = member and member.get("cloneStatus") == "done"
-    push_done = member and member.get("pushStatus") in {"detected", "done"}
-    pr_open = member and member.get("prStatus") in {"open", "merged"}
-    merged = member and member.get("mergeStatus") == "merged"
-    return [
-        {
-            "id": "clone",
-            "title": "拉取代码",
-            "description": "复制仓库地址，在本地终端完成项目初始化。",
-            "command": f"git clone {clone_url}" if clone_url else "",
-            "status": "done" if clone_done else "current",
-            "statusLabel": "已拉取" if clone_done else "待确认",
-            "nextHint": "拉取后点击“我已完成拉取”。",
-        },
-        {
-            "id": "branch",
-            "title": "创建功能分支",
-            "description": "进入项目目录，为当前任务建立独立分支。",
-            "command": f"cd {repo_name}\ngit checkout -b {task_branch}",
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已准备" if clone_done else "等待 clone",
-            "nextHint": "分支创建后即可提交代码。",
-        },
-        {
-            "id": "commit",
-            "title": "提交代码",
-            "description": "把本地改动提交到任务分支，commit message 要说明实现内容。",
-            "command": 'git add .\ngit commit -m "feat: 完成当前协作任务"',
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已提交" if push_done else "待提交",
-            "nextHint": "提交后推送到 Gitea。",
-        },
-        {
-            "id": "push",
-            "title": "推送代码",
-            "description": "推送任务分支，系统后续通过 Gitea Webhook 检测 push。",
-            "command": f"git push -u origin {task_branch}",
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已检测" if push_done else "等待系统检测",
-            "nextHint": "push 后刷新状态，等待系统检测。",
-        },
-        {
-            "id": "pull_request",
-            "title": "发起 Pull Request",
-            "description": "进入 Gitea 原生 PR 页面，把任务分支合并到主分支。",
-            "command": f"{html_url}/pulls/new?head={task_branch}&base={default_branch}",
-            "status": "done" if pr_open or merged else ("current" if push_done else "locked"),
-            "statusLabel": "PR 已创建" if pr_open else "PR 待创建",
-            "nextHint": "创建 PR 后等待老师或队长审核。",
-        },
-        {
-            "id": "merge",
-            "title": "等待审核合并",
-            "description": "老师或队长在 Gitea 审核并合并后，页面同步任务完成状态。",
-            "command": f"git pull origin {default_branch}",
-            "status": "done" if merged else ("current" if pr_open else "locked"),
-            "statusLabel": "已合并" if merged else "等待审核",
-            "nextHint": "合并后团队进度与得分会自动更新。",
-        },
-    ]
+    return build_student_git_guidance(repo, member, (member or {}).get("currentTask") or {})
 
 
 def _default_project(project_id: str = "huffman-coding-team") -> dict[str, Any]:
@@ -911,6 +847,12 @@ def _enrich(project: dict[str, Any], viewer: str | None = None, *, actor=None) -
     member = next((m for m in result.get("memberProgress") or [] if _canonical_member_id(m) == viewer), None)
     result["repository"]["statusLabel"] = _status_label(result["repository"].get("status") or "")
     result["workflowSteps"] = _workflow_steps(result["repository"], member)
+    result["workflowGuidance"] = {
+        "version": 1,
+        "memberId": _canonical_member_id(member) if member else "",
+        "taskRevision": (member.get("currentTask") or {}).get("revision") if member else None,
+        "repositoryKey": _repository_task_key(result["repository"]),
+    }
     result["currentUserProgress"] = _current_user_progress(result, viewer)
     result["teamSummary"] = _team_summary(result)
     return result

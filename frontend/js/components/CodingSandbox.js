@@ -14,6 +14,7 @@ import RadarChart from './RadarChart.js';
 import TeamCoachFeedback from './TeamCoachFeedback.js';
 import { isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning, remoteRefreshMessage, pullRequestReviewMessage, pullRequestReviewLabel } from '../utils/teamProvenance.js';
 import { createTeamRequestScope } from '../utils/teamCoachFeed.js';
+import { isCopyableGitCommand, studentGitGuidanceCommandEntries, studentGitPrActionUrl } from '../utils/studentGitGuidance.js';
 
 export default {
     name: 'CodingSandbox',
@@ -312,6 +313,17 @@ export default {
         const recentCommits = computed(() => collabData.value?.recentCommits || []);
         const teamSummary = computed(() => collabData.value?.teamSummary || {});
         const currentUserProgress = computed(() => collabData.value?.currentUserProgress || {});
+        const repositoryWorkflowStatusLabel = computed(() => repositoryInfo.value.status === 'completed'
+            ? '当前任务远端 PR 流程已完成' : repositoryInfo.value.statusLabel || '远端状态未验证');
+        const currentTaskBranchLabel = computed(() => {
+            const member = memberProgress.value.find(item => String(item.username || item.id || item.memberId || '').trim() === collabViewerName.value);
+            if (!member) return '当前账号不是项目成员';
+            if (!member.branch) return '当前任务分支未分配';
+            const task = member.currentTask;
+            if (!Number.isSafeInteger(member.taskRevision) || member.taskRevision <= 0 || task?.revision !== member.taskRevision
+                || !['assigned','bound'].includes(task?.bindingStatus)) return '当前任务分配未验证';
+            return member.branch;
+        });
         const repositoryHomeInfo = computed(() => repositoryHome.value || {});
         const repositoryHomeProject = computed(() => repositoryHome.value?.project || {});
         const repositoryHomeRepo = computed(() => repositoryHome.value?.repository || {});
@@ -632,6 +644,15 @@ export default {
             }
         };
 
+        const guidanceCommandEntries = (step) => studentGitGuidanceCommandEntries(step);
+        const copyWorkflowCommand = async (step, entry) => {
+            if (!entry || !isCopyableGitCommand(entry.command, step)) {
+                emit('show-toast', '此内容不可直接复制为命令；请先核对前提并替换占位符。', 'info');
+                return false;
+            }
+            return copyGitCommand(entry.command);
+        };
+
         const copyTeamAuthClone = async () => {
             const requestGeneration = teamScope.generation;
             if (!teamAuthenticatedCloneUrl.value) return;
@@ -744,10 +765,10 @@ export default {
             window.open(url, '_blank', 'noopener,noreferrer');
         };
 
-        const prCreationUrl = computed(() => {
-            const step = workflowSteps.value.find(item => item.id === 'pull_request');
-            return step?.command || '';
-        });
+        const prCreationUrl = computed(() => studentGitPrActionUrl(
+            workflowSteps.value, repositoryInfo.value, currentUserProgress.value.member
+                || memberProgress.value.find(member => String(member.username || member.id || member.memberId || '').trim() === collabViewerName.value)
+        ));
 
         const createGiteaRepository = async () => {
             const requestGeneration = teamScope.generation;
@@ -1014,7 +1035,8 @@ export default {
         const stepStatusClass = (status) => {
             if (status === 'done') return 'border-emerald-200 bg-emerald-50/70 text-emerald-700';
             if (status === 'current') return 'border-teal-300 bg-white text-teal-700 ring-2 ring-teal-500/10';
-            return 'border-slate-200 bg-slate-50/70 text-slate-400';
+            if (status === 'unknown') return 'border-amber-200 bg-amber-50/30 text-slate-600';
+            return 'border-slate-200 bg-slate-50/70 text-slate-500';
         };
 
         const memberStatusClass = (member) => {
@@ -2857,6 +2879,8 @@ ${review.code}
             recentCommits,
             teamSummary,
             currentUserProgress,
+            repositoryWorkflowStatusLabel,
+            currentTaskBranchLabel,
             repositoryHomeInfo,
             repositoryHomeProject,
             repositoryHomeRepo,
@@ -2893,6 +2917,8 @@ ${review.code}
             openRepositoryHomePullRequests,
             backToCollabRepositoryList,
             copyGitCommand,
+            guidanceCommandEntries,
+            copyWorkflowCommand,
             openExternalLink,
             createCollabProject,
             createGiteaRepository,
@@ -4812,23 +4838,23 @@ ${review.code}
                                     <p v-if="repositoryInfo.lastSyncedAt" class="text-[10px] text-slate-400 mt-2">上次 Gitea 同步：{{ repositoryInfo.lastSyncedAt }}</p>
                                     <p v-if="repositoryInfo.syncError" class="text-[10px] text-rose-600 mt-1">{{ repositoryInfo.syncError }}</p>
                                 </div>
-                                <span class="shrink-0 text-[10px] px-2 py-1 rounded-full border font-bold" :class="repoStatusClass(repositoryInfo.status)">{{ repositoryInfo.statusLabel }}</span>
+                                <span class="shrink-0 text-[10px] px-2 py-1 rounded-full border font-bold" :class="repoStatusClass(repositoryInfo.status)">{{ repositoryWorkflowStatusLabel }}</span>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <div class="bg-white/70 border border-white rounded-xl p-3">
-                                    <p class="text-[10px] text-slate-400 font-semibold">已完成</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold">当前任务远端 PR 已合并</p>
                                     <p class="text-lg font-extrabold text-slate-900">{{ teamSummary.completedMembers || 0 }}/{{ teamSummary.totalMembers || 0 }}</p>
                                 </div>
                                 <div class="bg-white/70 border border-white rounded-xl p-3">
-                                    <p class="text-[10px] text-slate-400 font-semibold">平均进度</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold">当前任务远端流程平均进度</p>
                                     <p class="text-lg font-extrabold text-teal-700">{{ teamSummary.averageProgress || 0 }}%</p>
                                 </div>
                                 <div class="bg-white/70 border border-white rounded-xl p-3">
-                                    <p class="text-[10px] text-slate-400 font-semibold">已 Push</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold">当前任务已检测到 Push</p>
                                     <p class="text-lg font-extrabold text-slate-900">{{ teamSummary.pushedMembers || 0 }}</p>
                                 </div>
                                 <div class="bg-white/70 border border-white rounded-xl p-3">
-                                    <p class="text-[10px] text-slate-400 font-semibold">待审 PR</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold">当前任务待审 PR</p>
                                     <p class="text-lg font-extrabold text-blue-700">{{ teamSummary.openPullRequests || 0 }}</p>
                                 </div>
                             </div>
@@ -4934,7 +4960,7 @@ ${review.code}
                                 </div>
                                 <div class="bg-white/70 border border-white rounded-xl p-3 min-w-0 min-h-[64px] flex flex-col justify-center">
                                     <dt class="text-[10px] text-slate-400 font-bold">当前任务分支</dt>
-                                    <dd class="mt-1 font-mono text-slate-700 break-all whitespace-normal leading-relaxed">{{ repositoryInfo.taskBranch }}</dd>
+                                    <dd class="mt-1 font-mono text-slate-700 break-all whitespace-normal leading-relaxed">{{ currentTaskBranchLabel }}</dd>
                                 </div>
                             </dl>
                             <div class="mt-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-3 border-t border-slate-100 pt-4">
@@ -5032,15 +5058,24 @@ ${review.code}
                                                 <p class="text-xs text-slate-500 leading-relaxed mt-1">{{ step.description }}</p>
                                             </div>
                                         </div>
-                                        <span class="text-[10px] px-2 py-1 rounded-full bg-white/80 border border-current/10 font-bold shrink-0">{{ step.statusLabel }}</span>
+                                        <span role="status" aria-live="polite" class="text-[10px] px-2 py-1 rounded-full bg-white/80 border border-current/10 font-bold shrink-0">{{ step.statusLabel }}</span>
                                     </div>
-                                    <pre class="bg-slate-950 text-slate-100 rounded-xl p-3 text-[11px] leading-relaxed overflow-x-auto font-mono whitespace-pre-wrap">{{ step.command }}</pre>
-                                    <div class="flex items-center justify-between gap-3">
-                                        <p class="text-[10px] text-slate-500">{{ step.nextHint }}</p>
-                                        <button @click="copyGitCommand(step.command)" class="min-h-[36px] px-3 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-50 shrink-0 flex items-center gap-1">
-                                            <i class="ph ph-copy"></i> 复制命令
-                                        </button>
+                                    <ul v-if="step.preconditions?.length" aria-label="操作前提" class="list-disc pl-4 space-y-1 text-xs text-slate-600 leading-relaxed">
+                                        <li v-for="(condition, conditionIndex) in step.preconditions" :key="conditionIndex">{{ condition }}</li>
+                                    </ul>
+                                    <div v-for="(entry, commandIndex) in guidanceCommandEntries(step)" :key="step.id + '-' + commandIndex" class="space-y-2">
+                                        <p class="text-[10px] font-bold text-slate-600">{{ entry.kind === 'preflight' ? '先检查' : entry.kind === 'template' ? '需要替换的示例' : '核对前提后再操作' }}</p>
+                                        <pre v-if="entry.command" class="bg-slate-950 text-slate-100 rounded-xl p-3 text-[11px] leading-relaxed overflow-x-auto font-mono whitespace-pre-wrap select-text">{{ entry.command }}</pre>
+                                        <p v-else class="text-xs text-slate-500">暂无可复制命令</p>
+                                        <div class="flex items-start justify-between gap-3">
+                                            <p class="text-[10px] text-slate-600 leading-relaxed">{{ entry.condition }}</p>
+                                            <button type="button" @click="copyWorkflowCommand(step, entry)" :disabled="!entry.copyable" :aria-label="'复制' + step.title + '第' + (commandIndex + 1) + '条命令'" class="min-h-[36px] px-3 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-50 shrink-0 flex items-center gap-1">
+                                                <i class="ph ph-copy" aria-hidden="true"></i> 复制命令
+                                            </button>
+                                        </div>
                                     </div>
+                                    <a v-if="step.actionUrl" :href="step.actionUrl" target="_blank" rel="noopener noreferrer" :aria-label="'在 Gitea 打开' + step.title" class="min-h-[36px] px-3 py-2 self-start rounded-lg bg-white border border-slate-200 text-teal-700 text-xs font-bold hover:bg-slate-50">打开 Gitea 创建 PR</a>
+                                    <p class="text-[10px] text-slate-500 leading-relaxed">{{ step.nextHint }}</p>
                                 </article>
                             </div>
                         </section>
@@ -5090,9 +5125,9 @@ ${review.code}
                                             <th class="py-2 pr-3">成员</th>
                                             <th class="py-2 pr-3">任务</th>
                                             <th class="py-2 pr-3">分支</th>
-                                            <th class="py-2 pr-3">Commit</th>
-                                            <th class="py-2 pr-3">PR</th>
-                                            <th class="py-2 pr-3">Merge</th>
+                                            <th class="py-2 pr-3">累计 Commit</th>
+                                            <th class="py-2 pr-3">当前任务 PR</th>
+                                            <th class="py-2 pr-3">当前任务远端合并</th>
                                             <th class="py-2 pr-3">得分</th>
                                         </tr>
                                     </thead>
@@ -5103,7 +5138,7 @@ ${review.code}
                                             <td class="py-3 pr-3 font-mono text-[11px] text-slate-500">{{ member.branch }}</td>
                                             <td class="py-3 pr-3 text-slate-700">{{ member.commitCount }} 次</td>
                                             <td class="py-3 pr-3"><span class="px-2 py-1 rounded-full border text-[10px] font-bold" :class="memberStatusClass(member)">{{ member.statusLabel }}</span></td>
-                                            <td class="py-3 pr-3 text-slate-600">{{ member.mergeStatus === 'merged' ? '已合并' : '待合并' }}</td>
+                                            <td class="py-3 pr-3 text-slate-600">{{ member.mergeStatus === 'merged' ? '本任务远端 PR 已合并' : '本任务远端 PR 待合并' }}</td>
                                             <td class="py-3 pr-3 font-bold text-slate-900">{{ member.score }}</td>
                                         </tr>
                                     </tbody>
@@ -5124,7 +5159,7 @@ ${review.code}
                                         <span v-if="isDemoFallback" class="text-[10px] px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">演示数据</span>
                                     </div>
                                 </div>
-                                <button @click="openExternalLink(prCreationUrl)" class="min-h-[36px] px-3 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800">创建 PR</button>
+                                <button type="button" @click="openExternalLink(prCreationUrl)" :disabled="!prCreationUrl" aria-label="在 Gitea 创建当前任务 PR" class="min-h-[36px] px-3 rounded-lg bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800 disabled:opacity-50">创建 PR</button>
                             </div>
                             <p v-if="syncErrorMessage" class="mb-3 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                                 {{ syncErrorMessage }}
@@ -5193,9 +5228,9 @@ ${review.code}
                             <div class="flex items-center justify-between mb-4">
                                 <div>
                                     <span class="text-[10px] text-teal-600 font-bold uppercase tracking-wider">Contribution</span>
-                                    <h4 class="text-base font-extrabold text-slate-900 mt-1">团队贡献度</h4>
+                                    <h4 class="text-base font-extrabold text-slate-900 mt-1">累计贡献度</h4>
                                 </div>
-                                <span class="text-[10px] text-slate-400">commit / PR / 评分</span>
+                                <span class="text-[10px] text-slate-400">累计 commit / PR / 评分</span>
                             </div>
                             <div class="flex flex-col gap-3">
                                 <div v-for="member in contributionRanking" :key="member.id || member.name" class="bg-white/75 border border-white rounded-xl p-3">
@@ -5210,7 +5245,7 @@ ${review.code}
                                         <div class="h-full bg-teal-500 rounded-full" :style="{ width: (member.contribution || 0) + '%' }"></div>
                                     </div>
                                     <div class="mt-2 flex items-center justify-between text-[10px] text-slate-400">
-                                        <span>{{ member.commitCount || 0 }} commits / {{ member.prCount || 0 }} PR</span>
+                                        <span>累计 {{ member.commitCount || 0 }} commits / {{ member.prCount || 0 }} PR</span>
                                         <span>得分 {{ member.score || 0 }}</span>
                                     </div>
                                 </div>
