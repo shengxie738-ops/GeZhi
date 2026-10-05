@@ -203,6 +203,8 @@ class TeacherLessonPrepService:
     def save_draft(self, db: Session, teacher_id: str, payload: LessonPrepDraftRequest) -> dict[str, Any]:
         store = JsonStore(db)
         draft_id = payload.draft_id or make_record_key("lesson-draft")
+        from app.services.teacher_work.private_tasks import prepare_legacy_save
+        prepare_legacy_save(db, teacher_id, draft_id)
         existing = store.get_payload(self.MODULE, self.RECORD_TYPE, draft_id, owner_id=teacher_id)
         if payload.draft_id and existing is None:
             raise HTTPException(status_code=404, detail="lesson prep draft not found")

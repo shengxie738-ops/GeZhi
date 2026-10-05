@@ -1,15 +1,14 @@
-"""Lazy request-local Work bindings, with real admission deliberately closed.
+"""Lazy request-local bindings for the default-off private task CRU slice.
 
-This source candidate does not inspect a physical schema or certify identity,
-account reuse, MySQL locks/isolation or commit behavior. Neither settings nor a
-recording fact can open its production entrypoints. Actual legacy saves remain
-independent until a real registry observer and live admission are available.
+Named private operations require actual schema/session observations and current
+account locks. Ordinary/chat/package admission remains closed. Account reuse by
+external administrators is an explicit lifecycle limitation, not certified here.
 """
 from contextlib import contextmanager
 from uuid import UUID
 
 from app.repositories.teacher_work import AuthorizedWorkScope, WorkRepositoryError
-from app.schemas.teacher_work import WorkTaskDTO
+from app.schemas.teacher_work import WorkTaskDTO, PrivateTaskSnapshot
 from app.services.teacher_work.authorization import (
     BoundCandidate, CommitReceipt, CurrentAccountFacts, HeldAdmissionReceipt,
     HeldWorkAuthority, NamespaceObservation, OfferingDecision, PolicySnapshot,
@@ -23,25 +22,30 @@ from app.services.teacher_work.run_persistence import (
 from app.services.teacher_work.runs import WorkRunError
 
 
-def _require_live_admission(mode):
-    """Unconditional release blocker; no permissive setting/test contract."""
-    raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
+def _require_live_admission(mode, operation=None):
+    """Only the named private CRU slice; ordinary/later admission stays closed."""
+    expected = {"private_create": "write", "private_read": "read", "private_update": "write"}
+    if operation not in expected or mode != expected[operation]:
+        raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
+    from app.core.config import settings
+    if settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True:
+        raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
 
 
 @contextmanager
-def open_teacher_work_request(authorization, *, mode):
-    """Dedicated owner before identity SQL; currently refuses before imports."""
-    _require_live_admission(mode)
+def open_teacher_work_request(authorization, *, mode, operation=None):
+    """Fresh dedicated lifetime; ordinary operations refuse before DB imports."""
+    _require_live_admission(mode, operation)
     from app.core.database import engine
     from app.services.teaching.sessions import open_teaching_session
     with open_teaching_session(engine) as session:
         yield session
 
 
-def build_request_dependencies(session, *, authorization, mode, clock, new_uuid):
+def build_request_dependencies(session, *, authorization, mode, clock, new_uuid, operation=None):
     """One candidate binding per dedicated caller; never a global Session."""
-    _require_live_admission(mode)
-    return _WorkRequestBindings(session, authorization=authorization, mode=mode, clock=clock, new_uuid=new_uuid)
+    _require_live_admission(mode, operation)
+    return _WorkRequestBindings(session, authorization=authorization, mode=mode, clock=clock, new_uuid=new_uuid, operation=operation)
 
 
 def _namespace_uuid(value):
@@ -76,6 +80,11 @@ class _SessionWorkTransport:
         self.connection = session.connection()
         self.connection_root = self.connection.get_transaction()
         if self.connection.dialect.name != "mysql":
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        # SQLAlchemy's actual join entry must own commit of this physical root;
+        # an externally begun connection would otherwise be rollback-only.
+        joined = self.root._connections.get(self.connection)
+        if joined is None or joined[1] is not self.connection_root or joined[2] is not True:
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
         self._verify()
 
@@ -154,11 +163,11 @@ class _RequestClock:
 class _WorkRequestBindings:
     """Retain the first authority/namespace and finalize without new root locks.
 
-    Only the two hard-closed production factories construct this binding. The
+    Only the two guarded production factories construct this binding. The
     signed subject exists before a first-create WorkActor; the mandatory
     coordinator authorizer establishes the actor later under ordered locks.
     """
-    def __init__(self, session, *, authorization, mode, clock, new_uuid):
+    def __init__(self, session, *, authorization, mode, clock, new_uuid, operation=None):
         from fastapi import HTTPException
         from app.core.security import decode_access_token
         from app.services.current_identity import resolve_current_account
@@ -179,6 +188,10 @@ class _WorkRequestBindings:
             raise WorkAuthorizationError("INVALID_CURRENT_IDENTITY", 401) from None
         signed_subject = claims.get("sub") if type(claims) is dict else None
         self.subject = require_current_teacher_facts(signed_subject, CurrentAccountFacts(current.username, current.role))
+        self.operation = operation
+        if operation is not None:
+            from app.services.teacher_work.private_tasks import require_private_schema
+            require_private_schema(self.transport)
         self.models = SqlWorkModels(WorkTask, OwnerRunLease, PackageVersion, DomainRecord)
         store = JsonStore(session, commit_policy='caller_owned', record_model=DomainRecord)
         self.repository = build_sql_repository(session, models=self.models, draft_store=store,
@@ -238,6 +251,8 @@ class _WorkRequestBindings:
         from app.services.current_identity import load_current_account
         self.transport._verify()
         if subject != self.subject:
+            raise WorkAuthorizationError("NOT_FOUND", 404)
+        if self.operation is not None and (offering_id is not None or institution_id is not None):
             raise WorkAuthorizationError("NOT_FOUND", 404)
         requested = (offering_id, institution_id)
         if self._authority_started:
@@ -328,13 +343,22 @@ class _WorkRequestBindings:
             if self.transport.uow is not self.repository.uow:
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
             self.repository.uow.assert_healthy()
+            if self.operation is not None:
+                from app.services.teacher_work.private_tasks import require_private_schema
+                _require_live_admission(self.mode, self.operation)
+                if type(value) is not PrivateTaskSnapshot:
+                    raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+                require_private_schema(self.transport)
             if mode != self.mode or self._held is None or self._actor is None or self._namespace is None or not isinstance(task, WorkTaskDTO):
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
             if value is not None:
-                if (type(value) not in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
+                if (type(value) not in (PrivateTaskSnapshot, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
                         or value.task != task):
                     raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
-                value.__post_init__()
+                if type(value) is PrivateTaskSnapshot:
+                    PrivateTaskSnapshot.model_validate(value.model_dump())
+                else:
+                    value.__post_init__()
             context = authorize_task(self._actor, task, self._decision)
             if type(value) in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation) and value.context != context:
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
@@ -366,12 +390,47 @@ class _WorkRequestBindings:
     def finish_read(self, task):
         return self._finish(task, "read")
 
+    def finish_private_snapshot(self, value, *, mode):
+        if type(value) is not PrivateTaskSnapshot or self.operation not in ("private_create", "private_read", "private_update"):
+            self._cleanup()
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        return self._finish(value.task, mode, value=value)
+
+    def finish_private_capabilities(self):
+        from app.schemas.teacher_work import WorkCapabilities, PrivateTaskCapabilities
+        from app.services.current_identity import load_current_account
+        from app.services.teacher_work.private_tasks import require_private_schema
+        if self._finished or self.mode != "read" or self.operation != "private_read":
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        self._finished = True
+        try:
+            self.transport._healthy()
+            _require_live_admission(self.mode, self.operation)
+            account = load_current_account(self.session, self.subject, lock=True)
+            require_current_teacher_facts(self.subject, CurrentAccountFacts(account.username, account.role))
+            require_private_schema(self.transport)
+            if self.transport.has_pending_writes():
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            result = WorkCapabilities(chat=False, task_write=True, generate=False, storage=False,
+                structural_preview=False, private_tasks=PrivateTaskCapabilities(create=True, read=True, update=True),
+                reason_pairs=tuple((name, "private_teacher_work_only") for name in ("chat", "generate", "storage", "structural_preview"))
+                    + (("rendered_preview", "rendered_preview_unsupported"), ("publish", "private_teacher_work_only")))
+            self.transport.rollback()
+            self.transport.close()
+            return result
+        except Exception:
+            self._cleanup()
+            raise
+
     def finish_chat_outcome(self, value, *, mode):
         """Finalize only exact scope-bound chat candidates on this fresh root.
 
         No assembly, provider, recovery authorizer or generic value finalizer is
         installed. The candidate itself is never a committed/authorization flag.
         """
+        if self.operation is not None:
+            self._cleanup()
+            raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
         if self._finished:
             raise WorkAuthorizationError("REQUEST_FINISHED", 503)
         try:

@@ -105,13 +105,28 @@ def _bootstrap_source_contract(tree, binding):
             "BoundCandidate", "TeacherWorkRequestOwner", "authorize_task"} <= names, "production chat finalization must retain exact candidate/owner binding"
     guard = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_require_live_admission")
     statements = [node for node in guard.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))]
-    assert len(statements) == 1 and isinstance(statements[0], ast.Raise), "production live admission must remain unconditional"
-    assert "TEACHER_WORK_LIVE_GATES_UNVERIFIED" in ast.unparse(statements[0])
+    assert ast.literal_eval(statements[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write"}
+    assert ast.unparse(statements[1].test) == "operation not in expected or mode != expected[operation]"
+    assert isinstance(statements[1].body[0], ast.Raise), "ordinary/chat admission must remain closed"
+    def rejection(branch):
+        assert not branch.orelse and len(branch.body) == 1 and isinstance(branch.body[0], ast.Raise)
+        assert ast.unparse(branch.body[0]) == "raise WorkAuthorizationError('TEACHER_WORK_LIVE_GATES_UNVERIFIED', 503)"
+    rejection(statements[1])
+    assert guard.args.defaults[0].value is None
+    assert isinstance(statements[-1], ast.If) and ast.unparse(statements[-1].test) == "settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True"
+    rejection(statements[-1])
+    first_chat = next(node for node in finalizer.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)))
+    assert isinstance(first_chat, ast.If) and ast.unparse(first_chat.test) == "self.operation is not None"
+    assert not first_chat.orelse and len(first_chat.body) == 2
+    assert ast.unparse(first_chat.body[0]) == "self._cleanup()"
+    assert isinstance(first_chat.body[1], ast.Raise)
+    assert ast.unparse(first_chat.body[1]) == "raise WorkAuthorizationError('TEACHER_WORK_LIVE_GATES_UNVERIFIED', 503)"
     for factory_name in ("open_teacher_work_request", "build_request_dependencies"):
         factory = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == factory_name)
         first = next(node for node in factory.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)))
         assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
         assert ast.unparse(first.value.func) == "_require_live_admission", "production factory must refuse before setup"
+        assert [ast.unparse(arg) for arg in first.value.args] == ["mode", "operation"] and not first.value.keywords
     closed = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "_ClosedLaterOperations")
     for method in (node for node in closed.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
         assert len(method.body) == 1 and isinstance(method.body[0], ast.Raise), "later production operations must remain unavailable"

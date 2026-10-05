@@ -297,6 +297,37 @@ class WorkTaskDTO(FrozenDTO):
         return self
 
 
+class PrivateWorkingSnapshot(FrozenDTO):
+    requirements: Annotated[str, Field(max_length=4000)]
+    resource_ids: Annotated[tuple[IDText, ...], BeforeValidator(_array), Field(min_length=1, max_length=10)]
+    needs_normalization_fields: Annotated[tuple[Annotated[str, Field(min_length=1, max_length=255,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[0-9]+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[[0-9]+\])?)*$")], ...], BeforeValidator(_array), Field(max_length=1000)]
+
+    @model_validator(mode="after")
+    def distinct_resources(self):
+        if len(set(self.resource_ids)) != len(self.resource_ids):
+            raise ValueError("distinct resource IDs required")
+        return self
+
+
+class PrivateTaskSnapshot(FrozenDTO):
+    """Full internal authorization anchor, plus an explicit public projection."""
+    task: WorkTaskDTO
+    working: PrivateWorkingSnapshot
+
+    @model_validator(mode="after")
+    def private_scope(self):
+        if self.task.institution_id is not None or self.task.offering_id is not None:
+            raise ValueError("private task required")
+        return self
+
+    def public_data(self) -> dict:
+        names = {"task_id", "title", "topic", "audience", "duration_minutes", "target_slide_count",
+            "input_revision", "working_revision", "created_at", "updated_at"}
+        return {**self.task.model_dump(mode="json", include=names), "scope": "private",
+            "working": self.working.model_dump(mode="json")}
+
+
 class WorkMessageDTO(FrozenDTO):
     message_id: UUID
     task_id: UUID
@@ -504,6 +535,12 @@ class RevisionProposal(FrozenDTO):
     evidence_refs: UUIDRefs = ()
 
 
+class PrivateTaskCapabilities(FrozenDTO):
+    create: bool = False
+    read: bool = False
+    update: bool = False
+
+
 class WorkCapabilities(FrozenDTO):
     chat: bool
     task_write: bool
@@ -512,6 +549,7 @@ class WorkCapabilities(FrozenDTO):
     structural_preview: bool
     rendered_preview: Literal[False] = False
     publish: Literal[False] = False
+    private_tasks: PrivateTaskCapabilities = Field(default_factory=PrivateTaskCapabilities)
     reason_pairs: tuple[tuple[str, str], ...] = Field(default=(), exclude=True, repr=False)
 
     @computed_field

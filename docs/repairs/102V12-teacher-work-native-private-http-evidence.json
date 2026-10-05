@@ -1,0 +1,604 @@
+{
+  "baseline": "8c811c9d14c02da3e3fe456f52862fd06bffcdc1",
+  "branch": "102V12",
+  "main_unchanged": "1718a66b5495ff75e0959b051552bfb7a2e997ae",
+  "native_runs": [
+    {
+      "label": "private-http-red",
+      "evidence_directory": "/tmp/gezhi-tw-native-15vtjbp9",
+      "summary": "1 warning, 1 error in 23.17s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "c97d1238-c10c-11f1-b1ef-172160805e59",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-b4ba3dbf95724b288f97120ae49c1fb7",
+        "container_id": "465eed388ec64f5ca59940a108672cb445216c894d65fd18300633a77ff3759b",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-feature-red",
+      "evidence_directory": "/tmp/gezhi-tw-native-829222hp",
+      "summary": "1 failed, 1 warning in 25.78s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "12ce70f4-c10d-11f1-b9c8-759aa25deb84",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-63b1e3e4544c4053b9f184501a8558b2",
+        "container_id": "636847e8b9afc1f4fc6b4e9114f658fa5c93aec7cb1fd723a47ca55a24136e7b",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-first-full",
+      "evidence_directory": "/tmp/gezhi-tw-native-enxa34nc",
+      "summary": "9 failed, 1 warning in 31.50s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "c55bf167-c10d-11f1-b603-48e4a0736291",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-7fbb0333e9d74f4dbca6153b49294b4f",
+        "container_id": "d3dfe361bb87dc02b74e91795f3feae4a017cad187977743c1e7703a054cf5cf",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-session-probe",
+      "evidence_directory": "/tmp/gezhi-tw-native-zpv1k5ej",
+      "summary": "1 failed, 1 warning in 28.13s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "f7b2a0b1-c10d-11f1-87c9-1e3ac942efe7",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-cde43e688a1840208e7053287e80cc68",
+        "container_id": "acf4e45640d210de78ab23c5e2b892a1e45d83467afd46e0f3a7f69f1fd6b4a8",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-second-full",
+      "evidence_directory": "/tmp/gezhi-tw-native-t6nttmpd",
+      "summary": "9 failed, 1 passed, 1 warning in 37.92s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "383a8e3e-c10e-11f1-b3cf-2e7bdee7ece8",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-b798115623914e5ba057fb480e43e6e6",
+        "container_id": "6d9a041d9000d22d23c80506f45cf925097c14dcd3fd58dbadf8107da748d32b",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-root-probe-green",
+      "evidence_directory": "/tmp/gezhi-tw-native-fs4pdtc0",
+      "summary": "2 passed, 1 warning in 27.06s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "94efc75f-c10e-11f1-b767-5928bb34d17f",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-538dc79817af4df9abfb2fcefe3e008d",
+        "container_id": "64ea58744af3e0176fa748bf71cb435840496cb16f91b1338ede3ed77d94bf8d",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-third-full",
+      "evidence_directory": "/tmp/gezhi-tw-native-jputup69",
+      "summary": "10 passed, 1 warning in 42.46s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "d279e8ed-c10e-11f1-8e29-6a6bdd10b766",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c2d78c5628de463eb20df5348fb19927",
+        "container_id": "67d3a452a5dc1b1fe37d18210b07fd91b85cd410aca83222468dd871ae479ef7",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-fourth-full",
+      "evidence_directory": "/tmp/gezhi-tw-native-p8o5lbg2",
+      "summary": "12 passed, 1 warning in 42.63s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "0a647704-c10f-11f1-9803-df44b6c3af24",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-4b25ea61648346f1b719484cedc8800e",
+        "container_id": "8cb386a84e01d70b497e5ad1bfaa7d7ed57d38873a29330928e7a5276c8961b9",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-frozen-wire-red",
+      "evidence_directory": "/tmp/gezhi-tw-native-q5a_fwlf",
+      "summary": "1 failed, 11 deselected, 1 warning in 25.84s",
+      "command": "PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_private_http.py -k capabilities",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "cdbf8fca-c10f-11f1-8b28-45d86e9bbde5",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-5200ea4272614ef88b841b7068939c00",
+        "container_id": "b9b7f269a895042bab17d87dc01d04a1de5c5878061c98034e9c6b1e0cbd49fc",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "captured tools.write_stdin output; no original tee log"
+    },
+    {
+      "label": "private-http-frozen-wire-final",
+      "evidence_directory": "/tmp/gezhi-tw-native-wbmn595n",
+      "summary": "12 passed, 1 warning in 38.70s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "f6616fc7-c10f-11f1-a9c3-b598da7ee913",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-03d3c41d08574841a87cb57c6a51515d",
+        "container_id": "d240cd15a9ae822dbb11cad32ea90c3ad59a1aa3ad6185a82d90c863d8a78db9",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-collation-red",
+      "evidence_directory": "/tmp/gezhi-tw-native-xkv01tx3",
+      "summary": "1 failed, 12 deselected, 1 warning in 34.42s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "79c45219-c110-11f1-ad08-db336c84520f",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c0a267a87c7943edb643597b8b55d924",
+        "container_id": "bc466ff08c4d7df077faf1ab4b19df11b8c51ea36d1072b444629e7593831f1b",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-collation-green-native",
+      "evidence_directory": "/tmp/gezhi-tw-native-y2tpmhpp",
+      "summary": "13 passed, 1 warning in 53.02s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "a4c8976d-c110-11f1-a633-8aec044b6e44",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-423df3d3ac23481b963d83a82f6235d3",
+        "container_id": "e0bb58d768ed342b4b2ecfee425935f26d04a7ca1b32b16afee1668ba79ba572",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-participant-engines-red",
+      "evidence_directory": "/tmp/gezhi-tw-native-4fjhkn75",
+      "summary": "2 failed, 13 deselected, 1 warning in 32.25s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "61094732-c111-11f1-8767-192778e618c3",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-cb7e8d6f1e504584b943a13c603534f4",
+        "container_id": "5afeee6144ce79314edf1ec3ee287e87c0e42f36dc1d672965a9cfe4deeb3044",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    },
+    {
+      "label": "private-http-reviewed-final-native",
+      "evidence_directory": "/tmp/gezhi-tw-native-gjnn8hia",
+      "summary": "15 passed, 1 warning in 56.63s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "8a9da7a2-c111-11f1-8b58-48e39c61143f",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-eb3a7b3e9eeb4283a815e1c6fce5faed",
+        "container_id": "44c40bf44b40493bf7c9845690e754fa82585984d81a8a4416c73d03ee150d4c",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      },
+      "stdout_origin": "tee log"
+    }
+  ],
+  "native_server_count": 14,
+  "final_native_private_http_cases": 15,
+  "final_native_result": "15 passed, 1 warning in 56.63s",
+  "ordinary_regression": "139 passed in 5.92s",
+  "actual_request_session": {
+    "identity": {
+      "schema_name": "tw_native_92aab227ccef4dd7bbabe63146ba2734",
+      "server_uuid": "8a9da7a2-c111-11f1-8b58-48e39c61143f",
+      "datadir": "/var/lib/mysql/",
+      "socket": "/run/gezhi-native/mysql.sock"
+    },
+    "connection_id": 77,
+    "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+    "foreign_key_checks": 1,
+    "unique_checks": 1,
+    "isolation": "READ-COMMITTED",
+    "autocommit": 0,
+    "server_status": 1,
+    "server_status_in_trans": true
+  },
+  "observed_legacy_race": {
+    "database": "tw_native_b707163a400b4a628dce0b3dc43eb656",
+    "connection_ids": {
+      "winner": 189,
+      "loser": 190
+    },
+    "observed_lock_wait": [
+      "user_accounts",
+      190,
+      189
+    ],
+    "lock_order": [
+      [
+        189,
+        "user_accounts"
+      ],
+      [
+        190,
+        "user_accounts"
+      ],
+      [
+        189,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        189,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        189,
+        "domain_records"
+      ],
+      [
+        189,
+        "teacher_work_tasks"
+      ],
+      [
+        189,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        189,
+        "domain_records"
+      ],
+      [
+        189,
+        "teacher_work_tasks"
+      ],
+      [
+        189,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        190,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        190,
+        "domain_records"
+      ],
+      [
+        190,
+        "teacher_work_tasks"
+      ],
+      [
+        193,
+        "user_accounts"
+      ],
+      [
+        193,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        193,
+        "teacher_work_owner_run_leases"
+      ],
+      [
+        193,
+        "domain_records"
+      ],
+      [
+        193,
+        "teacher_work_tasks"
+      ],
+      [
+        193,
+        "teacher_work_owner_run_leases"
+      ]
+    ],
+    "work_status": 200,
+    "legacy_status": 409
+  },
+  "actual_capabilities_envelope": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "chat": false,
+      "task_write": true,
+      "generate": false,
+      "storage": false,
+      "structural_preview": false,
+      "rendered_preview": false,
+      "publish": false,
+      "private_tasks": {
+        "create": true,
+        "read": true,
+        "update": true
+      },
+      "reasons": {
+        "chat": "private_teacher_work_only",
+        "generate": "private_teacher_work_only",
+        "storage": "private_teacher_work_only",
+        "structural_preview": "private_teacher_work_only",
+        "rendered_preview": "rendered_preview_unsupported",
+        "publish": "private_teacher_work_only"
+      }
+    }
+  },
+  "public_contract_fixture": {
+    "path": "backend/tests/fixtures/teacher_work_private_http_contract.native.json",
+    "sha256": "169233d98d113f2f1f9a1aa875fb9abf19bcf7e15a9ee248726f10f4d15e7290",
+    "captured_from_native_run": true,
+    "requires_additional_native_run": false
+  },
+  "normal_discovery_native_imports": false,
+  "source_sha256": {
+    "backend/app/api/endpoints/teacher_work.py": "74cd99628a0c300d186650883eac5e6294337a1a3bba788e758142b7d5455251",
+    "backend/app/api/endpoints/teacher_lesson_prep.py": "533bb327d67b49d89b848d73d33cdd8d65cde64fbe8e34aa314a53c3f9fe4a47",
+    "backend/app/core/config.py": "9f83b5c3dacf13f98771a0a21085e698e252e658bb6d59907a3d190753d05a2c",
+    "backend/app/core/database.py": "2f1f99450353a245b198282ee2541e5dd84e891462db41d218ff691d8e41ae18",
+    "backend/app/core/security.py": "9e2e19b6b30f78f9198b988a18f81495345f59901aececfd21a0212bf86597f3",
+    "backend/app/models/domain_record.py": "0211fdb4bb54d2b1ce81f99ab4440a3d44f5982797bf0380e7de18047b25b88f",
+    "backend/app/models/user_account.py": "7c5542abfa43e8e8d451354c7b4ead4bdbc92d4adc1d5fc6179324a5f2649c98",
+    "backend/app/models/teacher_work.py": "013ffd8518121722afc6b8954bf452a6b72905fc9aa54389d87d5d94baab4128",
+    "backend/app/repositories/teacher_work.py": "0242558d8075cfb354e29011bbf52e88eaa080bf1285e9287253af5bfe073999",
+    "backend/app/repositories/teacher_work_sql.py": "a5d792cf2ec132d1a2eb5f956396515c830819b52a3f09c20a4fe779cec52ad0",
+    "backend/app/repositories/json_store.py": "bba8a5159870bcffcf1b7970770f64d3691388aa9d326585edbed311c2dde602",
+    "backend/app/schemas/teacher_work.py": "e2d3f49e495245cdd2ca4bde9d4870befc29f2987449f2df3408d534baf986cc",
+    "backend/app/services/current_identity.py": "18fbd13380d0d87771e1a11b7b531473d095177562de7abf71480a3dbdb30ff5",
+    "backend/app/services/teaching/sessions.py": "1fecfcdf08225c918047587d9e87f4dd33b88483609116f631b06c18bdb4e071",
+    "backend/app/services/teacher_work/bootstrap.py": "5572a228809b518e41929556abcc6684abb6585d1c36a6c11b49197aeb31aa7a",
+    "backend/app/services/teacher_work/private_tasks.py": "41640d2d6f66c3001d60e5445bc30b212689e4fab54a48f257cd5071d1fdf719",
+    "backend/app/services/teacher_work/authorization.py": "ad0c25ccc783d72ada399e61b28bf5ecef2cc6fa9e2d88007e9ab88f75fdbbbb",
+    "backend/app/services/teacher_work/schema_mysql.py": "0f91a28103050dfe3ea8ada4565b7a3f3605a0f5e13087c5c70a74e6c1481319",
+    "backend/app/services/teacher_lesson_prep/service.py": "0a1adac356e2033e2ab908957c9c66b3035ef4185275c9406f391fab1354ef9b",
+    "backend/tests/native_teacher_work_private_http.py": "08d4b5c60554d4fb58794890ca2298ffbaf33ec1eba6b914bdc37562ce338578",
+    "backend/tests/native_teacher_work_mysql.py": "62aec5ac45607df371293fd80de1a11b77dd8ab7c6ac185cecdfcccc675ec8ee",
+    "backend/tests/test_teacher_work_private_snapshots.py": "0081b4eef33f9b631238f17fb449e5b9f7f3aca4f14b41b70c396c1aae7f9988",
+    "backend/tests/test_teacher_work_wiring.py": "757be3c520abf3e832fbe1e4a050e18f4f5600d32c87631435404125fe862a78",
+    "backend/tests/test_teacher_work_legacy.py": "335a3d578b45253ba4389224b8317f4cabe62d298c2f5a84f22bcea30969c947",
+    "backend/tests/test_teacher_work_run_persistence.py": "8adad5572f4ca17db7a3455d7017814277e0f03160980c3c58aebdc3fcbf09cd",
+    "backend/tests/test_teacher_work_chat_execution.py": "c63dc95a04979e0ee9bc61ed31a5396728329d110199378f23454737c9670053",
+    "backend/tests/test_teacher_work_chat_execution_regressions.py": "d9e99bd01dc60262b1d80f302b45d942e3d9420109eba3ffac5f41f3c6bb97fb",
+    "backend/tests/fixtures/teacher_work_private_http_contract.native.json": "169233d98d113f2f1f9a1aa875fb9abf19bcf7e15a9ee248726f10f4d15e7290",
+    "backend/tests/requirements-native-teacher-work.txt": "d4ec473efd6d17cd7d0eff284d71db18e245b929c4b55d9b3afc464702992dd2",
+    "backend/migrations/v20261005_teacher_work_mysql.py": "457f845da0e329cfef01bd9a519420c97d9d6015d61e8a118e3a10a89b50ba8b"
+  },
+  "original_chat_runtime_ast_sha256": "3d345760c79c1ae7b35f68b8742c5d6208ada68b7ecdb903e2578c5975530209",
+  "independent_review": {
+    "remaining_blockers": [],
+    "corrected": [
+      "Use both request and actual locked draft keys to protect case-insensitive legacy aliases",
+      "Observe persistent InnoDB user_accounts/domain_records before claiming locks and rollback",
+      "Strengthen source gate branches/factory forwarding; five RED/GREEN mutation cases"
+    ]
+  },
+  "final_docker_inventory": {
+    "containers": [],
+    "volumes": []
+  },
+  "flags": {
+    "TEACHER_WORK_PRIVATE_TASKS_ENABLED_default": false,
+    "ordinary_chat_package_admission": "TEACHER_WORK_LIVE_GATES_UNVERIFIED"
+  },
+  "ci": "Exact pushed-commit Actions/check-runs/combined status retained separately in archive; absence is not passing.",
+  "known_warning": "Existing Settings class Config PydanticDeprecatedSince20 on real config import",
+  "scope_limits": [
+    "Actual authentication, request owner, private CRU only on disposable synthetic data",
+    "No overall application/bootstrap app.main, browser/mobile, production database or external AI",
+    "COMMIT reply loss is a controlled driver exception after actual original COMMIT, not real socket loss",
+    "One observed legacy-save/Work-update row-lock race, not general concurrent acceptance",
+    "No external-admin same-username account incarnation guarantee",
+    "No deployed/enabled feature, general chat/package/storage/preview/publish/provider acceptance"
+  ]
+}

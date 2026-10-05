@@ -122,7 +122,16 @@ def save_lesson_prep_draft(
     db: Session = Depends(get_db),
 ):
     teacher = _teacher(authorization, db)
-    return ok(lesson_prep_service.save_draft(db, teacher, payload))
+    from app.services.teacher_work.authorization import WorkAuthorizationError
+    try:
+        return ok(lesson_prep_service.save_draft(db, teacher, payload))
+    except WorkAuthorizationError as error:
+        return JSONResponse(status_code=error.status_code,
+            content={"code": error.status_code, "message": error.code, "data": None})
+    except HTTPException:
+        raise
+    except Exception:
+        return JSONResponse(status_code=503, content={"code": 503, "message": "LEGACY_SAVE_UNAVAILABLE", "data": None})
 
 
 @router.get("/teacher/lesson-prep/drafts")

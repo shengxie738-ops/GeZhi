@@ -1,0 +1,122 @@
+{
+  "provenance": {
+    "origin": "captured_native_asgi_mysql_responses",
+    "synthetic_data_only": true,
+    "responses_handwritten": false,
+    "mysql_version": "8.4.10",
+    "native_test_file": "backend/tests/native_teacher_work_private_http.py",
+    "native_test_selectors": [
+      "test_private_capabilities_and_get_are_read_only_and_default_closed",
+      "test_private_http_create_read_patch_persists_on_new_connection"
+    ],
+    "captured_at_utc": "2026-10-05T23:07:43.092309Z",
+    "source_records_sha256": {
+      "test_private_capabilities_and_get_are_read_only_and_default_closed": "39a51264fd502932e02d29e80257a2c16dc5d6ff5527504f92a0cdae53fd923e",
+      "test_private_http_create_read_patch_persists_on_new_connection": "6c35675e80004e8541633d5f4b386529b0dcd8c52aff95beee59f0d1b3c6abae"
+    }
+  },
+  "capabilities": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "chat": false,
+      "task_write": true,
+      "generate": false,
+      "storage": false,
+      "structural_preview": false,
+      "rendered_preview": false,
+      "publish": false,
+      "private_tasks": {
+        "create": true,
+        "read": true,
+        "update": true
+      },
+      "reasons": {
+        "chat": "private_teacher_work_only",
+        "generate": "private_teacher_work_only",
+        "storage": "private_teacher_work_only",
+        "structural_preview": "private_teacher_work_only",
+        "rendered_preview": "rendered_preview_unsupported",
+        "publish": "private_teacher_work_only"
+      }
+    }
+  },
+  "create": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "task_id": "f63fd947-8994-46ca-85fb-26a59c2c332f",
+      "title": "合成标题",
+      "topic": "合成主题",
+      "audience": "合成对象",
+      "duration_minutes": 45,
+      "target_slide_count": 8,
+      "input_revision": 1,
+      "working_revision": 1,
+      "created_at": "2026-10-05T23:07:43.092309Z",
+      "updated_at": "2026-10-05T23:07:43.092309Z",
+      "scope": "private",
+      "working": {
+        "requirements": "",
+        "resource_ids": [
+          "synthetic-resource"
+        ],
+        "needs_normalization_fields": [
+          "teaching_flow"
+        ]
+      }
+    }
+  },
+  "get": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "task_id": "f63fd947-8994-46ca-85fb-26a59c2c332f",
+      "title": "合成标题",
+      "topic": "合成主题",
+      "audience": "合成对象",
+      "duration_minutes": 45,
+      "target_slide_count": 8,
+      "input_revision": 1,
+      "working_revision": 1,
+      "created_at": "2026-10-05T23:07:43.092309Z",
+      "updated_at": "2026-10-05T23:07:43.092309Z",
+      "scope": "private",
+      "working": {
+        "requirements": "",
+        "resource_ids": [
+          "synthetic-resource"
+        ],
+        "needs_normalization_fields": [
+          "teaching_flow"
+        ]
+      }
+    }
+  },
+  "patch": {
+    "code": 200,
+    "message": "ok",
+    "data": {
+      "task_id": "f63fd947-8994-46ca-85fb-26a59c2c332f",
+      "title": "合成标题",
+      "topic": "合成主题",
+      "audience": "合成对象",
+      "duration_minutes": 45,
+      "target_slide_count": 9,
+      "input_revision": 2,
+      "working_revision": 2,
+      "created_at": "2026-10-05T23:07:43.092309Z",
+      "updated_at": "2026-10-05T23:07:43.299252Z",
+      "scope": "private",
+      "working": {
+        "requirements": "合成编辑",
+        "resource_ids": [
+          "synthetic-next"
+        ],
+        "needs_normalization_fields": [
+          "teaching_flow"
+        ]
+      }
+    }
+  }
+}

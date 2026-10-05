@@ -315,6 +315,18 @@ class TeacherWorkRepository:
         row, _draft = self._locked_task(owner, task_id)
         return row.task
 
+    def get_private_snapshot(self, owner: str, task_id: UUID):
+        from app.schemas.teacher_work import PrivateTaskSnapshot, PrivateWorkingSnapshot
+        row, draft = self._locked_task(owner, task_id)
+        metadata = self._metadata(draft.payload)
+        try:
+            return PrivateTaskSnapshot(task=WorkTaskDTO.model_validate(row.task.model_dump()),
+                working=PrivateWorkingSnapshot(requirements=metadata["requirements"],
+                    resource_ids=deepcopy(draft.payload["resource_ids"]),
+                    needs_normalization_fields=deepcopy(metadata["needs_normalization_fields"])))
+        except (KeyError, TypeError, ValueError):
+            raise WorkRepositoryError("DRAFT_METADATA_UNAVAILABLE", 503) from None
+
     @staticmethod
     def _metadata(payload: dict) -> dict:
         metadata = payload.get("teacher_work")

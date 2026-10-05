@@ -10,12 +10,16 @@ writing this file. A separate parent-reviewed finite runtime release is required
 from __future__ import annotations
 
 from copy import deepcopy
+import ast
 import hashlib
 import importlib
 from pathlib import Path
 
 
-SUPPORT_SHA = "4e4532ae727059b3202c0e23a1869e1c3cf91dba1b27fa4776b779e674957d3f"
+# Only the source-only bootstrap guard contract was updated for private CRU.
+# The original four selectors and every runtime fixture remain pinned below.
+SUPPORT_SHA = "c63dc95a04979e0ee9bc61ed31a5396728329d110199378f23454737c9670053"
+RUNTIME_AST_SHA = "3d345760c79c1ae7b35f68b8742c5d6208ada68b7ecdb903e2578c5975530209"
 
 
 def _support():
@@ -25,6 +29,9 @@ def _support():
     path = Path(__file__).with_name("test_teacher_work_chat_execution.py")
     assert path.is_file(), "Task4b2B frozen execution fixture is missing"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == SUPPORT_SHA, "Task4b2B original four-selector fixture changed"
+    tree = ast.parse(path.read_bytes())
+    tree.body = [n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) or n.name != "_bootstrap_source_contract"]
+    assert hashlib.sha256(ast.dump(tree, include_attributes=False).encode()).hexdigest() == RUNTIME_AST_SHA
     support = importlib.import_module("tests.test_teacher_work_chat_execution")
     assert Path(support.__file__).resolve() == path.resolve(), "Task4b2B fixture import resolved outside the pinned test package"
     return support._load(), support

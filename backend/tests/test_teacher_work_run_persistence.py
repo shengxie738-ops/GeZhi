@@ -372,8 +372,18 @@ def test_contract_slice_keeps_runtime_gates_closed():
     bootstrap = _tree("app/services/teacher_work/bootstrap.py")
     guard = next(item for item in bootstrap.body if isinstance(item, ast.FunctionDef) and item.name == "_require_live_admission")
     body = guard.body[1:] if isinstance(guard.body[0], ast.Expr) and isinstance(guard.body[0].value, ast.Constant) else guard.body
-    assert len(body) == 1 and isinstance(body[0], ast.Raise)
-    assert body[0].exc.args[0].value == "TEACHER_WORK_LIVE_GATES_UNVERIFIED" and body[0].exc.args[1].value == 503
+    assert ast.literal_eval(body[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write"}
+    assert ast.unparse(body[1].test) == "operation not in expected or mode != expected[operation]"
+    assert isinstance(body[1].body[0], ast.Raise)
+    assert body[1].body[0].exc.args[0].value == "TEACHER_WORK_LIVE_GATES_UNVERIFIED" and body[1].body[0].exc.args[1].value == 503
+    assert guard.args.defaults[0].value is None
+    assert "settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True" in ast.unparse(guard)
+    config = _class(_tree("app/core/config.py"), "Settings")
+    switch = next(n for n in config.body if isinstance(n, ast.AnnAssign) and n.target.id == "TEACHER_WORK_PRIVATE_TASKS_ENABLED")
+    assert switch.value.value is False
+    bindings = _class(bootstrap, "_WorkRequestBindings")
+    finish_chat = next(n for n in bindings.body if isinstance(n, ast.FunctionDef) and n.name == "finish_chat_outcome")
+    assert "self.operation is not None" in ast.unparse(finish_chat) and "TEACHER_WORK_LIVE_GATES_UNVERIFIED" in ast.unparse(finish_chat)
     closed = _class(bootstrap, "_ClosedLaterOperations")
     expected_errors = {"complete": "WORK_AI_UNAVAILABLE", "collect": "WORK_EVIDENCE_UNAVAILABLE",
                        "read_verified": "WORK_ARTIFACT_UNAVAILABLE", "submit": "WORK_EXECUTION_UNAVAILABLE"}

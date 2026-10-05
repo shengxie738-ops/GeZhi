@@ -1,4 +1,4 @@
-"""Finite T2a pure legacy helper checks; old service integration is deferred."""
+"""Finite pure legacy helpers and source boundaries for the native save guard."""
 from __future__ import annotations
 
 import ast
@@ -106,14 +106,20 @@ def test_unlinked_legacy_save_preserves_contract():
     assert get_result == original and list_result == [original] and stored == original
 
 
-def test_legacy_service_is_unchanged_and_unwired():
+def test_legacy_service_only_adds_the_prewrite_native_guard():
     path = BACKEND / "app/services/teacher_lesson_prep/service.py"
     raw = path.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == LEGACY_SERVICE_SHA256
+    addition = b'        from app.services.teacher_work.private_tasks import prepare_legacy_save\n        prepare_legacy_save(db, teacher_id, draft_id)\n'
+    assert raw.count(addition) == 1
+    assert hashlib.sha256(raw.replace(addition, b"", 1)).hexdigest() == LEGACY_SERVICE_SHA256
     tree = ast.parse(raw.decode("utf-8"))
     imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     assert "app.services.teacher_work.legacy" not in imports
     service = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "TeacherLessonPrepService")
+    save = next(node for node in service.body if isinstance(node, ast.FunctionDef) and node.name == "save_draft")
+    calls = sorted((node for node in ast.walk(save) if isinstance(node, ast.Call)), key=lambda node: node.lineno)
+    names = [ast.unparse(node.func) for node in calls]
+    assert names.index("prepare_legacy_save") < names.index("store.get_payload") < names.index("store.upsert")
     for name in ("get_draft", "list_drafts"):
         method = next(node for node in service.body if isinstance(node, ast.FunctionDef) and node.name == name)
         calls = [node for node in ast.walk(method) if isinstance(node, ast.Call)]
