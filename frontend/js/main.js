@@ -22,6 +22,7 @@ import TeacherCourseManager from './components/TeacherCourseManager.js';
 import TeacherDashboard from './components/TeacherDashboard.js';
 import TeacherProjectManager from './components/TeacherProjectManager.js?v=20260816_002';
 import TeacherAiLessonPrep from './components/TeacherAiLessonPrep.js';
+import TeacherWork from './components/teacher-work/TeacherWork.js';
 import ForeignLangPage from './components/foreign-lang/ForeignLangPage.js?v=20260824_5';
 import { homeworkApi } from './api/homework.js';
 import { examCenterApi } from './api/examCenter.js';
@@ -44,6 +45,7 @@ import { useDashboard } from './hooks/useDashboard.js';
 import { useStudentNavigationPresentation } from './hooks/useStudentNavigationPresentation.js';
 import { usePlugins } from './hooks/usePlugins.js';
 import { useWorkPresentation } from './hooks/useWorkPresentation.js';
+import { useTeacherWork } from './hooks/useTeacherWork.js';
 import { useCustomModels } from './hooks/useCustomModels.js';
 import { createWorkspaceMessageSender } from './controllers/workspaceSendRouter.js';
 import { resolvePaperHistoryState } from './utils/conversations.js';
@@ -74,6 +76,7 @@ const app = createApp({
         TeacherDashboard,
         TeacherProjectManager,
         TeacherAiLessonPrep,
+        TeacherWork,
         ForeignLangPage,
         TeachingWorkbenchShell,
     },
@@ -121,6 +124,14 @@ const app = createApp({
         const teachingAvailability = teachingWorkbench.availability;
         const teachingTools = computed(() => auth.activeMenus.value.filter(menu => !menu.id.startsWith('teaching-') && !menu.id.startsWith('t_teaching-')));
         const guardedView = computed({ get: () => auth.currentView.value, set: teachingWorkbench.navigateToView });
+        const teacherWork = useTeacherWork({
+            actor: computed(() => auth.authVerified.value ? auth.currentUser.value?.username || null : null),
+            role: auth.currentRole,
+            authEpoch: auth.authEpoch,
+            authVerified: auth.authVerified,
+            currentView: guardedView,
+            renderAllowed: teachingWorkbench.legacyRenderAllowed
+        });
         const studentNavigation = useStudentNavigationPresentation(auth.currentRole, {
             isVisible: () => auth.isLoggedIn.value && auth.authVerified.value && !isTeachingView.value && teachingWorkbench.legacyRenderAllowed.value
         });
@@ -673,6 +684,17 @@ const app = createApp({
             authLoading: auth.authLoading,
             currentRole: auth.currentRole,
             currentView: guardedView,
+            teacherWorkState: teacherWork.state,
+            teacherWorkRetryCapabilities: teacherWork.retryCapabilities,
+            teacherWorkToggleNavigation: teacherWork.toggleNavigation,
+            teacherWorkToggleTaskRail: teacherWork.toggleTaskRail,
+            teacherWorkToggleArtifacts: teacherWork.toggleArtifacts,
+            teacherWorkOpenArtifacts: teacherWork.openArtifacts,
+            teacherWorkCloseArtifacts: teacherWork.closeArtifacts,
+            teacherWorkSetArtifactTab: teacherWork.setArtifactTab,
+            teacherWorkOpenCatalog: teacherWork.openCatalog,
+            teacherWorkCloseCatalog: teacherWork.closeCatalog,
+            teacherWorkUpdateInput: teacherWork.updateInput,
             ...studentNavigation,
             workTaskRailCollapsed: workPresentation.workTaskRailCollapsed,
             toggleWorkTaskRail: workPresentation.toggleWorkTaskRail,
