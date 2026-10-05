@@ -5452,7 +5452,7 @@
                     <!-- 详情底部操作栏 -->
                     <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
                         <button v-if="selectedPluginDetail.canSearchLive" type="button"
-                            @click="closePluginDetail(); openPaperSearchDrawer(selectedPluginDetail)"
+                            @click="openPaperSearchFromDetail()"
                             class="px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
                             <i class="ph ph-lightning text-sm"></i>
                             <span>在线检索试用</span>

@@ -986,6 +986,7 @@ const app = createApp({
             openPluginDetail: pluginsState.openPluginDetail,
             closePluginDetail: pluginsState.closePluginDetail,
             openPaperSearchDrawer: pluginsState.openPaperSearchDrawer,
+            openPaperSearchFromDetail: pluginsState.openPaperSearchFromDetail,
             closePaperSearchDrawer: pluginsState.closePaperSearchDrawer,
             executePaperSearch: pluginsState.executePaperSearch,
             searchFromPaperMode: pluginsState.searchFromPaperMode,

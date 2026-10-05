@@ -194,10 +194,19 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const openPaperSearchDrawer = (plugin) => {
-        activeSearchPlugin.value = plugin;
-        paperSearchQuery.value = '';
-        paperSearchResults.value = [];
-        executePaperSearch('DeepSeek', plugin);
+        const registered = getPluginById(plugin?.id);
+        if (!registered?.canSearchLive || !registered.searchSourceKey) return false;
+        cancelPaperSearch({ reset: true });
+        activeSearchPlugin.value = registered;
+        return true;
+    };
+
+    const openPaperSearchFromDetail = () => {
+        // Capture the selected source before closing its detail panel.
+        const plugin = selectedPluginDetail.value;
+        if (!openPaperSearchDrawer(plugin)) return false;
+        closePluginDetail();
+        return true;
     };
 
     const closePaperSearchDrawer = () => {
@@ -431,6 +440,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         openPluginDetail,
         closePluginDetail,
         openPaperSearchDrawer,
+        openPaperSearchFromDetail,
         closePaperSearchDrawer,
         executePaperSearch,
         cancelPaperSearch,
