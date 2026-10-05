@@ -112,6 +112,38 @@ def test_t3_bootstrap_is_lazy_request_scoped_and_closed():
     assert [(item.arg, item.value.value) for item in statements[-1].value.keywords] == [("confirmed", True)]
 
 
+def test_t3_bootstrap_binds_exact_chat_run_models():
+    tree = _tree(BOOTSTRAP)
+    constructor = _function(_class(tree, "_WorkRequestBindings"), "__init__")
+    calls = [item for item in ast.walk(constructor) if isinstance(item, ast.Call)
+             and _name(item.func) == "build_sql_repository"]
+    assert len(calls) == 1
+    call = calls[0]
+    run_binding = [item.value for item in call.keywords if item.arg == "run_models"]
+    assert len(run_binding) == 1, "request-local SQL repository must bind exact chat run models"
+    binding = run_binding[0]
+    assert isinstance(binding, ast.Call) and _name(binding.func) == "SqlRunModels"
+    assert [_name(item) for item in binding.args] == ["WorkRun", "WorkMessage"]
+    assert not binding.keywords
+    assert [_name(item) for item in call.args] == ["session"]
+    assert [(item.arg, _name(item.value)) for item in call.keywords if item.arg != "run_models"] == [
+        ("models", "self.models"), ("draft_store", "store"),
+        ("authorize_locked", "self.authorize_locked"), ("clock", "clock"),
+        ("new_uuid", "new_uuid"), ("mode", "mode")]
+    expected = {
+        "app.models.teacher_work": {"WorkTask", "OwnerRunLease", "PackageVersion", "WorkRun", "WorkMessage"},
+        "app.repositories.teacher_work_sql": {"SqlWorkModels", "SqlRunModels", "build_sql_repository"},
+    }
+    for module, names in expected.items():
+        imports = [item for item in constructor.body if isinstance(item, ast.ImportFrom) and item.module == module]
+        assert len(imports) == 1
+        assert {item.name for item in imports[0].names} == names
+        assert all(item.asname is None for item in imports[0].names)
+        assert not any(isinstance(item, ast.ImportFrom) and item.module == module for item in tree.body)
+    for name in ("open_teacher_work_request", "build_request_dependencies"):
+        _first_guard(_function(tree, name))
+
+
 def test_t3_read_footprint_export_is_read_only():
     raw, tree = _bytes(WRITES), _tree(WRITES)
     function = _function(tree, "lock_offering_read_context")

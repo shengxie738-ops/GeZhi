@@ -163,9 +163,9 @@ class _WorkRequestBindings:
         from app.core.security import decode_access_token
         from app.services.current_identity import resolve_current_account
         from app.models.domain_record import DomainRecord
-        from app.models.teacher_work import WorkTask, OwnerRunLease, PackageVersion
+        from app.models.teacher_work import WorkTask, OwnerRunLease, PackageVersion, WorkRun, WorkMessage
         from app.repositories.json_store import JsonStore
-        from app.repositories.teacher_work_sql import SqlWorkModels, build_sql_repository
+        from app.repositories.teacher_work_sql import SqlWorkModels, SqlRunModels, build_sql_repository
         if mode not in ("read", "write") or not callable(clock) or not callable(new_uuid):
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
         self.session, self.mode, self.clock, self.new_uuid = session, mode, clock, new_uuid
@@ -182,7 +182,8 @@ class _WorkRequestBindings:
         self.models = SqlWorkModels(WorkTask, OwnerRunLease, PackageVersion, DomainRecord)
         store = JsonStore(session, commit_policy='caller_owned', record_model=DomainRecord)
         self.repository = build_sql_repository(session, models=self.models, draft_store=store,
-            authorize_locked=self.authorize_locked, clock=clock, new_uuid=new_uuid, mode=mode)
+            authorize_locked=self.authorize_locked, clock=clock, new_uuid=new_uuid, mode=mode,
+            run_models=SqlRunModels(WorkRun, WorkMessage))
         self.transport.uow = self.repository.uow
         self.transport._uow = self.repository.uow
         self._held = self._actor = self._namespace = self._context = self._private_account = None
