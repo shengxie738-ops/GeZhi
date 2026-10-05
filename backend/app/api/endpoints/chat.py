@@ -52,6 +52,11 @@ from app.services.agent_workflow import agent_graph, resolve_runtime_model_id, b
 from app.services.chat_context import build_task_messages, task_request_lock, SOURCE_CONTEXT_POLICY
 from app.services.default_agents import get_default_agent_prompt
 from app.services.model_registry import build_chat_model, has_model, list_public_models
+from app.services.student_work_skills import (
+    build_student_work_skill_instructions,
+    classify_student_skill_completion,
+    resolve_student_work_skill,
+)
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
 router = APIRouter()
@@ -63,11 +68,25 @@ def _ensure_self(user_id: str, auth: dict) -> None:
         raise HTTPException(status_code=403, detail="only the account owner may perform this action")
 
 
+def _resolve_student_work_skill(request: ChatRequest) -> str | None:
+    try:
+        return resolve_student_work_skill(
+            request.skill_ids,
+            resolve_agent_mode(request),
+            force_rag=request.force_rag,
+            repository_id=request.repository_id,
+            is_diagnosis=request.is_diagnosis,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _validate_task_identity(request: ChatRequest) -> None:
     if not clean_message_content(request.message).strip():
         raise HTTPException(status_code=422, detail='message must contain non-whitespace text')
     if request.conversation_id is not None and len(request.conversation_id.strip()) > 64:
         raise HTTPException(status_code=422, detail='conversation_id must be at most 64 characters')
+    _resolve_student_work_skill(request)
 
 
 def resolve_agent_mode(request: ChatRequest) -> str:
@@ -101,7 +120,9 @@ def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
     return "agent_tutor"
 
 
-def find_user_custom_model_credentials(db: Session, user_id: str, model_id: str) -> tuple[str, str] | None:
+def find_user_custom_model_credentials(
+    db: Session, user_id: str, model_id: str, *, strict: bool = False,
+) -> tuple[str, str] | None:
     """若当前用户配置了该模型 ID，返回 (base_url, decrypted_api_key)，否则返回 None。"""
     if not user_id or not model_id or not db:
         return None
@@ -113,8 +134,14 @@ def find_user_custom_model_credentials(db: Session, user_id: str, model_id: str)
         )
         for rec in records:
             if isinstance(rec.model_ids, list) and model_id in rec.model_ids:
-                return rec.base_url, rec.get_decrypted_api_key()
+                base_url, api_key = rec.base_url, rec.get_decrypted_api_key()
+                if strict and (not isinstance(base_url, str) or not base_url.strip()
+                               or not isinstance(api_key, str) or not api_key.strip()):
+                    raise ValueError("selected model credentials are unavailable")
+                return base_url, api_key
     except Exception as e:
+        if strict:
+            raise ValueError("selected model credentials are unavailable") from e
         logger.warning(f"[CustomModel] Failed to query user custom models for {user_id}: {e}")
     return None
 
@@ -127,6 +154,7 @@ def build_agent_runtime_config(
     message: str,
     user_id: str | None = None,
     db: Session | None = None,
+    strict_custom_credentials: bool = False,
 ) -> dict:
     agent_id = resolve_request_agent_id(request, agent_mode)
     agent_prompt = request.agent_prompt or get_default_agent_prompt(agent_id)
@@ -138,7 +166,10 @@ def build_agent_runtime_config(
         "agent_prompt": agent_prompt,
     }
     if user_id and db and request.agent_model:
-        creds = find_user_custom_model_credentials(db, user_id, request.agent_model)
+        if strict_custom_credentials:
+            creds = find_user_custom_model_credentials(db, user_id, request.agent_model, strict=True)
+        else:
+            creds = find_user_custom_model_credentials(db, user_id, request.agent_model)
         if creds:
             configurable["custom_model_base_url"] = creds[0]
             configurable["custom_model_api_key"] = creds[1]
@@ -383,6 +414,7 @@ async def chat(request: ChatRequest, auth: dict = Depends(get_auth_payload), db:
 
 
 async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
+    selected_skill = _resolve_student_work_skill(request)
     request.sessionId = auth["sub"]
     request.thread_id = auth["sub"]
 
@@ -411,7 +443,8 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
     
     # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
     should_search_knowledge = (
-        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        selected_skill is None
+        and (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
         and not is_greeting(cleaned_msg)
     )
     if should_search_knowledge:
@@ -443,14 +476,24 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
             f"请结合以上资料，直接且专业地回答用户的问题：{cleaned_msg}"
         )
 
-    config = build_agent_runtime_config(
-        request,
-        thread_id=thread_id,
-        agent_mode=agent_mode,
-        message=user_content,
-        user_id=user_id,
-        db=db,
-    )
+    try:
+        config = build_agent_runtime_config(
+            request,
+            thread_id=thread_id,
+            agent_mode=agent_mode,
+            message=user_content,
+            user_id=user_id,
+            db=db,
+            strict_custom_credentials=bool(selected_skill),
+        )
+    except Exception:
+        if not selected_skill:
+            raise
+        db.rollback()
+        return {"reply": "", "history": [], "error": "model_error",
+                "message": "无法读取所选模型的配置，请检查后重试。", "delivery_status": "failed",
+                "retry_allowed": False,
+                **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
     model_unavailable_notice = ""
     if is_configured_model_unavailable(request, config=config):
         model_unavailable_notice = build_model_unavailable_notice(request.agent_model) + "\n\n"
@@ -463,6 +506,41 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
     # End the read transaction before waiting on a model; the immutable receipt
     # and a later locking current-read protect clear/delete across workers.
     db.rollback()
+
+    if selected_skill:
+        if is_configured_model_unavailable(request, config=config):
+            return {"reply": "", "history": [], "error": "model_unavailable",
+                    "message": MODEL_UNAVAILABLE_MESSAGE, "delivery_status": "failed", "retry_allowed": False,
+                    **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
+        try:
+            response = await get_request_chat_model(config, temperature=0.1).ainvoke([
+                SystemMessage(content=build_student_work_skill_instructions(selected_skill)),
+                SystemMessage(content=SOURCE_CONTEXT_POLICY), *task_messages,
+            ])
+            completion_status = classify_student_skill_completion(getattr(response, 'response_metadata', None))
+            final_reply = strip_reference_source_block(response.content)
+        except Exception:
+            return {"reply": "", "history": [], "error": "model_error",
+                    "message": "学术审阅模型调用失败，请稍后重试或更换模型。",
+                    "delivery_status": "failed", "retry_allowed": False,
+                    **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
+        if completion_status == 'incomplete':
+            return {"reply": "", "history": [], "error": "model_error",
+                    "message": "模型回复未完整结束，审阅未保存，请重试。", "delivery_status": "failed",
+                    "model_completion_status": "incomplete", "retry_allowed": False,
+                    **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
+        if not final_reply.strip():
+            return {"reply": "", "history": [], "error": "empty_response", "delivery_status": "empty",
+                    "retry_allowed": False,
+                    **chat_history_receipt(db, current_record=current_record, saved_reply=None)}
+        if await chat_client_disconnected():
+            return _invalidated_reply('client_disconnected')
+        saved_reply = save_chat_reply_if_current(
+            db, current_record=current_record, content=final_reply, sender_id=get_runtime_agent_id(config),
+        )
+        receipt = chat_history_receipt(db, current_record=current_record, saved_reply=saved_reply)
+        return {"reply": "" if receipt['history_invalidated'] else final_reply, "history": [],
+                "model_completion_status": completion_status, **receipt}
 
     if agent_mode == "rag":
         try:
@@ -749,13 +827,17 @@ async def clear_chat_history_endpoint(
         return {"status": "error", "message": str(e)}
 
 
-def _stream_complete(db, current_record, saved_reply, content, *, status='complete'):
+def _stream_complete(db, current_record, saved_reply, content, *, status='complete', model_completion_status=None):
     receipt = chat_history_receipt(db, current_record=current_record, saved_reply=saved_reply)
     if receipt['history_invalidated']:
         status, content = 'failed', ''
     response_status = ('invalidated' if receipt['history_invalidated'] else
                        {'complete': 'ok', 'empty': 'empty', 'failed': 'error'}[status])
-    return f"data: {json.dumps({'type':'complete', **receipt, 'content':content, 'final_content':content, 'delivery_status':status, 'response_status':response_status, 'retry_allowed':False})}\n\n"
+    result = {'type':'complete', **receipt, 'content':content, 'final_content':content, 'delivery_status':status,
+              'response_status':response_status, 'retry_allowed':False}
+    if model_completion_status is not None:
+        result['model_completion_status'] = model_completion_status
+    return f"data: {json.dumps(result)}\n\n"
 
 
 async def stream_chat_events(request: ChatRequest, db: Session, admission=None):
@@ -771,6 +853,7 @@ async def stream_chat_events(request: ChatRequest, db: Session, admission=None):
 
 
 async def _stream_chat_events_sql(request: ChatRequest, db: Session):
+    selected_skill = _resolve_student_work_skill(request)
     agent_mode = resolve_agent_mode(request)
     user_id = resolve_user_id(request)
     thread_id = resolve_thread_id(request, user_id, agent_mode)
@@ -797,7 +880,8 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
     
     # 知识库检索条件守卫：仅在 RAG 模式或显式指定知识库/强制检索且非寒暄时执行
     should_search_knowledge = (
-        (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
+        selected_skill is None
+        and (agent_mode == "rag" or bool(request.repository_id) or bool(request.force_rag))
         and not is_greeting(cleaned_msg)
     )
     if should_search_knowledge:
@@ -836,14 +920,23 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
 
     full_reply = ""
     saved_reply = None
-    config = build_agent_runtime_config(
-        request,
-        thread_id=thread_id,
-        agent_mode=agent_mode,
-        message=user_content,
-        user_id=user_id,
-        db=db,
-    )
+    try:
+        config = build_agent_runtime_config(
+            request,
+            thread_id=thread_id,
+            agent_mode=agent_mode,
+            message=user_content,
+            user_id=user_id,
+            db=db,
+            strict_custom_credentials=bool(selected_skill),
+        )
+    except Exception:
+        if not selected_skill:
+            raise
+        db.rollback()
+        yield f"data: {json.dumps({'type': 'error', 'code': 'model_error', 'message': '无法读取所选模型的配置，请检查后重试。'})}\n\n"
+        yield _stream_complete(db, current_record, None, '', status='failed')
+        return
     if is_configured_model_unavailable(request, config=config):
         yield build_model_unavailable_event(request.agent_model)
 
@@ -855,6 +948,45 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
     # End the read transaction before waiting on a model; the immutable receipt
     # and a later locking current-read protect clear/delete across workers.
     db.rollback()
+
+    if selected_skill:
+        if is_configured_model_unavailable(request, config=config):
+            yield _stream_complete(db, current_record, None, '', status='failed')
+            return
+        yield f"data: {json.dumps({'type': 'progress', 'agent': '学术审阅', 'status': '正在基于已提供资料进行学术审阅...'})}\n\n"
+        completion_status = 'unknown'
+        try:
+            async for chunk in get_request_chat_model(config, temperature=0.1).astream([
+                SystemMessage(content=build_student_work_skill_instructions(selected_skill)),
+                SystemMessage(content=SOURCE_CONTEXT_POLICY), *task_messages,
+            ]):
+                chunk_status = classify_student_skill_completion(getattr(chunk, 'response_metadata', None))
+                if chunk_status == 'incomplete' or (chunk_status == 'complete' and completion_status != 'incomplete'):
+                    completion_status = chunk_status
+                if chunk.content and completion_status != 'incomplete':
+                    full_reply += chunk.content
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+        except Exception:
+            yield f"data: {json.dumps({'type': 'error', 'code': 'model_error', 'message': '学术审阅模型调用失败，请稍后重试或更换模型。'})}\n\n"
+            yield _stream_complete(db, current_record, None, '', status='failed')
+            return
+        if completion_status == 'incomplete':
+            yield f"data: {json.dumps({'type': 'error', 'code': 'model_error', 'message': '模型回复未完整结束，审阅未保存，请重试。'})}\n\n"
+            yield _stream_complete(db, current_record, None, '', status='failed', model_completion_status='incomplete')
+            return
+        full_reply = strip_reference_source_block(full_reply)
+        if not full_reply.strip():
+            yield f"data: {json.dumps({'type': 'error', 'code': 'empty_response', 'message': '模型未返回有效回答，请重试。'})}\n\n"
+            yield _stream_complete(db, current_record, None, '', status='empty')
+            return
+        if await chat_client_disconnected():
+            yield _stream_complete(db, current_record, None, '', status='failed')
+            return
+        saved_reply = save_chat_reply_if_current(
+            db, current_record=current_record, content=full_reply, sender_id=get_runtime_agent_id(config),
+        )
+        yield _stream_complete(db, current_record, saved_reply, full_reply, model_completion_status=completion_status)
+        return
 
     if agent_mode == "rag":
         try:

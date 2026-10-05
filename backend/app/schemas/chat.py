@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
 class ChatRequest(BaseModel):
     message: str
@@ -18,3 +18,4 @@ class ChatRequest(BaseModel):
     problem_title: Optional[str] = None
     user_code: Optional[str] = None
     course_dataset_ids: Optional[List[str]] = None
+    skill_ids: Optional[List[Literal["academic-review"]]] = Field(default=None, max_length=1)

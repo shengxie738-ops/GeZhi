@@ -191,6 +191,7 @@ const app = createApp({
         // 11. 插件市场与 Codex 输入框联动 Hook
         const pluginsState = usePlugins(auth.currentUser, showToast, chat.inputText);
         chat.setWorkspaceCancellationHandler(pluginsState.cancelPaperSearch);
+        chat.setChatSkillSelectionResolver(() => pluginsState.selectedChatSkillIds.value);
         const workPresentation = useWorkPresentation({
             selectedPaper: pluginsState.selectedPaper,
             isDetailVisible: () => Boolean(pluginsState.activeSearchPlugin.value) ||
@@ -974,6 +975,9 @@ const app = createApp({
             isSearchingPapers: pluginsState.isSearchingPapers,
             showAddMenu: pluginsState.showAddMenu,
             activeInputPlugins: pluginsState.activeInputPlugins,
+            selectedChatSkillIds: pluginsState.selectedChatSkillIds,
+            getPluginExecutionLabel: pluginsState.getPluginExecutionLabel,
+            selectChatSkillFromDetail: pluginsState.selectChatSkillFromDetail,
             filteredPlugins: pluginsState.filteredPlugins,
             getCategoryCount: pluginsState.getCategoryCount,
             clearMarketSearch: pluginsState.clearMarketSearch,

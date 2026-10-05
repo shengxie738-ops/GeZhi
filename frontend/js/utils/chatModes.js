@@ -45,8 +45,20 @@ export function getHistoryPanelTitle(agentMode = 'tutor') {
     return '引导式学习历史记录';
 }
 
-export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', conversationId = '', projectId = '', repositoryId = '', agent = null, courseDatasetIds = null, model = '' }) {
+export function validateChatSkillSelection({ skillIds = [], forceRAG = false, agentMode = 'tutor', repositoryId = '', courseDatasetIds = null } = {}) {
+    if (!Array.isArray(skillIds) || skillIds.length > 1 || skillIds.some(id => id !== 'academic-review')) {
+        throw new Error('学术 Skill 选择无效，请重新选用 Academic Reviewer');
+    }
+    if (skillIds.length && (!['chat', 'paper'].includes(normalizeAgentMode(agentMode)) || forceRAG || repositoryId
+        || (courseDatasetIds && (!Array.isArray(courseDatasetIds) || courseDatasetIds.length > 0)))) {
+        throw new Error('学术评审 Skill 仅支持 AI 对话或论文研读；请移除此 Skill 或切换到支持的模式后发送');
+    }
+    return [...skillIds];
+}
+
+export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest_user', agentMode = 'tutor', conversationId = '', projectId = '', repositoryId = '', agent = null, courseDatasetIds = null, model = '', skillIds = [] }) {
     const normalizedMode = normalizeAgentMode(agentMode);
+    const capturedSkillIds = validateChatSkillSelection({ skillIds, forceRAG, agentMode: normalizedMode, repositoryId, courseDatasetIds });
     const resolvedModel = (model && model !== 'Auto Mode') ? model : agent?.model;
     const payload = {
         message,
@@ -65,6 +77,7 @@ export function buildChatPayload({ message, forceRAG = false, sessionId = 'guest
     if (courseDatasetIds && Array.isArray(courseDatasetIds) && courseDatasetIds.length > 0) {
         payload.course_dataset_ids = courseDatasetIds;
     }
+    if (capturedSkillIds.length) payload.skill_ids = capturedSkillIds;
     Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
     return payload;
 }

@@ -176,7 +176,9 @@ export const ACADEMIC_PLUGINS = [
         detailDescription: '学术评审与精读 Skill 模拟顶会审稿人（Reviewer）心智，对输入的研究内容、论文段落或实验设计进行多角度同行评审（Peer Review），并给出切实可行的修改建议。',
         useCases: ['提交论文或作业前的模拟同行审稿', '学术论文摘要与引言精炼润色'],
         permissions: ['内置科研 Prompt 引擎'],
-        canSearchLive: false
+        canSearchLive: false,
+        executionKind: 'chat_skill',
+        chatSkillId: 'academic-review'
     },
     {
         id: 'plugin_python_sandbox',
@@ -232,6 +234,22 @@ export function getPluginById(id) {
 
 export function getDefaultInstalledPluginIds() {
     return ACADEMIC_PLUGINS.filter(p => p.defaultInstalled).map(p => p.id);
+}
+
+// Installation is inventory only. Chat execution requires an explicitly
+// mounted, registered capability that is still in this account's inventory.
+export function resolveChatSkillIds(activeInputPlugins = [], installedPlugins = []) {
+    const installedIds = new Set(installedPlugins.map(plugin => typeof plugin === 'string' ? plugin : plugin?.id));
+    return [...new Set(activeInputPlugins.map(plugin => getPluginById(plugin?.id))
+        .filter(plugin => installedIds.has(plugin?.id) && plugin?.executionKind === 'chat_skill')
+        .map(plugin => plugin.chatSkillId))];
+}
+
+export function getPluginExecutionLabel(plugin) {
+    const registered = getPluginById(plugin?.id);
+    if (registered?.canSearchLive) return '真实论文检索来源';
+    if (registered?.executionKind === 'chat_skill') return '对话 Skill · AI 对话 / 论文研读';
+    return '仅标签 · 此工作台未启用执行能力';
 }
 
 /**

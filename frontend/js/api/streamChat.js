@@ -29,6 +29,10 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
     const requestOptions = { signal: lifecycle.signal, headers: { Authorization: capturedToken ? `Bearer ${capturedToken}` : '' } };
     if (!msg.trim() || thinkingAgent.value || !isCurrent()) return;
     const normalizedMode = normalizeAgentMode(agentMode);
+    // A retry is the same submission. Never reread mounted Skills, mutable
+    // agent settings or the model choice after transport has started.
+    const requestBody = JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model, skillIds: lifecycle.skillIds || [] }));
+    const usesChatSkill = Boolean(lifecycle.skillIds?.length);
     const currentTime = formatChatTimestamp();
 
     const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -83,11 +87,11 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             if (typeof lifecycle.onHistoryInvalidated === 'function') lifecycle.onHistoryInvalidated();
             return;
         }
-        const saved = Boolean(newAgentMsg.content.trim()) && !['empty', 'failed'].includes(completion?.delivery_status) && completion?.history_saved === true && Number.isInteger(receipt?.user_message_id) && receipt.user_message_id > 0 && Number.isInteger(receipt?.assistant_message_id) && receipt.assistant_message_id > 0;
+        const saved = Boolean(newAgentMsg.content.trim()) && !newAgentMsg.deliveryError && !['empty', 'failed'].includes(newAgentMsg.deliveryStatus) && completion?.history_saved === true && Number.isInteger(receipt?.user_message_id) && receipt.user_message_id > 0 && Number.isInteger(receipt?.assistant_message_id) && receipt.assistant_message_id > 0;
         [userMessage, newAgentMsg].forEach((message, index) => {
             const previousId = message.id;
             message.syncState = saved ? 'saved' : 'failed';
-            message.syncError = saved ? '' : '云端保存未确认，请刷新历史记录核对';
+            message.syncError = saved ? '' : newAgentMsg.deliveryError ? '本次模型回复未保存，请处理错误后重试' : '云端保存未确认，请刷新历史记录核对';
             if (saved) {
                 const databaseId = `db-${index === 0 ? receipt.user_message_id : receipt.assistant_message_id}`;
                 const canonical = messages.value.find(row => row.id === databaseId && row !== message);
@@ -108,6 +112,35 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         });
     };
     let streamCompletion = null;
+    let streamDeliveryError = null;
+    const applyCompletion = completion => {
+        if (typeof completion?.content === 'string') newAgentMsg.content = completion.content;
+        else if (typeof completion?.reply === 'string') newAgentMsg.content = completion.reply;
+        if (completion?.delivery_status) newAgentMsg.deliveryStatus = completion.delivery_status;
+        const receipt = completion?.history_receipt;
+        // Legacy routes can recover on the server after a transient model
+        // error. Only their authoritative successful saved pair clears it.
+        // Selected chat Skills retain terminal errors and never opt into RAG.
+        if (!usesChatSkill && completion?.delivery_status === 'complete' && completion?.history_saved === true
+            && newAgentMsg.content.trim() && Number.isInteger(receipt?.user_message_id) && receipt.user_message_id > 0
+            && Number.isInteger(receipt?.assistant_message_id) && receipt.assistant_message_id > 0) {
+            streamDeliveryError = null;
+            newAgentMsg.deliveryError = '';
+            newAgentMsg.deliveryErrorCode = '';
+        }
+        // Canonical content may intentionally be empty after a provider error.
+        // Keep its explicit terminal status and display the error separately.
+        if (!newAgentMsg.content.trim() && !newAgentMsg.deliveryStatus) newAgentMsg.deliveryStatus = 'empty';
+        const errorCode = completion?.error || streamDeliveryError?.code;
+        if (errorCode || ['failed', 'empty'].includes(newAgentMsg.deliveryStatus)) {
+            if (!newAgentMsg.deliveryStatus) newAgentMsg.deliveryStatus = errorCode === 'empty_response' ? 'empty' : 'failed';
+            newAgentMsg.deliveryError = completion?.message || streamDeliveryError?.message
+                || (newAgentMsg.deliveryStatus === 'empty' ? '模型未返回可显示的文本，请调整输入后重试' : '模型请求失败，请检查所选模型后重试');
+            newAgentMsg.deliveryErrorCode = errorCode || (newAgentMsg.deliveryStatus === 'empty' ? 'empty_response' : 'model_error');
+        }
+        parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
+        applyHistoryReceipt(completion);
+    };
 
     try {
         // Try streaming first, fall back to non-streaming if it fails
@@ -119,7 +152,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             response = await request('/chat/stream', {
                 ...requestOptions,
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model })),
+                body: requestBody,
                 isStream: true
             });
             requireCurrent();
@@ -134,15 +167,13 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             const chatResponse = await request('/chat', {
                 ...requestOptions,
                 method: 'POST',
-                body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model }))
+                body: requestBody
             });
             requireCurrent();
             // Simulate streaming response
             if (chatResponse && typeof chatResponse.reply === 'string') {
-                newAgentMsg.content = chatResponse.reply;
-                parsedHtmlCache[streamMessageId] = safeParse(chatResponse.reply);
-                applyHistoryReceipt(chatResponse);
-                if (!newAgentMsg.content) newAgentMsg.deliveryStatus = 'empty';
+                applyCompletion(chatResponse);
+                if (chatResponse.error === 'model_unavailable' && typeof onModelUnavailable === 'function') onModelUnavailable(chatResponse.model || model);
                 thinkingAgent.value = null;
                 throttledScroll(chatContainer, isCurrent);
                 return;
@@ -216,11 +247,13 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
                                 }));
                             }
                         } else if (data.type === 'error') {
-                            newAgentMsg.content += `\n\n【系统错误】: ${data.message}`;
-                            throttledParse(streamMessageId, newAgentMsg.content, isCurrent);
+                            streamDeliveryError = { code: data.code || 'model_error', message: data.message || '模型请求失败，请重试' };
+                            newAgentMsg.deliveryStatus = streamDeliveryError.code === 'empty_response' ? 'empty' : 'failed';
+                            newAgentMsg.deliveryError = streamDeliveryError.message;
                         } else if (data.type === 'model_unavailable') {
-                            newAgentMsg.content += `\n\n> ⚠️ **${data.message}**（模型：${data.model}），请在智能体配置中更换模型`;
-                            throttledParse(streamMessageId, newAgentMsg.content, isCurrent);
+                            streamDeliveryError = { code: 'model_unavailable', message: data.message || '所选模型当前不可用，请更换模型后重试' };
+                            newAgentMsg.deliveryStatus = 'failed';
+                            newAgentMsg.deliveryError = streamDeliveryError.message;
                             throttledScroll(chatContainer, isCurrent);
                             if (typeof onModelUnavailable === 'function') {
                                 onModelUnavailable(data.model);
@@ -241,14 +274,14 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         thinkingAgent.value = null;
         
         // If no content was received from streaming, fall back to non-streaming
-        if (!newAgentMsg.content && useStreaming && !streamCompletion) {
+        if (!newAgentMsg.content && useStreaming && !streamCompletion && !streamDeliveryError) {
             console.warn('[Chat] No token events received, falling back to non-streaming');
             try {
                 requireCurrent();
                 const chatResponse = await request('/chat', {
                     ...requestOptions,
                     method: 'POST',
-                    body: JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model }))
+                    body: requestBody
                 });
                 requireCurrent();
                 if (chatResponse && typeof chatResponse.reply === 'string') {
@@ -261,11 +294,7 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
             }
         }
         
-        if (typeof streamCompletion?.content === 'string') newAgentMsg.content = streamCompletion.content;
-        if (streamCompletion?.delivery_status) newAgentMsg.deliveryStatus = streamCompletion.delivery_status;
-        parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
-        applyHistoryReceipt(streamCompletion);
-        if (!newAgentMsg.content) newAgentMsg.deliveryStatus = 'empty';
+        applyCompletion(streamCompletion);
         throttledScroll(chatContainer, isCurrent);
 
     } catch (error) {
@@ -274,6 +303,8 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         userMessage.syncState = 'failed';
         newAgentMsg.syncState = 'failed';
         newAgentMsg.deliveryStatus = 'failed';
+        newAgentMsg.deliveryError = '请求失败，未获得模型回复。请检查连接后重试。';
+        newAgentMsg.deliveryErrorCode = 'transport_error';
         newAgentMsg.content = '请求失败，未获得模型回复。请检查连接后重试。';
         parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
         throttledScroll(chatContainer, isCurrent);

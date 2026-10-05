@@ -7,6 +7,8 @@ import {
     PLUGIN_CATEGORIES,
     getPluginById,
     getDefaultInstalledPluginIds,
+    resolveChatSkillIds,
+    getPluginExecutionLabel,
     resolvePaperSourceKeys,
     readInstalledPluginIdsSafe
 } from '../config/academicPlugins.js';
@@ -83,7 +85,10 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             selectedPaper.value = null;
         }
     };
-    if (getCurrentScope()) onScopeDispose(() => cancelPaperSearch());
+    if (getCurrentScope()) onScopeDispose(() => {
+        cancelPaperSearch();
+        activeInputPlugins.value = [];
+    });
     const restorePaperSearch = (snapshot = null) => {
         cancelPaperSearch({ reset: true });
         if (!snapshot) return;
@@ -133,6 +138,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const selectedPaperSourceKeys = computed(() => {
         return resolvePaperSourceKeys(activeSearchPlugin.value, activeInputPlugins.value, installedPlugins.value);
     });
+    const selectedChatSkillIds = computed(() => resolveChatSkillIds(activeInputPlugins.value, installedPlugins.value));
 
     const isPluginInstalled = (pluginId) => {
         return installedPluginIds.value.includes(pluginId);
@@ -384,14 +390,28 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const insertPluginToInput = (plugin) => {
-        if (!isPluginInstalled(plugin.id)) {
-            installPlugin(plugin.id);
+        const registered = getPluginById(plugin?.id);
+        if (!registered) return false;
+        if (!isPluginInstalled(registered.id)) {
+            installPlugin(registered.id);
         }
-        if (!activeInputPlugins.value.some(p => p.id === plugin.id)) {
-            activeInputPlugins.value.push(plugin);
+        if (!activeInputPlugins.value.some(p => p.id === registered.id)) {
+            activeInputPlugins.value.push(registered);
         }
         showAddMenu.value = false;
-        if (showToast) showToast(plugin.canSearchLive ? `已选用 @${plugin.name} 检索来源` : `已添加 @${plugin.name} 标签（此工作台未启用执行能力）`, 'info');
+        if (showToast) showToast(registered.canSearchLive ? `已选用 @${registered.name} 检索来源`
+            : registered.executionKind === 'chat_skill' ? `已选用 @${registered.name} Skill（仅用于 AI 对话或论文研读，发送时执行）`
+                : `已添加 @${registered.name} 标签（此工作台未启用执行能力）`, 'info');
+        return true;
+    };
+
+    const selectChatSkillFromDetail = () => {
+        const plugin = selectedPluginDetail.value;
+        if (getPluginById(plugin?.id)?.executionKind !== 'chat_skill') return false;
+        if (!insertPluginToInput(plugin)) return false;
+        closePluginDetail();
+        closePluginMarket();
+        return true;
     };
 
     const removeActiveInputPlugin = (pluginId) => {
@@ -426,6 +446,8 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         paperSearchError,
         selectedPaper,
         selectedPaperSourceKeys,
+        selectedChatSkillIds,
+        getPluginExecutionLabel,
         showAddMenu,
         activeInputPlugins,
         filteredPlugins,
@@ -455,6 +477,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         insertPaperToChat,
         toggleAddMenu,
         insertPluginToInput,
+        selectChatSkillFromDetail,
         removeActiveInputPlugin,
         resolvePaperSourceKeys
     };

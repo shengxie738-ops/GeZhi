@@ -6,7 +6,7 @@ import { knowledgeApi } from '../api/knowledgeApi.js';
 import { userApi } from '../api/userApi.js';
 import { getUserCustomModels } from '../api/userModelApi.js';
 import request from '../utils/request.js';
-import { formatChatTimestamp, getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode } from '../utils/chatModes.js';
+import { formatChatTimestamp, getChatStorageKey, mapHistoryRecordToMessage, normalizeAgentMode, sanitizeStoredMessagesForMode, validateChatSkillSelection } from '../utils/chatModes.js';
 import { CHAT_TASK_MODES, sortConversationsByRecency, createModeMessageBuckets, createTaskConversationId, findConversationForMessage, flattenModeMessageBuckets, getSystemProjectIdForMode, groupMessagesIntoConversations, groupConversationsByProjects, reconcileModeHistory, resolveConversationIdForSend, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, PROJECT_DEFAULT_ID, PROJECT_DEFAULT_NAME, PROJECT_TUTOR_ID, PROJECT_RAG_ID, PROJECT_PAPER_ID, PROJECT_PAPER_NAME, INITIAL_SYSTEM_PROJECTS } from '../utils/conversations.js';
 import { getKnowledgeFileStatusLabel, isSupportedKnowledgeFile } from '../utils/knowledgeFiles.js';
 import { TEXT_MODEL_OPTIONS, mergeModelOptions } from '../config/aiModels.js';
@@ -29,6 +29,8 @@ export function useChat(currentUser, showToast, agentResolver = null) {
     let navigationGeneration = 0;
     let inputRevision = 0;
     let cancelWorkspaceSearch = () => {};
+    let getChatSkillSelection = () => [];
+    const setChatSkillSelectionResolver = resolver => { getChatSkillSelection = typeof resolver === 'function' ? resolver : () => []; };
     let chatSendController = null;
     const historyLoads = new Map();
     const paperSyncTasks = new Map();
@@ -1481,14 +1483,21 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         const sessionId = getSessionId();
         const prompt = typeof overrideText === 'string' ? overrideText : inputText.value;
         if (!prompt.trim() || thinkingAgent.value || blockedWriteModes.has(normalizeAgentMode(agentMode.value))) return false;
+        const repositoryId = agentMode.value === 'rag' ? selectedRepositoryId.value : '';
+        const courseDatasetIds = agentMode.value === 'rag' ? [...selectedCourseDatasetIds.value] : null;
+        let skillIds;
+        try {
+            skillIds = Object.freeze(validateChatSkillSelection({ skillIds: getChatSkillSelection(), agentMode: agentMode.value, forceRAG: forceRAG.value, repositoryId, courseDatasetIds }));
+        } catch (error) {
+            showToast(error.message, 'error');
+            return false;
+        }
         const conversationId = getConversationIdForSend();
         const projectId = activeProjectId.value || getSystemProjectIdForMode(agentMode.value);
         if (agentMode.value === 'tutor') {
             visualGuideType.value = 'steps';
             generateVisualGuide(prompt, { reason: 'student-question', force: true });
         }
-        const repositoryId = agentMode.value === 'rag' ? selectedRepositoryId.value : '';
-        const courseDatasetIds = agentMode.value === 'rag' ? [...selectedCourseDatasetIds.value] : null;
         const mode = normalizeAgentMode(agentMode.value);
         const generation = sessionGeneration;
         const navigation = navigationGeneration;
@@ -1517,7 +1526,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             currentModel.value,
             conversationId,
             projectId,
-            { signal: controller.signal, isCurrent, onHistoryInvalidated: () => { if (isCurrent()) historyError.value = '任务上下文已变更，本次未保存模型回复；请刷新历史记录后重试'; } }
+            { signal: controller.signal, isCurrent, skillIds, onHistoryInvalidated: () => { if (isCurrent()) historyError.value = '任务上下文已变更，本次未保存模型回复；请刷新历史记录后重试'; } }
             );
         } finally {
             // Only this request may release its busy lease, even when its token changed.
@@ -1581,6 +1590,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
         getWorkspaceGeneration,
         getInputRevision,
         setWorkspaceCancellationHandler,
+        setChatSkillSelectionResolver,
         activeConversationId,
         draftConversationId,
         modeMessageBuckets,
