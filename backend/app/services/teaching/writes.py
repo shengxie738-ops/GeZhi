@@ -1079,3 +1079,8 @@ def find_receipt(session: Session, actor_id: str, action: TeachingAction, scope:
     if action not in WRITE_ACTIONS:
         _error(422, "validation_error")
     return _recover(session, actor_id, ReceiptLookup(actor_id, action, scope, key))
+
+
+def lock_offering_read_context(session, subject, scope):
+    """Retain the existing ordered READ_OFFERING footprint for final admission."""
+    return _lock_context(session, subject, TeachingAction.READ_OFFERING, scope, write=False)

@@ -37,3 +37,6 @@ api_router.include_router(teaching.router, prefix="", tags=["teaching"])
 
 from app.api.endpoints import teaching_assessment
 api_router.include_router(teaching_assessment.router, prefix="", tags=["teaching-assessment"])
+
+from app.api.endpoints import teacher_work
+api_router.include_router(teacher_work.router, prefix="", tags=["teacher-work"])
