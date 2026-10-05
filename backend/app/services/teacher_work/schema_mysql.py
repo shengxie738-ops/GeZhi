@@ -95,13 +95,19 @@ class MysqlSchemaReport:
         return self.physical_valid and self.ledger_valid and inspect_teacher_work_schema(self.observation).ready
 
 
-def _check(expression):
+def _check(expression, *, catalog=False):
     """Normalize serializer syntax while preserving every quoted literal byte."""
+    value = str(expression)
+    if catalog:
+        # MySQL 8.4 CHECK_CLAUSE exposes introduced, escaped delimiters.
+        # Only the plain enum literals in the pinned v2 contract are supported;
+        # embedded escapes/quotes and other introducers remain unequal.
+        value = re.sub(r"\b_utf8mb4\\'([A-Za-z_]+)\\'", lambda m: "'" + m[1] + "'", value)
     literals = []
     def protect(match):
         literals.append(match.group(0))
         return "__tw_literal_" + str(len(literals) - 1) + "__"
-    value = re.sub(r"'(?:''|\\.|[^'])*'", protect, str(expression))
+    value = re.sub(r"'(?:''|\\.|[^'])*'", protect, value)
     value = re.sub(r"\b_utf8mb4(?=\s*__tw_literal_\d+__)", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+", " ", value.replace("`", "").lower()).strip()
     def outer(value):
@@ -118,7 +124,9 @@ def _check(expression):
     while previous != value:
         previous = value
         value = re.sub(r"(?<![a-z0-9_])\(([^()]*)\)",
-            lambda m: m.group(0) if re.search(r"\b(?:and|or)\b", m.group(1)) else m.group(1).strip(), value)
+            lambda m: m.group(0) if re.search(r"\b(?:and|or)\b", m[1])
+            and not re.fullmatch(r"[a-z_][a-z0-9_]* between [0-9]+ and [0-9]+", m[1].strip())
+            else m[1].strip(), value)
         value = outer(value)
     value = re.sub(r"\s*([=<>!,])\s*", r"\1", value)
     return re.sub(r"__tw_literal_(\d+)__", lambda m: literals[int(m.group(1))], value)
@@ -228,7 +236,7 @@ def _table_issues(table, shape, raw, schema_name):
     except (KeyError, TypeError, ValueError): keys_valid = False
     if not keys_valid: issues.append(MysqlSchemaIssue(table, "keys", "exact PK/FK/named unique/full binary index facts required"))
     checks = {r.get("constraint_name"): r for r in raw["checks"]}
-    if len(checks) != len(raw["checks"]) or set(checks) != set(shape["checks"]) or any(checks.get(n, {}).get("enforced") != "YES" or _check(checks.get(n, {}).get("check_clause", "")) != _check(expression) for n, expression in shape["checks"].items()):
+    if len(checks) != len(raw["checks"]) or set(checks) != set(shape["checks"]) or any(checks.get(n, {}).get("enforced") != "YES" or _check(checks.get(n, {}).get("check_clause", ""), catalog=True) != _check(expression) for n, expression in shape["checks"].items()):
         issues.append(MysqlSchemaIssue(table, "checks", "exact enforced checks required"))
     return issues
 

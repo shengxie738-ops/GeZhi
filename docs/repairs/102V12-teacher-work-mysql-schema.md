@@ -34,3 +34,5 @@ MySQL 8.4 没有 `check_constraint_checks` 会话变量；CHECK 仍以实际 `EN
 隔离原生 MySQL 路径已到达 InnoDB 初始化，但服务端和客户端 Unix socket 创建均被执行环境拒绝，错误为 `Operation not permitted`。未建立真实 SQL 连接，未执行真实 Teacher Work DDL，也未获得真实物理 schema 或事务通过证据。没有尝试替代访问路径。
 
 本切片没有启用 Teacher Work，不能据此打开 `schema_ready`、`transaction_ready` 或现有 503 安全门。后续仍须在明确允许 Unix socket 的隔离 MySQL 环境，完成独立审核后的真实 DDL/约束/事务验收。
+
+后续原生阶段：同日新的 Codex 环境支持隔离官方 Docker MySQL 的 Unix socket，已执行真实 SQL，发现并修复 CHECK 反射差异。精确范围、失败记录、复现命令及生产门禁边界见 [原生验证记录](102V12-teacher-work-native-mysql.md)；本文件上面的 16 项历史结果仍只属于编译／记录端口证据。

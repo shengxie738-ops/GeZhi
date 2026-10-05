@@ -12,6 +12,7 @@ import ast
 import copy
 from datetime import datetime
 import importlib
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,6 +56,27 @@ def _load():
 
 def _identity(modules):
     return modules.schema.DatabaseIdentity(**{k: IDENTITY[k] for k in ("schema_name", "server_uuid", "datadir", "socket")})
+
+
+def test_mysql_check_serializer_between_parentheses():
+    schema = _load().schema
+    assert schema._check("(`active_call_no` between 1 and 3) AND enabled = 1") == schema._check("active_call_no BETWEEN 1 AND 3 AND enabled = 1")
+    assert schema._check("(a = 1 OR b = 2) AND c = 3") != schema._check("a = 1 OR (b = 2 AND c = 3)")
+    assert schema._check("(n between 1 and 3) AND enabled = 1") != schema._check("(n between 1 and 4) AND enabled = 1")
+
+
+def test_mysql_catalog_escaped_literal_serializer():
+    m = _load()
+    catalog = _catalog(m)
+    for row in catalog["checks"]:
+        row["check_clause"] = row["check_clause"].replace("'", "\\'")
+        # The server prints an introducer before each opening delimiter.
+        row["check_clause"] = re.sub(r"\\'([^'\\]*)\\'", r"_utf8mb4\\'\1\\'", row["check_clause"])
+    port = RecordingCatalogPort([(catalog, _ledger(m))], exceptions=m.exceptions)
+    assert m.schema.observe_teacher_work_mysql(port).ready
+    changed = copy.deepcopy(catalog)
+    next(r for r in changed["checks"] if r["constraint_name"] == "ck_tw_run_kind")["check_clause"] = r"kind IN (_utf8mb4\'CHAT\',_utf8mb4\'outline\',_utf8mb4\'package\',_utf8mb4\'revise\',_utf8mb4\'reference_search\')"
+    assert not m.schema.observe_teacher_work_mysql(RecordingCatalogPort([(changed, _ledger(m))], exceptions=m.exceptions)).ready
 
 
 def _ledger(modules):

@@ -1,0 +1,100 @@
+{
+  "date_utc": "2026-10-05",
+  "baseline": "cca4a98f3b6406ae3b679eb6c04da3f3c073c47d",
+  "branch": "102V12",
+  "mysql_image": "mysql:8.4.10@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6",
+  "transport": "temporary Unix socket, Docker network none, no published ports",
+  "native_schema": {
+    "command": "PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_mysql.py",
+    "result": "22 passed in 65.07s",
+    "sql_cases": 20,
+    "resource_cleanup_cases": 2,
+    "exit_code": 0,
+    "facts": {
+      "first_sql": 1,
+      "version": "8.4.10",
+      "connection_id": 8,
+      "server_uuid": "b8c28be3-c107-11f1-9240-9b3125254903",
+      "datadir": "/var/lib/mysql/",
+      "socket": "/run/gezhi-native/mysql.sock",
+      "skip_networking": 1,
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "isolation": "REPEATABLE-READ",
+      "foreign_key_checks": 1,
+      "unique_checks": 1
+    },
+    "cleanup": {
+      "container": "gezhi-tw-native-d3db1aae546f4b6d8fa78d76e834e695",
+      "container_id": "7d06a95a5e47bb3be5b5612fba57c8ab06a26ac6587108401227288644acf55c",
+      "stopped": true,
+      "exit_code": 0,
+      "creation_not_observed": false,
+      "removed_with_volumes": true,
+      "baseline_preserved": true
+    },
+    "evidence_directory": "/tmp/gezhi-tw-native-u4prj3cj"
+  },
+  "observer_unit": {
+    "command": "PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/test_teacher_work_mysql_schema.py",
+    "passed": 18,
+    "exit_code": 0,
+    "evidence_kind": "SQLAlchemy compile plus recording catalog, not native SQL"
+  },
+  "related_units": {
+    "passed": 56,
+    "exit_code": 0,
+    "evidence_kind": "bounded recording/pure/source tests, not native SQL"
+  },
+  "rejected_runs": [
+    {
+      "kind": "serializer regression RED",
+      "failed": 2
+    },
+    {
+      "kind": "initial native RED",
+      "failed": 1,
+      "teardown_errors": 1,
+      "exit_code": 137,
+      "manual_container_volume_removal": true,
+      "container": "gezhi-tw-native-531d5cb1898747bd9dbcc4780f8c0acc"
+    },
+    {
+      "kind": "native CHECK exception mapping mismatch",
+      "passed": 15,
+      "failed": 1
+    },
+    {
+      "kind": "overlapping owned batch cleanup baseline",
+      "passed": 21,
+      "teardown_errors": 1,
+      "own_container_exit_code": 0,
+      "own_volume_removed": true
+    },
+    {
+      "kind": "unintended whole-backend collection",
+      "collected": 929,
+      "collection_errors": 75,
+      "executed_tests": 0,
+      "accepted": false
+    }
+  ],
+  "initial_probe_cleanup": {
+    "container": "gezhi-native-mysql-20261005",
+    "container_id": "5048d952c26f0360488cc44ecdf562a6f418d0bca131f31b945523aae3da5214",
+    "stopped": true,
+    "exit_code": 0,
+    "removed_with_volumes": true,
+    "baseline_preserved": true
+  },
+  "source_sha256": {
+    "backend/app/services/teacher_work/schema_mysql.py": "0f91a28103050dfe3ea8ada4565b7a3f3605a0f5e13087c5c70a74e6c1481319",
+    "backend/migrations/v20261005_teacher_work_mysql.py": "457f845da0e329cfef01bd9a519420c97d9d6015d61e8a118e3a10a89b50ba8b",
+    "backend/app/models/teacher_work.py": "013ffd8518121722afc6b8954bf452a6b72905fc9aa54389d87d5d94baab4128",
+    "backend/app/services/teacher_work/schema.py": "e9c47d5d30ce52a4eaf38d304015663a10ed149eb69d85323b459069d81672be",
+    "backend/tests/test_teacher_work_mysql_schema.py": "205f20003c50bcc7f913c1a7f5bc49159f77e16f38bf02e0f2d2da7088478ff6",
+    "backend/tests/native_teacher_work_mysql.py": "67f0bfa22e899e8feebd2743469ae994b9a647daa541b7ddbb164334c1941533",
+    "backend/tests/requirements-native-teacher-work.txt": "869b475198a66267fcc3894b0bb447228a0713647805be1c6b023f0d2db65eaf"
+  },
+  "production_admission": "TEACHER_WORK_LIVE_GATES_UNVERIFIED (unchanged)",
+  "ci": "Checked separately after each push; absence of runs is not passing CI."
+}
