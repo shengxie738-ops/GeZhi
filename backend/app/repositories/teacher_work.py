@@ -19,7 +19,7 @@ from pydantic import TypeAdapter
 from app.schemas.teacher_work import ChatCommand, ChatResult, CreateTaskRequest, MessageKey, RunDTO, WorkMessageDTO, WorkTaskDTO, WorkingPatchRequest
 from app.services.teacher_work.run_persistence import (
     ChatCallReservation, ChatCompletionReceipt, ChatRequestObservation, ChatRunAdmission,
-    ChatRunOutcome, ProviderCallToken, StoredRunState, chat_result_from_message,
+    ChatRunOutcome, PreparedChatCompletion, ProviderCallToken, StoredRunState, chat_result_from_message,
     encode_work_key, matches_active_call, validate_chat_completion,
 )
 from app.services.teacher_work.runs import (
@@ -621,9 +621,45 @@ class TeacherWorkRepository:
             client_message_key=None, role="assistant", plain_text=strict.plain_text, run_id=token.run_id,
             result_refs=strict.result_refs, result_type=strict.type, omitted_context=strict.omitted_context, created_at=now)
         receipt = validate_chat_completion(state.run, message, token.run_id)
+        prepared = PreparedChatCompletion(original_ctx, token, strict, allowed_result_refs,
+            omitted_context, message, receipt)
+        return self._complete_chat_locked(task, current, state, lease, prepared)
+
+    def complete_prepared_chat_call(self, prepared: PreparedChatCompletion) -> ChatRunOutcome:
+        """Revalidate and write exactly the server-prepared candidate, once.
+
+        An unknown outcome can be reconciled with this same value, never by
+        generating another UUID/time or dispatching another model call.
+        """
+        if type(prepared) is not PreparedChatCompletion:
+            raise WorkRunError("INVALID_CHAT_COMPLETION", 503)
+        PreparedChatCompletion.__post_init__(prepared)
+        task, current = self._chat_current(prepared.original_ctx, positive=True)
+        rows, token = self._chat_rows(), prepared.token
+        state = self._chat_state(current.actor_subject, current.task_id,
+            rows.lock_run(current.actor_subject, current.task_id, token.run_id))
+        lease = self._chat_lease(current)
+        existing = self._chat_completion(state)
+        if existing is not None:
+            if (existing != (prepared.receipt, prepared.message) or lease.active_run_id == token.run_id
+                    or state.run.attempt != token.attempt or state.run.provider_call_count != token.call_no):
+                raise WorkRunError("COMPLETION_CONFLICT", 409)
+            return ChatRunOutcome(task, state, lease, existing[0])
+        return self._complete_chat_locked(task, current, state, lease, prepared)
+
+    def _complete_chat_locked(self, task: WorkTaskDTO, current: WorkContext, state: StoredRunState,
+                              lease: OwnerLeaseFacts, prepared: PreparedChatCompletion) -> ChatRunOutcome:
+        PreparedChatCompletion.__post_init__(prepared)
+        token, rows = prepared.token, self._chat_rows()
+        self._chat_exact_call(current, state, lease, token)
+        check_chat_commit(prepared.original_ctx, state.run, lease, current,
+            process_instance=token.process_instance, now=self._instant())
+        receipt = validate_chat_completion(state.run, prepared.message, token.run_id)
+        if receipt != prepared.receipt:
+            raise WorkRunError("INVALID_CHAT_COMPLETION", 503)
         after = StoredRunState(state.run.model_copy(update={"stage": "COMPLETE", "error_code": None}), state.repair_count, None)
         released = self._chat_release(lease)
-        rows.insert_completion(message, receipt)
+        rows.insert_completion(prepared.message, receipt)
         if rows.cas_run(state, after) is not True:
             raise WorkRunError("CALL_TOKEN_MISMATCH", 409)
         if rows.cas_lease(lease, released) is not True:

@@ -8,7 +8,7 @@ Nothing here imports SQL, obtains rows or certifies a transaction outcome.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -16,7 +16,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.schemas.teacher_work import ChatResult, MessageKey, RunDTO, WorkMessageDTO, WorkTaskDTO
 from app.services.teacher_work.runs import CallLimits, OwnerLeaseFacts, WorkBudget, WorkRunError
-from app.services.teacher_work.types import WorkContext
+from app.services.teacher_work.types import WorkContext, canonical_json_bytes
 
 
 def encode_work_key(key: str) -> bytes:
@@ -117,6 +117,73 @@ class ChatCompletionReceipt:
     def __post_init__(self):
         if type(self.run_id) is not UUID or type(self.message_id) is not UUID:
             raise WorkRunError("INVALID_CHAT_COMPLETION", 503)
+
+
+@dataclass(frozen=True)
+class PreparedChatCompletion:
+    """One server-prepared immutable candidate, never request authority.
+
+    Its actual message UUID/time and result survive unknown commit outcomes.
+    The immutable snapshot additionally detects mutation through a DTO's private
+    implementation storage; every write revalidates both coherence and snapshot.
+    Construction/validation alone proves neither current authority nor commit.
+    """
+    original_ctx: WorkContext
+    token: ProviderCallToken
+    result: ChatResult
+    allowed_result_refs: frozenset[UUID]
+    omitted_context: bool
+    message: WorkMessageDTO
+    receipt: ChatCompletionReceipt
+    _snapshot: bytes = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        code = "INVALID_CHAT_COMPLETION"
+        try:
+            if (type(self.original_ctx) is not WorkContext or type(self.token) is not ProviderCallToken
+                    or type(self.result) is not ChatResult or type(self.message) is not WorkMessageDTO
+                    or type(self.receipt) is not ChatCompletionReceipt
+                    or type(self.allowed_result_refs) is not frozenset
+                    or len(self.allowed_result_refs) > 10
+                    or any(type(ref) is not UUID for ref in self.allowed_result_refs)
+                    or type(self.omitted_context) is not bool):
+                raise ValueError("exact prepared records required")
+            WorkContext.__post_init__(self.original_ctx)
+            ProviderCallToken.__post_init__(self.token)
+            ChatCompletionReceipt.__post_init__(self.receipt)
+            result = ChatResult.model_validate(self.result.model_dump())
+            message = WorkMessageDTO.model_validate(self.message.model_dump())
+            context, token = self.original_ctx, self.token
+            if (type(context.owner_storage_id) is not UUID or type(context.task_id) is not UUID
+                    or (context.offering_id is not None and type(context.offering_id) is not UUID)
+                    or type(self.result.result_refs) is not tuple or type(self.message.result_refs) is not tuple
+                    or result.omitted_context is not self.omitted_context
+                    or not set(result.result_refs) <= self.allowed_result_refs
+                    or message.client_message_key is not None or message.role != "assistant"
+                    or (message.owner, message.task_id, message.run_id) !=
+                       (context.actor_subject, context.task_id, token.run_id)
+                    or self.receipt != ChatCompletionReceipt(token.run_id, message.message_id)
+                    or chat_result_from_message(message) != result):
+                raise ValueError("prepared completion binding mismatch")
+            snapshot = canonical_json_bytes({
+                "context": {"subject": context.actor_subject, "namespace": str(context.owner_storage_id),
+                    "task": str(context.task_id), "institution": context.institution_id,
+                    "offering": str(context.offering_id) if context.offering_id is not None else None,
+                    "input_revision": context.input_revision, "working_revision": context.working_revision},
+                "token": {"run": str(token.run_id), "attempt": token.attempt, "call": token.call_no,
+                    "lease_revision": token.lease_revision, "process": str(token.process_instance)},
+                "result": result.model_dump(mode="json"), "message": message.model_dump(mode="json"),
+                "receipt": {"run": str(self.receipt.run_id), "message": str(self.receipt.message_id)},
+                "allowed_refs": sorted(str(ref) for ref in self.allowed_result_refs),
+                "omitted_context": self.omitted_context,
+            })
+            if hasattr(self, "_snapshot"):
+                if type(self._snapshot) is not bytes or self._snapshot != snapshot:
+                    raise ValueError("prepared completion changed")
+            else:
+                object.__setattr__(self, "_snapshot", snapshot)
+        except (WorkRunError, ValidationError, ValueError, TypeError, AttributeError, UnicodeError):
+            raise WorkRunError(code, 503) from None
 
 
 def chat_result_from_message(message: WorkMessageDTO) -> ChatResult | None:

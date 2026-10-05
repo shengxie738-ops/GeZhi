@@ -17,6 +17,10 @@ from app.services.teacher_work.authorization import (
     bind_work_actor, prepare_namespace_receipt, require_current_teacher_facts,
 )
 from app.services.teacher_work.types import WorkDependencies
+from app.services.teacher_work.run_persistence import (
+    ChatCallReservation, ChatRequestObservation, ChatRunAdmission, ChatRunOutcome,
+)
+from app.services.teacher_work.runs import WorkRunError
 
 
 def _require_live_admission(mode):
@@ -68,6 +72,7 @@ class _SessionWorkTransport:
         # The caller already began the Session. Obtain that bound connection,
         # never create/adopt/restart a Session or choose a different root.
         self.session, self.root = session, root
+        self.uow = self._uow = None  # Bound once after the caller repository exists.
         self.connection = session.connection()
         self.connection_root = self.connection.get_transaction()
         if self.connection.dialect.name != "mysql":
@@ -96,12 +101,23 @@ class _SessionWorkTransport:
     def has_pending_writes(self):
         return bool(self.session.new or self.session.dirty or self.session.deleted)
 
-    def flush(self):
+    def _healthy(self):
         self._verify()
-        self.session.flush()
+        if (self.uow is None or self.uow is not self._uow
+                or self.uow.session is not self.session):
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        self.uow.assert_healthy()
+
+    def flush(self):
+        self._healthy()
+        try:
+            self.session.flush()
+        except BaseException:
+            self.uow.poison()
+            raise
 
     def commit(self):
-        self._verify()
+        self._healthy()
         self.session.commit()
         return CommitReceipt(confirmed=True)
 
@@ -167,6 +183,8 @@ class _WorkRequestBindings:
         store = JsonStore(session, commit_policy='caller_owned', record_model=DomainRecord)
         self.repository = build_sql_repository(session, models=self.models, draft_store=store,
             authorize_locked=self.authorize_locked, clock=clock, new_uuid=new_uuid, mode=mode)
+        self.transport.uow = self.repository.uow
+        self.transport._uow = self.repository.uow
         self._held = self._actor = self._namespace = self._context = self._private_account = None
         self._decision = self._policy_inputs = self._final_teaching_policy = None
         self._requested_scope = None
@@ -299,22 +317,33 @@ class _WorkRequestBindings:
         return HeldAdmissionReceipt(self.subject, held.institution_id, held.offering_id,
             held.footprint_token, policy.generation, at, True)
 
-    def _finish(self, task, mode):
+    def _finish(self, task, mode, *, value=None):
         if self._finished:
             raise WorkAuthorizationError("REQUEST_FINISHED", 503)
         self._finished = True
         owner = None
         try:
             self.transport._verify()  # Original construction root, not a new capture.
+            if self.transport.uow is not self.repository.uow:
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            self.repository.uow.assert_healthy()
             if mode != self.mode or self._held is None or self._actor is None or self._namespace is None or not isinstance(task, WorkTaskDTO):
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            if value is not None:
+                if (type(value) not in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
+                        or value.task != task):
+                    raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+                value.__post_init__()
             context = authorize_task(self._actor, task, self._decision)
-            candidate = BoundCandidate(task, context.actor_subject, context.owner_storage_id, context.institution_id, context.offering_id)
+            if type(value) in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation) and value.context != context:
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            candidate = BoundCandidate(task if value is None else value, context.actor_subject,
+                context.owner_storage_id, context.institution_id, context.offering_id)
             owner = TeacherWorkRequestOwner(transport=self.transport, mode=mode, actor=self._actor,
                 namespace_receipt=self._namespace, authority=self._held, clock=self.clock,
                 policy_provider=self._policy_snapshot, namespace_observer=self._namespace_observation, evaluate_held=self._evaluate_held)
             return owner.finish_write(candidate) if mode == "write" else owner.finish_read(candidate)
-        except (WorkAuthorizationError, WorkRepositoryError):
+        except (WorkAuthorizationError, WorkRepositoryError, WorkRunError):
             if owner is None:
                 self._cleanup()
             raise
@@ -335,3 +364,28 @@ class _WorkRequestBindings:
 
     def finish_read(self, task):
         return self._finish(task, "read")
+
+    def finish_chat_outcome(self, value, *, mode):
+        """Finalize only exact scope-bound chat candidates on this fresh root.
+
+        No assembly, provider, recovery authorizer or generic value finalizer is
+        installed. The candidate itself is never a committed/authorization flag.
+        """
+        if self._finished:
+            raise WorkAuthorizationError("REQUEST_FINISHED", 503)
+        try:
+            if type(value) not in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome):
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            value.__post_init__()
+            context = authorize_task(self._actor, value.task, self._decision)
+            if type(value) in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation) and value.context != context:
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        except (WorkAuthorizationError, WorkRepositoryError, WorkRunError):
+            self._finished = True
+            self._cleanup()
+            raise
+        except Exception:
+            self._finished = True
+            self._cleanup()
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503) from None
+        return self._finish(value.task, mode, value=value)
