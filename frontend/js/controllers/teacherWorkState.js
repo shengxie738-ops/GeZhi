@@ -2,18 +2,25 @@
 const preferenceNames = Object.freeze(['navCollapsed', 'taskRailCollapsed', 'artifactCollapsed', 'drawerOpen', 'artifactTab']);
 const capabilityNames = Object.freeze(['chat', 'task_write', 'generate', 'storage', 'structural_preview', 'rendered_preview', 'publish']);
 const closedOperations = () => ({ task_write: false, chat: false, generate: false, storage: false });
+const closedPrivateTasks = () => ({ create: false, read: false, update: false });
+const defaultCreateForm = () => ({ title: '', topic: '', audience: '', duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
 const defaultPreferences = () => ({ navCollapsed: false, taskRailCollapsed: false, artifactCollapsed: false,
     drawerOpen: false, artifactTab: 'files' });
 const actorValid = actor => typeof actor === 'string' && actor.length > 0 && actor.length <= 200 &&
     actor === actor.trim() && !/[\p{C}]/u.test(actor);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const knownReasons = new Set(['TEACHER_WORK_UNAVAILABLE', 'TEACHER_WORK_OPERATIONS_UNWIRED', 'network_error',
-    'request_failed', 'invalid_response', 'request_aborted', 'auth_required', 'teacher_required', 'invalid_input']);
+    'request_failed', 'invalid_response', 'request_aborted', 'auth_required', 'teacher_required', 'invalid_input',
+    'revision_conflict', 'idempotency_conflict', 'task_not_found']);
 const safeReason = reason => knownReasons.has(reason) ? reason : 'request_failed';
 
 export function createTeacherWorkState() {
     return { actor: null, role: null, authEpoch: 0, authVerified: false, active: false,
-        task_id: null, input_revision: null, view_epoch: 0, run_id: null,
+        task_id: null, input_revision: null, working_revision: null, view_epoch: 0, run_id: null,
+        task: null, taskReadStatus: 'idle', taskConflict: false, edit_epoch: 0, requirementsEdited: false,
+        createOpen: false, createForm: defaultCreateForm(), createStatus: 'idle',
+        draftResourceIds: [], draftTargetSlideCount: 8, resourceCatalog: [], resourcesStatus: 'idle', resourceError: null,
+        privateTaskAvailability: closedPrivateTasks(),
         tasks: [], messages: [], artifacts: [], versions: [], sources: [],
         composerText: '', composerStatus: 'unsaved', operationError: null,
         capabilities: { status: 'idle', data: null, reason: null },
@@ -21,13 +28,21 @@ export function createTeacherWorkState() {
         ui: defaultPreferences(), presentation: { drawerMode: false, catalogOpen: null } };
 }
 
-export function invalidateTeacherWork(state) {
+export function clearTeacherTaskSelection(state) {
     state.view_epoch++;
-    state.task_id = null; state.input_revision = null; state.run_id = null;
+    state.task_id = null; state.input_revision = null; state.working_revision = null; state.run_id = null;
+    state.task = null; state.taskReadStatus = 'idle'; state.taskConflict = false; state.edit_epoch++; state.requirementsEdited = false;
+    state.draftResourceIds = []; state.draftTargetSlideCount = 8;
     for (const name of ['tasks', 'messages', 'artifacts', 'versions', 'sources']) state[name] = [];
     state.composerText = ''; state.composerStatus = 'unsaved'; state.operationError = null;
+}
+
+export function invalidateTeacherWork(state) {
+    clearTeacherTaskSelection(state);
     state.capabilities = { status: 'idle', data: null, reason: null };
-    state.operationAvailability = closedOperations();
+    state.operationAvailability = closedOperations(); state.privateTaskAvailability = closedPrivateTasks();
+    state.createOpen = false; state.createForm = defaultCreateForm(); state.createStatus = 'idle';
+    state.resourceCatalog = []; state.resourcesStatus = 'idle'; state.resourceError = null;
     state.ui.drawerOpen = false; state.presentation.catalogOpen = null;
 }
 
@@ -58,7 +73,7 @@ export function acceptResponse(state, token) {
 export function selectTeacherTask(state, selection = {}) {
     if (!captureRequest(state) || typeof selection.task_id !== 'string' || !selection.task_id ||
         !Number.isSafeInteger(selection.input_revision) || selection.input_revision < 0) return false;
-    invalidateTeacherWork(state);
+    clearTeacherTaskSelection(state);
     state.task_id = selection.task_id; state.input_revision = selection.input_revision;
     return true;
 }
@@ -69,6 +84,7 @@ export function updateTeacherInput(state, text) {
         state.operationError = { operation: 'input', reason: 'invalid_input' };
         return false;
     }
+    if (state.composerText !== text) { state.edit_epoch++; state.requirementsEdited = true; }
     state.composerText = text; state.composerStatus = 'unsaved'; state.operationError = null;
     return true;
 }
@@ -80,11 +96,16 @@ export function applyCapabilityResult(state, token, result = {}) {
         if (!object(result.data) || !capabilityNames.every(name => typeof result.data[name] === 'boolean') ||
             result.data.publish !== false || result.data.rendered_preview !== false || !object(result.data.reasons)) return false;
         data = Object.fromEntries(capabilityNames.map(name => [name, result.data[name]]));
+        const privateTasks = result.data.private_tasks;
+        if (privateTasks !== undefined && (!object(privateTasks) || Object.keys(privateTasks).length !== 3 ||
+            !['create', 'read', 'update'].every(name => typeof privateTasks[name] === 'boolean'))) return false;
+        data.private_tasks = Object.fromEntries(['create', 'read', 'update'].map(name => [name, privateTasks?.[name] === true]));
         data.reasons = Object.fromEntries(Object.entries(result.data.reasons).filter(([name, value]) =>
             capabilityNames.includes(name) && typeof value === 'string' && value.length <= 200));
     }
     state.capabilities = { status: result.status, data, reason: result.status === 'ready' ? null : safeReason(result.reason) };
-    // Task5a has no supplied task/chat/run/catalog/artifact routes. Server facts cannot open missing UI adapters.
+    // Only the explicitly wired private sub-capabilities can open these three adapters.
+    state.privateTaskAvailability = data ? { ...data.private_tasks } : closedPrivateTasks();
     state.operationAvailability = closedOperations();
     state.operationUnavailableReason = 'TEACHER_WORK_OPERATIONS_UNWIRED';
     return true;
@@ -93,6 +114,28 @@ export function applyCapabilityResult(state, token, result = {}) {
 export function recordTeacherOperationFailure(state, token, operation, reason) {
     if (!acceptResponse(state, token) || !['chat', 'save'].includes(operation)) return false;
     state.composerStatus = 'unsaved'; state.operationError = { operation, reason: safeReason(reason) };
+    return true;
+}
+
+export function teacherWorkingChanges(state) {
+    if (!state.task) return {};
+    const changes = {};
+    if (state.composerText !== state.task.working.requirements) changes.requirements = state.composerText;
+    if (JSON.stringify(state.draftResourceIds) !== JSON.stringify(state.task.working.resource_ids)) changes.resource_ids = [...state.draftResourceIds];
+    if (state.draftTargetSlideCount !== state.task.target_slide_count) changes.target_slide_count = state.draftTargetSlideCount;
+    return changes;
+}
+
+export function applyTeacherTaskSnapshot(state, token, task, { preserveEdits = false, preserveRequirements = false } = {}) {
+    if (!acceptResponse(state, token)) return false;
+    state.task = task; state.task_id = task.task_id; state.input_revision = task.input_revision; state.working_revision = task.working_revision;
+    state.taskReadStatus = 'ready'; state.taskConflict = false; state.operationError = null;
+    if (!preserveEdits) {
+        if (!preserveRequirements) state.composerText = task.working.requirements;
+        state.requirementsEdited = preserveRequirements; state.draftResourceIds = [...task.working.resource_ids];
+        state.draftTargetSlideCount = task.target_slide_count; state.edit_epoch++;
+    }
+    state.composerStatus = preserveEdits || preserveRequirements || Object.keys(teacherWorkingChanges(state)).length ? 'unsaved' : 'saved';
     return true;
 }
 
@@ -140,10 +183,13 @@ export function teacherWorkReasonText(reason) {
     const messages = {
         TEACHER_WORK_UNAVAILABLE: '服务端安全能力尚未就绪，教师 Work 暂不可用',
         TEACHER_WORK_OPERATIONS_UNWIRED: '当前页面尚未接通任务和对话操作',
-        network_error: '无法读取服务端能力，请重试', request_failed: '读取服务端能力失败，请重试',
-        invalid_response: '服务端能力响应无法验证，请稍后重试', request_aborted: '本次请求已失效',
+        network_error: '无法连接服务端，请重试；当前编辑仍保留在页面', request_failed: '请求失败，请重试；当前编辑仍保留在页面',
+        invalid_response: '服务端响应无法验证，请稍后重试', request_aborted: '本次请求已失效',
         auth_required: '当前登录身份未通过验证', teacher_required: '当前登录身份不是教师',
-        invalid_input: '教学需求最多可输入 4000 字'
+        invalid_input: '请填写任务标题、主题和对象，选择 1–10 份资料；需求最多 4000 字',
+        revision_conflict: '服务器版本已变化，当前编辑未保存。重新读取后检查并再次保存',
+        idempotency_conflict: '创建请求标识与内容不一致，请修改任务信息后重试',
+        task_not_found: '任务不存在或当前身份无法读取'
     };
     return messages[safeReason(reason)];
 }

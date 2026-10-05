@@ -2600,7 +2600,12 @@
             @toggle-taskrail="teacherWorkToggleTaskRail" @toggle-artifacts="teacherWorkToggleArtifacts"
             @open-artifacts="teacherWorkOpenArtifacts" @close-artifacts="teacherWorkCloseArtifacts"
             @set-artifact-tab="teacherWorkSetArtifactTab" @open-catalog="teacherWorkOpenCatalog"
-            @close-catalog="teacherWorkCloseCatalog" @update-input="teacherWorkUpdateInput">
+            @close-catalog="teacherWorkCloseCatalog" @update-input="teacherWorkUpdateInput"
+            @open-create-task="teacherWorkOpenCreateTask" @close-create-task="teacherWorkCloseCreateTask"
+            @update-create-form="teacherWorkUpdateCreateForm" @create-task="teacherWorkCreateTask"
+            @reload-task="teacherWorkReloadTask" @save-working="teacherWorkSaveWorking"
+            @toggle-resource="teacherWorkToggleResource" @update-target-slides="teacherWorkUpdateTargetSlides"
+            @reload-resources="teacherWorkLoadResources">
         </teacher-work>
         <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
             :class="{ 'student-legacy-shell': currentRole === 'student' }">

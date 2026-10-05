@@ -14,10 +14,10 @@
     font-size: 15px; line-height: 1.6;
 }
 .teacher-work *, .teacher-work *::before, .teacher-work *::after { box-sizing: border-box; }
-.teacher-work button, .teacher-work textarea { font: inherit; }
+.teacher-work button, .teacher-work textarea, .teacher-work input { font: inherit; }
 .teacher-work button { cursor: pointer; }
 .teacher-work button:disabled { cursor: not-allowed; opacity: .56; }
-.teacher-work button:focus-visible, .teacher-work textarea:focus-visible,
+.teacher-work button:focus-visible, .teacher-work textarea:focus-visible, .teacher-work input:focus-visible,
 .teacher-work [tabindex="-1"]:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
 .teacher-work h1, .teacher-work h2, .teacher-work h3, .teacher-work p { margin: 0; }
 .teacher-work h1, .teacher-work h2, .teacher-work-preview-heading h3 {
@@ -74,6 +74,7 @@
 .teacher-work-task-group h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
 .teacher-work-task-group h3 i { font-size: 14px; color: #667386; }
 .teacher-work-task-group p { padding: 10px 0 0 25px; font-size: 13px; color: var(--tw-muted); }
+.teacher-work-task-group .teacher-work-current-task { color: var(--tw-ink); font-weight: 500; overflow-wrap: anywhere; }
 .teacher-work-task-tools { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
     padding-top: 16px; border-top: 1px solid var(--tw-line); }
 .teacher-work-task-tools button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
@@ -110,6 +111,29 @@
 .teacher-work-empty-conversation > i { display: block; margin-bottom: 10px; font-size: 28px; color: #a0aab8; }
 .teacher-work-empty-conversation h3 { font-size: 15px; font-weight: 500; }
 .teacher-work-empty-conversation p { margin-top: 5px; font-size: 13px; line-height: 1.8; }
+.teacher-work-create, .teacher-work-selected-task { margin-top: 26px; padding: 20px;
+    border: 1px solid var(--tw-line); border-radius: 8px; background: #fff; }
+.teacher-work-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.teacher-work-create h2, .teacher-work-selected-task h2 { font-size: 22px; line-height: 1.5; overflow-wrap: anywhere; }
+.teacher-work-create-fields { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.teacher-work-create-fields label, .teacher-work-target-slides { display: flex; flex-direction: column; gap: 6px;
+    min-width: 0; font-size: 14px; font-weight: 500; }
+.teacher-work-create-fields input, .teacher-work-target-slides input { width: 100%; min-width: 0; min-height: 40px;
+    padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; color: var(--tw-ink); }
+.teacher-work-numeric-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.teacher-work-target-slides { max-width: 190px; margin-top: 16px; }
+.teacher-work-resources { min-width: 0; margin: 20px 0; padding: 14px; border: 1px solid var(--tw-line); border-radius: 6px; }
+.teacher-work-resources legend { padding: 0 5px; color: var(--tw-ink); font-size: 14px; font-weight: 600; }
+.teacher-work-resources .teacher-work-button { margin-top: 12px; }
+.teacher-work-resource-option { display: flex; align-items: flex-start; gap: 10px; margin-top: 10px;
+    color: var(--tw-ink); font-size: 14px; cursor: pointer; }
+.teacher-work-resource-option input { flex-shrink: 0; width: 16px; height: 16px; margin-top: 4px; accent-color: var(--tw-accent); }
+.teacher-work-resource-option span { min-width: 0; overflow-wrap: anywhere; }
+.teacher-work-resource-option small { display: block; color: var(--tw-muted); font-size: 12px; }
+.teacher-work-task-read-status, .teacher-work-task-read-actions { margin-top: 18px; }
+.teacher-work-task-read-actions .teacher-work-button { margin-top: 10px; }
+.teacher-work-create > .teacher-work-input-error { margin-bottom: 12px !important; }
+.teacher-work-artifact-content > .teacher-work-resources { margin-top: 0; }
 .teacher-work-composer { flex-shrink: 0; padding: 14px 14px 10px; background: #fff;
     border: 1px solid #d2dbe5; border-radius: 9px; box-shadow: 0 2px 5px rgba(24, 39, 59, .025); }
 .teacher-work-composer textarea { display: block; width: 100%; min-height: 72px; max-height: 180px; resize: vertical;

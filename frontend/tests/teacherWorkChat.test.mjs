@@ -78,11 +78,12 @@ test('T5a12 chat and save failures preserve input without appending successful h
     }
 });
 
-test('T5a13 capability transport has one fixed GET and rejects unavailable 503 honestly', async () => {
+test('T5a13 capability transport keeps its fixed GET and rejects unavailable 503 honestly', async () => {
     globals(); const { createTeacherWorkApi } = await required(apiURL), calls = [];
     const api = createTeacherWorkApi({ getToken: () => 'synthetic-session', dispatchAuthExpired() { assert.fail('unexpected expiry'); },
         fetchImpl: async (url, options) => { calls.push({ url, options }); return response(503, { code: 503, message: 'TEACHER_WORK_UNAVAILABLE', data: null }); } });
-    assert.deepEqual(Object.keys(api), ['getCapabilities']);
+    assert.deepEqual(Object.keys(api), ['getCapabilities', 'listResources', 'createTask', 'getTask', 'updateWorking']);
+    for (const name of ['chat', 'generate', 'saveDraft', 'publish', 'deleteTask', 'listTasks']) assert.equal(api[name], undefined);
     await assert.rejects(api.getCapabilities(), error => error.name === 'TeacherWorkError' && error.status === 503 && error.reason === 'TEACHER_WORK_UNAVAILABLE');
     assert.equal(calls.length, 1); assert.ok(calls[0].url.endsWith('/api/teacher/work/capabilities'));
     assert.equal(calls[0].options.method, 'GET'); assert.equal(calls[0].options.body, undefined);
