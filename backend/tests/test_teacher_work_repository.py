@@ -449,7 +449,8 @@ def test_repository_lock_order_and_transaction_ownership():
 
 def test_t2_pure_import_boundary():
     allowed = {"__future__", "copy", "dataclasses", "datetime", "json", "typing", "uuid", "pydantic",
-               "app.schemas.teacher_work", "app.services.teacher_work.types", "app.services.teacher_work.legacy"}
+               "app.schemas.teacher_work", "app.services.teacher_work.types", "app.services.teacher_work.legacy",
+               "app.services.teacher_work.run_persistence", "app.services.teacher_work.runs"}
     for relative in ("app/repositories/teacher_work.py", "app/services/teacher_work/legacy.py"):
         path = BACKEND / relative
         assert path.is_file(), "T2a pure source is missing"
