@@ -1,5 +1,6 @@
 from app.api.deps import teacher_student_ids
 from copy import deepcopy
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from functools import wraps
 import re
@@ -21,6 +22,12 @@ from app.services.gitea_account_service import RepoPermission, ensure_repository
 from app.services.gitea_service import GiteaService, is_stale_gitea_url, normalize_repo_slug
 from app.utils.datetime import format_chinese_datetime
 from app.services.git_workflow_rules import evaluate_git_workflow
+from app.services.student_git_guidance import build_student_git_guidance
+from app.services.student_git_workflow import (
+    validate_git_branch, reassign_task, bind_task_observation, merge_task_observations,
+    project_task_evidence, summarize_task_states, needs_submission_reminder, reconcile_task_observations,
+    pull_request_observation_fields,
+)
 
 
 MODULE = "team_collaboration_git"
@@ -302,77 +309,104 @@ def _default_repo(repo_name: str = "huffman-coding-team", *, status: str = "coll
 
 
 def _validate_branch(branch):
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", str(branch)) or ".." in branch or "//" in branch or branch.endswith(("/", ".", ".lock")):
-        raise ValueError("invalid Git branch name")
+    return validate_git_branch(branch)
+
+
+def _task_now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _repository_task_key(repository) -> str:
+    owner = str(repository.get("giteaOwner") or "").strip()
+    name = str(repository.get("giteaRepo") or repository.get("repoName") or "").strip()
+    repo_id = repository.get("giteaRepositoryId")
+    suffix = str(repo_id) if type(repo_id) is int and repo_id > 0 else "legacy"
+    return f"{owner}/{name}#{suffix}".lower() if owner and name else ""
+
+
+def _task_branch_reused(project, member) -> bool:
+    key = _repository_task_key(project.get("repository") or {})
+    branch = member.get("branch")
+    for other in project.get("memberProgress") or []:
+        if _canonical_member_id(other) != _canonical_member_id(member) and other.get("branch") == branch:
+            return True
+        if any(row.get("branch") == branch and (not row.get("repositoryKey") or row.get("repositoryKey") == key)
+               for row in other.get("taskHistory") or []):
+            return True
+    return False
+
+
+def _pr_task_observation(row):
+    return {"kind": "pull_request", "repositoryKey": row.get("repositoryKey") or "",
+        "headRepositoryKey": row.get("headRepositoryKey") or "", "headSha": row.get("headSha") or "",
+        "memberId": row.get("creatorId") or "", "sourceBranch": row.get("sourceBranch") or "",
+        "targetBranch": row.get("targetBranch") or "", "number": row.get("number"),
+        "createdAt": row.get("createdAt") or "", "updatedAt": row.get("remoteUpdatedAt") or row.get("updatedAt") or "",
+        "status": row.get("status"), "current": True,
+        "provenance": {"gitea": "gitea_snapshot", "gitea_webhook": "gitea_webhook", "gitea_merge": "gitea_merge"}.get(row.get("source"), "legacy_unverified"),
+        "taskBinding": deepcopy(row.get("taskBinding")),
+        "firstSeenTaskRevision": row.get("firstSeenTaskRevision")}
+
+
+def _record_task_observations(project, observations, *, replace_pr_snapshot=False, previous=None):
+    """The only ingestion binding writer; input rows are service-normalized facts."""
+    repo = project.get("repository") or {}
+    key = _repository_task_key(repo)
+    result = []
+    for member in project.get("memberProgress") or []:
+        scoped = [row for row in observations if row.get("memberId") == _canonical_member_id(member)]
+        evidence = member.get("taskEvidence") or {}
+        working = deepcopy(member)
+        working.setdefault("taskEvidence", {})["branchReused"] = _task_branch_reused(project, member)
+        prior_rows = list(evidence.get("observations") or []) + list(evidence.get("history") or []) + list(previous or [])
+        for assignment in member.get("taskHistory") or []:
+            old = assignment.get("taskEvidence") or {}
+            prior_rows.extend(old.get("observations") or [])
+            prior_rows.extend(old.get("history") or [])
+        bound = []
+        for row in scoped:
+            candidates = [old for old in prior_rows if old.get("kind") == row.get("kind") and
+                old.get("memberId") == row.get("memberId") and
+                (old.get("repositoryKey") == row.get("repositoryKey") or not old.get("repositoryKey") or not row.get("repositoryKey")) and
+                (old.get("number") == row.get("number") if row.get("kind") == "pull_request" else old.get("sha") == row.get("sha"))]
+            prior = next((old for old in candidates if isinstance(old.get("taskBinding"), dict)), candidates[0] if candidates else None)
+            bound.append(bind_task_observation(working, row, repository_key=key,
+                default_branch=repo.get("defaultBranch") or "", previous=prior))
+        merged = merge_task_observations(working, bound, replace_pr_snapshot=replace_pr_snapshot)
+        # Records lacking an assignment boundary stay legacy; ingestion never assigns one.
+        member["taskEvidence"] = merged["taskEvidence"]
+        result.extend(bound)
+    for row in observations:
+        if not any(row.get("memberId") == _canonical_member_id(m) for m in project.get("memberProgress") or []):
+            result.append({**deepcopy(row), "taskBinding": None, "bindingReasons": ["member_identity_unresolved"]})
+    _project_current_task_evidence(project)
+    return result
+
+
+def _project_current_task_evidence(project):
+    """Project only; callers decide whether their write or display copy persists."""
+    repo = project.get("repository") or {}
+    key = _repository_task_key(repo)
+    states = []
+    for member in project.get("memberProgress") or []:
+        working = deepcopy(member)
+        working.setdefault("taskEvidence", {})["branchReused"] = _task_branch_reused(project, member)
+        state = project_task_evidence(working, repository_key=key,
+            default_branch=repo.get("defaultBranch") or "", observations=(working.get("taskEvidence") or {}).get("observations") or [])
+        member["currentTask"] = state
+        for field in ("cloneStatus", "pushStatus", "prStatus", "mergeStatus", "progress", "statusLabel"):
+            member[field] = state[field]
+        states.append(state)
+    summary = summarize_task_states(states)
+    if states and summary["completedMembers"] == len(states):
+        repo["status"] = "completed"
+    elif repo.get("status") == "completed":
+        repo["status"] = "collaborating"
+    return states
 
 
 def _workflow_steps(repo: dict[str, Any], member: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    repo_name = repo.get("repoName") or "huffman-coding-team"
-    task_branch = (member or {}).get("branch") or repo.get("taskBranch") or "feature/task"
-    default_branch = repo.get("defaultBranch") or "main"
-    fallback_urls = _repo_urls(repo_name, repo.get("giteaOwner") or "campus")
-    clone_url = repo.get("cloneUrl") or ""
-    html_url = (repo.get("htmlUrl") or fallback_urls["htmlUrl"]).rstrip("/")
-    clone_done = member and member.get("cloneStatus") == "done"
-    push_done = member and member.get("pushStatus") in {"detected", "done"}
-    pr_open = member and member.get("prStatus") in {"open", "merged"}
-    merged = member and member.get("mergeStatus") == "merged"
-    return [
-        {
-            "id": "clone",
-            "title": "拉取代码",
-            "description": "复制仓库地址，在本地终端完成项目初始化。",
-            "command": f"git clone {clone_url}" if clone_url else "",
-            "status": "done" if clone_done else "current",
-            "statusLabel": "已拉取" if clone_done else "待确认",
-            "nextHint": "拉取后点击“我已完成拉取”。",
-        },
-        {
-            "id": "branch",
-            "title": "创建功能分支",
-            "description": "进入项目目录，为当前任务建立独立分支。",
-            "command": f"cd {repo_name}\ngit checkout -b {task_branch}",
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已准备" if clone_done else "等待 clone",
-            "nextHint": "分支创建后即可提交代码。",
-        },
-        {
-            "id": "commit",
-            "title": "提交代码",
-            "description": "把本地改动提交到任务分支，commit message 要说明实现内容。",
-            "command": 'git add .\ngit commit -m "feat: 完成当前协作任务"',
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已提交" if push_done else "待提交",
-            "nextHint": "提交后推送到 Gitea。",
-        },
-        {
-            "id": "push",
-            "title": "推送代码",
-            "description": "推送任务分支，系统后续通过 Gitea Webhook 检测 push。",
-            "command": f"git push -u origin {task_branch}",
-            "status": "done" if push_done or pr_open or merged else ("current" if clone_done else "locked"),
-            "statusLabel": "已检测" if push_done else "等待系统检测",
-            "nextHint": "push 后刷新状态，等待系统检测。",
-        },
-        {
-            "id": "pull_request",
-            "title": "发起 Pull Request",
-            "description": "进入 Gitea 原生 PR 页面，把任务分支合并到主分支。",
-            "command": f"{html_url}/pulls/new?head={task_branch}&base={default_branch}",
-            "status": "done" if pr_open or merged else ("current" if push_done else "locked"),
-            "statusLabel": "PR 已创建" if pr_open else "PR 待创建",
-            "nextHint": "创建 PR 后等待老师或队长审核。",
-        },
-        {
-            "id": "merge",
-            "title": "等待审核合并",
-            "description": "老师或队长在 Gitea 审核并合并后，页面同步任务完成状态。",
-            "command": f"git pull origin {default_branch}",
-            "status": "done" if merged else ("current" if pr_open else "locked"),
-            "statusLabel": "已合并" if merged else "等待审核",
-            "nextHint": "合并后团队进度与得分会自动更新。",
-        },
-    ]
+    return build_student_git_guidance(repo, member, (member or {}).get("currentTask") or {})
 
 
 def _default_project(project_id: str = "huffman-coding-team") -> dict[str, Any]:
@@ -568,6 +602,10 @@ def _make_member(name: str, *, role: str = "学生", task: str = "待分配协�
         "role": role,
         "task": task,
         "branch": branch or f"feature/{normalize_repo_slug(member_name)}",
+        "taskRevision": 0,
+        "taskAssignedAt": "",
+        "taskHistory": [],
+        "taskEvidence": {"repositoryKey": "", "observations": [], "history": []},
         "cloneStatus": "pending",
         "commitCount": 0,
         "pushStatus": "pending",
@@ -737,10 +775,8 @@ def _apply_auto_contribution(project: dict[str, Any]) -> None:
 def _team_summary(project: dict[str, Any]) -> dict[str, Any]:
     _apply_auto_contribution(project)
     members = project.get("memberProgress") or []
-    completed = [item for item in members if item.get("source") == "gitea" and item.get("mergeStatus") == "merged"]
-    pushed = [item for item in members if item.get("source") == "gitea" and item.get("pushStatus") in {"detected", "done"}]
-    open_pr = [item for item in project.get("pullRequests") or [] if _is_real_gitea_row(item) and item.get("status") == "open"]
-    average = round(sum(int(item.get("progress") or 0) for item in members) / max(len(members), 1))
+    states = _project_current_task_evidence(project)
+    current_summary = summarize_task_states(states)
     contribution_ranking = sorted(
         [
             {
@@ -765,13 +801,9 @@ def _team_summary(project: dict[str, Any]) -> dict[str, Any]:
         reverse=True,
     )
     return {
-        "totalMembers": len(members),
-        "completedMembers": len(completed),
-        "pushedMembers": len(pushed),
-        "openPullRequests": len(open_pr),
-        "averageProgress": average,
-        "pendingMembers": len(members) - len(completed),
-        "unsubmittedMembers": len(members) - len(pushed),
+        **current_summary,
+        "counterScope": "current_task_workflow",
+        "contributionScope": "lifetime_activity",
         "reminderCount": len(project.get("reminders") or []),
         "contributionRanking": contribution_ranking,
     }
@@ -781,8 +813,10 @@ def _current_user_progress(project: dict[str, Any], viewer: str | None) -> dict[
     member = next((m for m in project.get("memberProgress") or [] if _canonical_member_id(m) == viewer), None)
     if member is None:
         return {"userId": viewer or "", "member": None, "nextHint": "", "score": None}
-    if member.get("mergeStatus") == "merged":
-        next_hint = "任务已完成，等待教师汇总评分。"
+    if (member.get("currentTask") or {}).get("bindingStatus") == "legacy_unverified":
+        next_hint = "当前任务证据未验证，请队长明确分配任务并使用新的任务分支。"
+    elif member.get("mergeStatus") == "merged":
+        next_hint = "本任务 PR 已合并；本机同步、测试和教师评分仍需分别确认。"
     elif member.get("prStatus") == "open":
         next_hint = "等待老师或队长审核 PR。"
     elif member.get("pushStatus") in {"detected", "done"}:
@@ -809,9 +843,16 @@ def _enrich(project: dict[str, Any], viewer: str | None = None, *, actor=None) -
         pr["verified"] = _is_real_gitea_row(pr)
         if not pr["verified"]:
             pr["provenance"] = "legacy_unverified"
+    _project_current_task_evidence(result)
     member = next((m for m in result.get("memberProgress") or [] if _canonical_member_id(m) == viewer), None)
     result["repository"]["statusLabel"] = _status_label(result["repository"].get("status") or "")
     result["workflowSteps"] = _workflow_steps(result["repository"], member)
+    result["workflowGuidance"] = {
+        "version": 1,
+        "memberId": _canonical_member_id(member) if member else "",
+        "taskRevision": (member.get("currentTask") or {}).get("revision") if member else None,
+        "repositoryKey": _repository_task_key(result["repository"]),
+    }
     result["currentUserProgress"] = _current_user_progress(result, viewer)
     result["teamSummary"] = _team_summary(result)
     return result
@@ -900,6 +941,7 @@ def _merge_external_changes(before, after, current, path=""):
 def _save_external_changes(db, before, after):
     with _locked_project(db, after["id"]) as latest:
         merged = _merge_external_changes(before, after, latest)
+        _project_current_task_evidence(merged)
         return _save_project(db, merged)
 
 
@@ -1226,15 +1268,13 @@ def _ensure_pull_requests_from_member_progress(project: dict[str, Any]) -> bool:
             "targetBranch": repo.get("defaultBranch") or "main",
             "status": status,
             "statusLabel": "已合并" if status == "merged" else "PR 待审核",
-            "leaderReviewStatus": "recommended",
-            "leaderReviewer": project.get("project", {}).get("leaderId") or "",
-            "teacherReviewStatus": "approved" if status == "merged" else "pending",
-            "teacherReviewer": "teacher_chen" if status == "merged" else "",
-            "reviewComment": (
-                "教师已确认合并，功能演示和测试记录基本完整。"
-                if status == "merged"
-                else "队长已完成初审，建议教师重点查看异常路径测试和 README 运行说明。"
-            ),
+            "leaderReviewStatus": "pending",
+            "leaderReviewer": "",
+            "teacherReviewStatus": "unknown",
+            "teacherReviewer": "",
+            "reviewComment": "",
+            "reviewScope": "legacy_unverified",
+            "nativeReview": None,
             "createdAt": created_at,
             "updatedAt": project.get("updatedAt") or _now_label(),
             "url": f"{html_url}/pulls/{max_number}" if html_url else "",
@@ -1249,88 +1289,63 @@ def _ensure_pull_requests_from_member_progress(project: dict[str, Any]) -> bool:
 
 
 def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[dict[str, Any]]) -> None:
-    if not prs:
-        project["pullRequests"] = []
-        _mark_gitea_sync_state(project, status="synced", pr_source="gitea_empty")
-        return
-
-    member_refs: dict[str, dict[str, Any]] = {}
-    pr_counts: dict[str, int] = {}
-    merged_counts: dict[str, int] = {}
-    existing = {
-        int(item.get("number") or 0): item
-        for item in (project.get("pullRequests") or [])
-        if int(item.get("number") or 0) and _is_real_gitea_row(item)
-    }
-    merged_list: list[dict[str, Any]] = []
+    prior_rows = deepcopy(project.get("pullRequests") or [])
+    history = project.setdefault("pullRequestHistory", [])
+    for row in prior_rows:
+        if row not in history:
+            history.append(deepcopy(row))
+    existing = {int(row.get("number") or 0): row for row in prior_rows if int(row.get("number") or 0) and _is_real_gitea_row(row)}
+    member_refs, pr_counts, merged_counts = {}, {}, {}
+    merged_list = []
+    seen_numbers = set()
     for pr in prs:
         number = int(pr.get("number") or 0)
-        if not number:
+        if not number or number in seen_numbers:
             continue
+        seen_numbers.add(number)
         creator_login = str(pr.get("creator") or "")
-        # 跳过系统账号创建的 PR
         if _is_gitea_system_login(creator_login):
             continue
         match = match_campus_user_from_gitea_event(db, sender_username=creator_login)
         creator = match.get("displayName") or creator_login
         status = str(pr.get("status") or "open")
         prev = existing.get(number) or {}
-        row = {
-            **prev,
-            "id": prev.get("id") or f"pr-{number}",
-            "number": number,
+        row = {**prev, "id": prev.get("id") or f"pr-{number}", "number": number,
             "title": pr.get("title") or prev.get("title") or f"Pull Request #{number}",
             "status": status,
             "statusLabel": prev.get("statusLabel") if status == prev.get("status") else _pr_status_label(status),
-            "creator": creator,
-            "creatorId": match.get("campusUserId") or "",
-            "sourceBranch": pr.get("sourceBranch") or prev.get("sourceBranch") or "",
-            "targetBranch": pr.get("targetBranch") or prev.get("targetBranch") or "main",
-            "url": pr.get("url") or prev.get("url") or "",
-            "updatedAt": pr.get("updatedAt") or prev.get("updatedAt") or _now_label(),
-            "createdAt": pr.get("createdAt") or prev.get("createdAt") or _now_label(),
-            "source": "gitea",
-        }
+            "creator": creator, "creatorId": match.get("campusUserId") or "",
+            "sourceBranch": pr.get("sourceBranch") or "", "targetBranch": pr.get("targetBranch") or "",
+            "repositoryKey": pr.get("repositoryKey") or "", "headRepositoryKey": pr.get("headRepositoryKey") or "",
+            "headSha": pr.get("headSha") or "", "url": pr.get("url") or prev.get("url") or "",
+            "createdAt": pr.get("createdAt") or prev.get("createdAt") or "",
+            "updatedAt": pr.get("updatedAt") or "", "remoteUpdatedAt": pr.get("updatedAt") or "",
+            "nativeReview": prev.get("nativeReview"), "source": "gitea"}
+        if status == "merged":
+            row["teacherReviewStatus"] = prev.get("teacherReviewStatus") or "unknown"
         member = _find_existing_member_for_gitea_match(project, match, creator_login)
         if member:
-            member_key = str(member.get("id") or member.get("studentId") or member.get("name") or creator_login)
+            member_key = _canonical_member_id(member)
             member_refs[member_key] = member
             pr_counts[member_key] = pr_counts.get(member_key, 0) + 1
-            if status == "merged":
-                merged_counts[member_key] = merged_counts.get(member_key, 0) + 1
-        if status == "merged":
-            row["statusLabel"] = prev.get("statusLabel") if prev.get("status") == "merged" else "已合并"
-            row["teacherReviewStatus"] = prev.get("teacherReviewStatus") or "approved"
-        elif status == "open":
-            row["statusLabel"] = prev.get("statusLabel") or "待审核"
-            if member:
-                member["prStatus"] = "open"
-                member["pushStatus"] = "detected"
-                member["statusLabel"] = "PR 待审核"
-                member["progress"] = max(int(member.get("progress") or 0), 74)
+            merged_counts[member_key] = merged_counts.get(member_key, 0) + (status == "merged")
         merged_list.append(row)
-    merged_list.sort(key=lambda item: int(item.get("number") or 0), reverse=True)
-    project["pullRequests"] = merged_list
-    _mark_gitea_sync_state(project, status="synced", pr_source="gitea" if merged_list else "gitea_empty")
-
-    for pr in merged_list:
-        if pr.get("status") != "merged":
-            continue
-        member = _find_existing_member_for_gitea_match(
-            project,
-            {"campusUserId": pr.get("creatorId")},
-            str(pr.get("creator") or ""),
-        )
-        if not member:
-            continue
-        member["prStatus"] = "merged"
-        member["mergeStatus"] = "merged"
-        member["statusLabel"] = "已完成"
-        member["progress"] = 100
+    project["pullRequests"] = sorted(merged_list, key=lambda row: int(row.get("number") or 0), reverse=True)
+    normalized = _record_task_observations(project, [_pr_task_observation(row) for row in merged_list],
+        replace_pr_snapshot=True, previous=[_pr_task_observation(row) for row in prior_rows])
+    for row in project["pullRequests"]:
+        bound = next((item for item in normalized if item.get("number") == row.get("number") and item.get("repositoryKey") == row.get("repositoryKey")), None)
+        if bound:
+            row.update({"taskBinding": deepcopy(bound.get("taskBinding")),
+                "firstSeenTaskRevision": bound.get("firstSeenTaskRevision"), "taskBindingReasons": bound.get("bindingReasons") or []})
     for member_key, member in member_refs.items():
-        member["prCount"] = pr_counts.get(member_key, 0)
-        member["mergedPrCount"] = merged_counts.get(member_key, 0)
+        # Existing counters are lifetime activity, never the current-task verdict.
+        member["prCount"] = max(int(member.get("prCount") or 0), pr_counts.get(member_key, 0))
+        member["mergedPrCount"] = max(int(member.get("mergedPrCount") or 0), merged_counts.get(member_key, 0))
         member["source"] = "gitea"
+    _mark_gitea_sync_state(project, status="synced", pr_source="gitea" if merged_list else "gitea_empty")
+    _project_current_task_evidence(project)
+
 
 def _apply_gitea_commits_to_project(
     db: Session,
@@ -1340,9 +1355,14 @@ def _apply_gitea_commits_to_project(
     branch: str | None = None,
 ) -> None:
     recent = project.setdefault("recentCommits", [])
+    observations = []
+    history = project.setdefault("commitHistory", [])
+    for old in recent:
+        if old not in history:
+            history.append(deepcopy(old))
     if commits:
         recent[:] = [item for item in recent if str(item.get("sha") or "").strip()]
-    existing_shas = {str(item.get("sha") or item.get("id") or "") for item in recent}
+    existing_shas = {str(item.get("sha") or item.get("id") or "") for item in recent + history}
     repo = project.get("repository") or {}
     branch_name = str(branch or repo.get("defaultBranch") or "main")
     for commit in commits:
@@ -1383,14 +1403,15 @@ def _apply_gitea_commits_to_project(
         if not member:
             continue
         member["source"] = "gitea"
-        member["pushStatus"] = "detected"
-        member["cloneStatus"] = "done"
-        if member.get("prStatus") in {None, "", "not_created", "needs_pr"}:
-            member["prStatus"] = "needs_pr"
-            member["statusLabel"] = "PR 待创建"
+        observations.append({"kind": "commit_snapshot", "repositoryKey": "", "memberId": match.get("campusUserId") or "",
+            "sourceBranch": branch_name, "sha": sha, "createdAt": commit.get("time") or "",
+            "updatedAt": commit.get("time") or "", "provenance": "gitea_snapshot", "sourceTimeKind": "commit_time"})
         member["commitCount"] = int(member.get("commitCount") or 0) + 1
         member["lastCommitAt"] = commit.get("time") or _now_label()
-        member["progress"] = max(int(member.get("progress") or 0), 58)
+    for row in recent:
+        if row not in history:
+            history.append(deepcopy(row))
+    _record_task_observations(project, observations)
     del recent[30:]
 
 
@@ -1398,27 +1419,22 @@ def _apply_gitea_issues_to_project(db: Session, project: dict[str, Any], issues:
     by_number = {int(item.get("number") or 0): item for item in issues if int(item.get("number") or 0)}
     for member in project.get("memberProgress") or []:
         issue_no = int(member.get("giteaIssueNumber") or 0)
-        if issue_no and issue_no in by_number:
-            issue = by_number[issue_no]
-            title = str(issue.get("title") or "").strip()
-            if title:
-                member["task"] = title
-            body = str(issue.get("body") or "")
-            branch_match = re.search(r"分支[：:]\s*(\S+)", body)
-            if branch_match:
-                member["branch"] = branch_match.group(1)
-            continue
-        gitea_user = _resolve_member_gitea_username(db, member)
-        if not gitea_user:
-            continue
-        for issue in issues:
-            assignees = [str(a).lower() for a in (issue.get("assignees") or [])]
-            if gitea_user.lower() not in assignees:
+        issue = by_number.get(issue_no)
+        if issue is None:
+            gitea_user = _resolve_member_gitea_username(db, member)
+            if not gitea_user:
                 continue
-            member["giteaIssueNumber"] = int(issue.get("number") or 0)
-            if issue.get("title"):
-                member["task"] = str(issue.get("title"))
-            break
+            issue = next((item for item in issues if gitea_user.lower() in [str(a).lower() for a in item.get("assignees") or []]), None)
+        if issue is None:
+            continue
+        task = str(issue.get("title") or member.get("task") or "").strip()
+        branch_match = re.search(r"分支[：:]\s*(\S+)", str(issue.get("body") or ""))
+        branch = branch_match.group(1) if branch_match else str(member.get("branch") or "")
+        reassigned = reassign_task(member, task=task, branch=branch,
+            repository_key=_repository_task_key(project.get("repository") or {}), assigned_at=_task_now_utc())
+        member.update(reassigned)
+        member["giteaIssueNumber"] = int(issue.get("number") or issue_no or 0)
+
 
 
 def _candidate_gitea_sync_branches(project: dict[str, Any], prs: list[dict[str, Any]], default_branch: str) -> list[str]:
@@ -1466,7 +1482,7 @@ def sync_project_from_gitea(db: Session, project_id: str, *, actor=None, gitea=N
         raise RuntimeError(f"Gitea 同步失败：{exc}") from exc
 
     with _locked_project(db, project_id) as current:
-        if _gitea_repo_target(current) != (owner, repo, branch):
+        if _gitea_repo_target(current) != (owner, repo, branch) or _repository_task_key(current.get("repository") or {}) != _repository_task_key(snapshot.get("repository") or {}):
             raise FileExistsError("repository binding changed during sync; refresh and retry")
         if actor is not None and not _project_visible_to_actor(current, actor):
             raise PermissionError("project is not visible to current user")
@@ -1479,14 +1495,25 @@ def sync_project_from_gitea(db: Session, project_id: str, *, actor=None, gitea=N
         old_prs = {r.get("number"):r for r in snapshot.get("pullRequests", [])}
         changed_prs = {r.get("number"):deepcopy(r) for r in current.get("pullRequests", [])
                       if r != old_prs.get(r.get("number"))}
+        _apply_gitea_issues_to_project(db, current, issues)
+        # An assignment changed while I/O was pending takes precedence over the old issue snapshot.
+        for member in current.get("memberProgress", []):
+            member.update(protected.get(_canonical_member_id(member), {}))
         _apply_gitea_prs_to_project(db, current, prs)
         if changed_prs:
             current["pullRequests"] = [r for r in current["pullRequests"] if r.get("number") not in changed_prs] + list(changed_prs.values())
         for name, batch in commits:
             _apply_gitea_commits_to_project(db, current, batch, branch=name)
-        _apply_gitea_issues_to_project(db, current, issues)
+        observed_members = {_canonical_member_id(member): deepcopy(member) for member in current.get("memberProgress", [])}
         for member in current.get("memberProgress", []):
             member.update(protected.get(_canonical_member_id(member), {}))
+        for member in current.get("memberProgress", []):
+            member.update(reconcile_task_observations(member, observed_members[_canonical_member_id(member)],
+                repository_key=_repository_task_key(current.get("repository") or {}),
+                default_branch=(current.get("repository") or {}).get("defaultBranch") or ""))
+        effective_prs = [_pr_task_observation(row) for row in current.get("pullRequests") or []]
+        _record_task_observations(current, effective_prs, replace_pr_snapshot=True, previous=effective_prs)
+        _project_current_task_evidence(current)
         _mark_gitea_sync_state(current, status="synced", pr_source="gitea" if current.get("pullRequests") else "gitea_empty",
             webhook_status="configured" if current["repository"].get("webhookConfigured") else "")
         current["repository"]["lastSyncedAt"] = _now_label()
@@ -1556,15 +1583,10 @@ def assign_member_task(
         raise RuntimeError("无法同步任务到 Gitea：缺少 API Token")
     # 仓库尚未创建时允许先落本地任务，创建仓库后再次分配会补建 Issue
 
-    member.update(
-        {
-            "task": task,
-            "branch": branch,
-            "statusLabel": "已分配",
-            "progress": max(int(member.get("progress") or 0), 10),
-            "giteaIssueNumber": issue_number or member.get("giteaIssueNumber") or 0,
-        }
-    )
+    member.update(reassign_task(member, task=task, branch=branch,
+        repository_key=_repository_task_key(project.get("repository") or {}), assigned_at=_task_now_utc()))
+    member["giteaIssueNumber"] = issue_number or member.get("giteaIssueNumber") or 0
+    _project_current_task_evidence(project)
     if project.get("repository") and _member_matches(member, project.get("project", {}).get("leaderId") or ""):
         project["repository"]["taskBranch"] = branch
     _append_event(project, "task_assigned", actor, f"{actor or '队长'} 将「{task}」分配给 {member.get('name')}")
@@ -1579,6 +1601,7 @@ def remind_unsubmitted_members(db: Session, project_id: str, payload: dict[str, 
     principal = actor
     actor = _actor_name(actor)
     data = payload or {}
+    _project_current_task_evidence(project)
     target_ids = data.get("memberIds") or data.get("members") or []
     if isinstance(target_ids, str):
         target_ids = [item.strip() for item in target_ids.replace("，", ",").split(",") if item.strip()]
@@ -1589,7 +1612,7 @@ def remind_unsubmitted_members(db: Session, project_id: str, payload: dict[str, 
         targets = [
             member
             for member in project.get("memberProgress") or []
-            if member.get("pushStatus") not in {"detected", "done"} or member.get("prStatus") in {"not_created", "needs_pr"}
+            if needs_submission_reminder(member.get("currentTask") or {})
         ]
 
     reminders = project.setdefault("reminders", [])
@@ -2021,7 +2044,9 @@ def bind_project_repository(db: Session, project_id: str, payload: dict[str, Any
 def confirm_clone(db: Session, project_id: str, *, user_id: str) -> dict[str, Any]:
     project = _load_project(db, project_id)
     member = _find_member(project, user_id)
-    member.update({"cloneStatus": "done", "statusLabel": "已拉取", "progress": max(int(member.get("progress") or 0), 35)})
+    member["cloneEvidence"] = {"kind": "student_confirmation", "memberId": _canonical_member_id(member),
+        "repositoryKey": _repository_task_key(project.get("repository") or {}), "confirmedAt": _task_now_utc()}
+    _project_current_task_evidence(project)
     _append_event(project, "clone_confirmed", user_id, f"{user_id} 已确认完成 clone 拉取")
     saved = _save_project(db, project)
     return _enrich(saved, user_id)
@@ -2112,12 +2137,18 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
     repo = project.get("repository") or {}
 
     if event_type == "push":
-        branch = payload.get("branch") or _branch_from_ref(payload.get("ref")) or repo.get("taskBranch")
+        branch = _branch_from_ref(payload.get("ref")) or ""
+        observations = []
+        observed_repository_key = pull_request_observation_fields({"base": {"repo": payload.get("repository")}})["repositoryKey"]
         commits = payload.get("commits") if isinstance(payload.get("commits"), list) else []
         recent_commits = project.setdefault("recentCommits", [])
+        history = project.setdefault("commitHistory", [])
+        for old in recent_commits:
+            if old not in history:
+                history.append(deepcopy(old))
         if commits:
             recent_commits[:] = [item for item in recent_commits if str(item.get("sha") or "").strip()]
-        existing_shas = {item.get("sha") for item in recent_commits if item.get("sha")}
+        existing_shas = {item.get("sha") for item in recent_commits + history if item.get("sha")}
         member_counts: dict[str, int] = {}
         member_refs: dict[str, dict[str, Any]] = {}
         inserted_shas: list[str] = []
@@ -2159,6 +2190,10 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
                 existing_shas.add(sha)
                 inserted_shas.append(sha)
             if member:
+                observations.append({"kind": "push", "repositoryKey": observed_repository_key,
+                    "memberId": match.get("campusUserId") or "", "sourceBranch": branch, "sha": sha,
+                    "createdAt": commit.get("timestamp") or "", "updatedAt": commit.get("timestamp") or "",
+                    "sourceTimeKind": "commit_time", "reliableSourceTime": False, "provenance": "gitea_webhook"})
                 member_key = str(member.get("id") or member.get("studentId") or member.get("name") or sender)
                 member_refs[member_key] = member
                 member_counts[member_key] = member_counts.get(member_key, 0) + 1
@@ -2167,17 +2202,16 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
         for member_key, count in member_counts.items():
             member = member_refs[member_key]
             member["source"] = "gitea"
-            member["pushStatus"] = "detected"
-            if member.get("prStatus") not in {"open", "merged"}:
-                member["prStatus"] = "needs_pr"
-            member["statusLabel"] = "PR pending"
             member["commitCount"] = int(member.get("commitCount") or 0) + count
             member["lastCommitAt"] = _now_label()
-            member["progress"] = max(int(member.get("progress") or 0), 58)
 
         if member_counts:
             dedupe = inserted_shas[0] if inserted_shas else f"push:{sender}:{branch}:{_now_label()}"
             _append_unique_event(project, "push", sender, f"{sender} pushed {branch}", dedupe)
+        for row in recent_commits:
+            if row not in history:
+                history.append(deepcopy(row))
+        _record_task_observations(project, observations)
         del recent_commits[20:]
 
     elif str(event_type).startswith("pull_request"):
@@ -2194,29 +2228,21 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
         member = _find_existing_member_for_gitea_match(project, match, str(creator_login or sender))
         head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
         base = pr.get("base") if isinstance(pr.get("base"), dict) else {}
-        source_branch = payload.get("sourceBranch") or head.get("ref") or (member.get("branch") if member else "") or repo.get("taskBranch") or ""
-        target_branch = payload.get("targetBranch") or base.get("ref") or repo.get("defaultBranch") or "main"
+        source_branch = head.get("ref") or ""
+        target_branch = base.get("ref") or ""
         merged = action == "merged" or bool(pr.get("merged"))
         closed = action == "closed" and not merged
         status = "merged" if merged else ("closed" if closed else "open")
 
-        if member and status == "merged":
-            member["prStatus"] = "merged"
-            member["mergeStatus"] = "merged"
-            member["statusLabel"] = "Merged"
-            member["progress"] = 100
-        elif member and status == "open":
-            member["prStatus"] = "open"
-            member["statusLabel"] = "PR pending review"
-            member["progress"] = max(int(member.get("progress") or 0), 74)
-        elif member:
-            member["prStatus"] = "closed"
-            member["statusLabel"] = "PR closed"
-
         if number:
+            previous_pr = deepcopy(next((row for row in project.get("pullRequests") or [] if row.get("number") == number), {}))
+            history = project.setdefault("pullRequestHistory", [])
+            if previous_pr and previous_pr not in history:
+                history.append(deepcopy(previous_pr))
             _upsert_pr(
                 project,
                 {
+                    **pull_request_observation_fields(pr),
                     "number": number,
                     "title": pr.get("title") or payload.get("title") or f"Pull Request #{number}",
                     "creator": creator,
@@ -2225,21 +2251,24 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
                     "targetBranch": target_branch,
                     "status": status,
                     "statusLabel": "Merged" if status == "merged" else ("Closed" if status == "closed" else "PR pending review"),
-                    "leaderReviewStatus": "pending",
-                    "leaderReviewer": "",
-                    "teacherReviewStatus": "pending",
-                    "teacherReviewer": "",
-                    "reviewComment": "",
-                    "createdAt": _now_label(),
-                    "updatedAt": _now_label(),
+                    "createdAt": pr.get("created_at") or previous_pr.get("createdAt") or "",
+                    "updatedAt": pr.get("updated_at") or "",
+                    "remoteUpdatedAt": pr.get("updated_at") or "",
                     "url": pr.get("html_url") or payload.get("url") or f"{repo.get('htmlUrl', '').rstrip('/')}/pulls/{number}",
                     "source": "gitea_webhook",
                 },
             )
+            current_pr = next(row for row in project.get("pullRequests") or [] if row.get("number") == number)
+            normalized = _record_task_observations(project, [_pr_task_observation(current_pr)],
+                previous=[_pr_task_observation(previous_pr)] if previous_pr else [])
+            if normalized:
+                bound = normalized[0]
+                current_pr.update({"taskBinding": deepcopy(bound.get("taskBinding")),
+                    "firstSeenTaskRevision": bound.get("firstSeenTaskRevision"), "taskBindingReasons": bound.get("bindingReasons") or []})
             related_prs = [
                 item
                 for item in project.get("pullRequests") or []
-                if str(item.get("creator") or "") == str(creator)
+                if item.get("creatorId") and item.get("creatorId") == match.get("campusUserId")
             ]
             if member:
                 member["prCount"] = max(int(member.get("prCount") or 0), len(related_prs), 1)
@@ -2279,6 +2308,7 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
             "scoreExplanation": {"aggregation": "minimum per-commit workflow score", "scope": "Workflow heuristics only"},
         }
 
+    _project_current_task_evidence(project)
     saved = _save_project(db, project)
     return _enrich(saved, sender)
 
@@ -2396,6 +2426,8 @@ def review_pull_request(
     now = _now_label()
 
     if action in {"leader_approve", "recommend_merge"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["leaderReviewStatus"] = "recommended"
         pr["leaderReviewer"] = actor_display
         pr["leaderReviewedAt"] = now
@@ -2404,6 +2436,8 @@ def review_pull_request(
         event_type = "pr_recommended"
         event_text = f"{actor_display} 初审 PR #{pr_number} 并建议合并"
     elif action in {"request_changes", "leader_reject"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["leaderReviewStatus"] = "changes_requested"
         pr["leaderReviewer"] = actor_display
         pr["leaderReviewedAt"] = now
@@ -2412,6 +2446,7 @@ def review_pull_request(
         event_type = "pr_changes_requested"
         event_text = f"{actor_display} 要求 PR #{pr_number} 修改后再提交"
     elif action in merge_actions:
+        operation_observation = _pr_task_observation(deepcopy(pr))
         owner, repo, _branch = _gitea_repo_target(project)
         gitea_svc = gitea or GiteaService()
         if not gitea_svc.enabled or not gitea_svc.token or not owner or not repo:
@@ -2449,20 +2484,19 @@ def review_pull_request(
         pr["status"] = "merged"
         pr["statusLabel"] = "已合并"
         pr["reviewComment"] = comment
-        creator = pr.get("creatorId") or pr.get("creator")
-        member = next((m for m in project.get("memberProgress", []) if _canonical_member_id(m) == creator), None)
-        if member is not None:
-            member["source"] = "gitea"
-            member["prStatus"] = "merged"
-            member["mergeStatus"] = "merged"
-            member["statusLabel"] = "已完成"
-            member["progress"] = 100
-        project["repository"]["status"] = "completed" if all(
-            item.get("mergeStatus") == "merged" for item in project.get("memberProgress") or []
-        ) else project.get("repository", {}).get("status") or "collaborating"
+        # The remote result retains the operation's original local task binding.
+        observed_merge = {**operation_observation, "status": "merged", "provenance": "gitea_merge"}
+        normalized = _record_task_observations(project, [observed_merge], previous=[operation_observation])
+        if normalized:
+            pr["taskBinding"] = deepcopy(normalized[0].get("taskBinding"))
+            pr["firstSeenTaskRevision"] = normalized[0].get("firstSeenTaskRevision")
+            pr["taskBindingReasons"] = normalized[0].get("bindingReasons") or []
+        _project_current_task_evidence(project)
         event_type = "pr_merged"
         event_text = f"{actor_display} 审核并合并 PR #{pr_number}"
     elif action in {"teacher_reject", "reject"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["teacherReviewStatus"] = "rejected"
         pr["teacherReviewer"] = actor_display
         pr["teacherReviewedAt"] = now

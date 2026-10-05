@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.repositories.json_store import JsonStore, make_record_key
 from app.services.gitea_account_service import RepoPermission, ensure_repository_collaborators, match_campus_user_from_gitea_event
 from app.services.gitea_service import GiteaService, is_stale_gitea_url, normalize_repo_slug
+from app.services.repository_git_observation import build_repository_observation_feedback
 from app.utils.datetime import utc_now_iso
 
 
@@ -157,8 +158,7 @@ def _queue_git_coach_feedback(project: dict[str, Any], commit: dict[str, Any], b
         "sha": sha,
         "author": author,
         "branch": branch,
-        "status": "fallback",
-        "summary": "AI Git coach is offline; rule diagnosis: commit received and branch naming is acceptable.",
+        **build_repository_observation_feedback(commit, branch),
         "createdAt": utc_now_iso(),
     }
     if existing:
@@ -328,6 +328,7 @@ def apply_code_repository_gitea_webhook(db: Session, project_id: str, payload: d
 
 
 def enqueue_code_repository_git_coach_feedback(project_id: str, payload: dict[str, Any]) -> None:
+    """No analysis is implemented for this separate repository model."""
     return None
 
 

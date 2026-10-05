@@ -1,5 +1,6 @@
 import request from '../utils/request.js';
 import { isVerifiedPullRequest } from '../utils/teamProvenance.js';
+import { normalizeStudentGitReceipt } from '../utils/studentGitGuidance.js';
 import { formatCurrentDisplayDateTime, formatDisplayDateTime } from '../utils/timeFormat.js';
 
 const API_BASE = globalThis.window?.TEAM_GIT_API_BASE_URL || globalThis.localStorage?.getItem?.('teamGitApiBaseUrl') || '';
@@ -44,129 +45,6 @@ function repositoryCard(project) {
     };
 }
 
-function workflowSteps(repo, member = null) {
-    const cloneDone = member?.cloneStatus === 'done';
-    const pushDone = ['detected', 'done'].includes(member?.pushStatus);
-    const prOpen = ['open', 'merged'].includes(member?.prStatus);
-    const merged = member?.mergeStatus === 'merged';
-    const htmlUrl = String(repo.htmlUrl || '').replace(/\/$/, '');
-    return [
-        {
-            id: 'clone',
-            title: '拉取代码',
-            description: '复制仓库地址，在本地终端完成项目初始化。',
-            command: `git clone ${repo.cloneUrl}`,
-            status: cloneDone ? 'done' : 'current',
-            statusLabel: cloneDone ? '已拉取' : '待确认',
-            nextHint: '拉取后点击“我已完成拉取”。'
-        },
-        {
-            id: 'branch',
-            title: '创建功能分支',
-            description: '进入项目目录，为当前任务建立独立分支。',
-            command: `cd ${repo.repoName}\ngit checkout -b ${(member?.branch || repo.taskBranch)}`,
-            status: pushDone || prOpen || merged ? 'done' : (cloneDone ? 'current' : 'locked'),
-            statusLabel: cloneDone ? '已准备' : '等待 clone',
-            nextHint: '分支创建后即可提交代码。'
-        },
-        {
-            id: 'commit',
-            title: '提交代码',
-            description: '把本地改动提交到任务分支，commit message 要说明实现内容。',
-            command: 'git add .\ngit commit -m "feat: 描述本次任务改动"',
-            status: pushDone || prOpen || merged ? 'done' : (cloneDone ? 'current' : 'locked'),
-            statusLabel: pushDone ? '已提交' : '待提交',
-            nextHint: '提交后推送到 Gitea。'
-        },
-        {
-            id: 'push',
-            title: '推送代码',
-            description: '推送任务分支，系统后续通过 Gitea Webhook 检测 push。',
-            command: `git push -u origin ${(member?.branch || repo.taskBranch)}`,
-            status: pushDone || prOpen || merged ? 'done' : (cloneDone ? 'current' : 'locked'),
-            statusLabel: pushDone ? '已检测' : '等待系统检测',
-            nextHint: 'push 后刷新状态，等待系统检测。'
-        },
-        {
-            id: 'pull_request',
-            title: '发起 Pull Request',
-            description: '进入 Gitea 原生 PR 页面，把任务分支合并到主分支。',
-            command: `${htmlUrl}/pulls/new?head=${(member?.branch || repo.taskBranch)}&base=${repo.defaultBranch}`,
-            status: prOpen || merged ? 'done' : (pushDone ? 'current' : 'locked'),
-            statusLabel: prOpen ? 'PR 已创建' : 'PR 待创建',
-            nextHint: '创建 PR 后等待老师或队长审核。'
-        },
-        {
-            id: 'merge',
-            title: '等待审核合并',
-            description: '老师或队长在 Gitea 审核并合并后，页面同步任务完成状态。',
-            command: `git pull origin ${repo.defaultBranch}`,
-            status: merged ? 'done' : (prOpen ? 'current' : 'locked'),
-            statusLabel: merged ? '已合并' : '等待审核',
-            nextHint: '合并后团队进度与得分会自动更新。'
-        }
-    ];
-}
-
-function teamSummary(project) {
-    const members = project.memberProgress || [];
-    const prs = project.pullRequests || [];
-    const completedMembers = members.filter((item) => item.mergeStatus === 'merged').length;
-    const pushedMembers = members.filter((item) => ['detected', 'done'].includes(item.pushStatus)).length;
-    const unsubmittedMembers = members.filter((item) => !['detected', 'done'].includes(item.pushStatus)).length;
-    const openPullRequests = prs.filter((item) => item.status === 'open').length;
-    const averageProgress = Math.round(members.reduce((sum, item) => sum + Number(item.progress || 0), 0) / Math.max(members.length, 1));
-    const contributionRanking = [...members]
-        .map((item) => ({
-            id: item.id || item.studentId || item.name,
-            name: item.name,
-            studentId: item.studentId || item.id || '',
-            role: item.role || '',
-            task: item.task || '',
-            progress: Number(item.progress || 0),
-            commitCount: Number(item.commitCount || 0),
-            prCount: Number(item.prCount || 0),
-            mergedPrCount: Number(item.mergedPrCount || 0),
-            contribution: Number(item.contribution || 0),
-            score: Number(item.score || 0),
-            source: item.source || project.repository?.prSource || 'local'
-        }))
-        .sort((a, b) => b.contribution - a.contribution);
-    return {
-        totalMembers: members.length,
-        completedMembers,
-        pushedMembers,
-        unsubmittedMembers,
-        openPullRequests,
-        averageProgress,
-        contributionRanking
-    };
-}
-
-function mergeTeamSummary(project, computed) {
-    const backend = project.teamSummary && typeof project.teamSummary === 'object' ? project.teamSummary : null;
-    if (!backend) return computed;
-    return {
-        ...computed,
-        ...backend,
-        contributionRanking: Array.isArray(backend.contributionRanking) && backend.contributionRanking.length > 0
-            ? backend.contributionRanking.map((item) => ({
-                id: item.id || item.studentId || item.name,
-                name: item.name,
-                studentId: item.studentId || item.id || '',
-                role: item.role || '',
-                task: item.task || '',
-                progress: Number(item.progress || 0),
-                commitCount: Number(item.commitCount || 0),
-                prCount: Number(item.prCount || 0),
-                mergedPrCount: Number(item.mergedPrCount || 0),
-                contribution: Number(item.contribution || 0),
-                score: Number(item.score || 0),
-                source: item.source || backend.source || 'backend'
-            }))
-            : computed.contributionRanking
-    };
-}
 
 
 const object = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -177,12 +55,9 @@ function projectReceipt(value, expectedId, viewer = '') {
     if (!object(value) || typeof value.id !== 'string' || !object(value.project) || !object(value.repository) || !Array.isArray(value.memberProgress) || (expectedId && value.id !== expectedId)) invalid();
     const copy = structuredClone(value);
     copy.pullRequests = Array.isArray(copy.pullRequests) ? copy.pullRequests : [];
-    const member = copy.memberProgress.find(m => [m.id, m.username, m.studentId].filter(Boolean).includes(viewer));
-    copy.repositoryCard = repositoryCard(copy);
-    copy.workflowSteps = workflowSteps(copy.repository, member);
-    copy.currentUserProgress = {userId: viewer, member: member || null, score: member?.score || 0, nextHint: member ? '按照分配的任务分支操作；拉取状态为本人确认。' : '当前账号不是项目成员。'};
-    copy.teamSummary = mergeTeamSummary(copy, teamSummary(copy));
-    return normalizeDisplayTimes(copy);
+    const normalized = normalizeStudentGitReceipt(copy, viewer);
+    normalized.repositoryCard = repositoryCard(normalized);
+    return normalizeDisplayTimes(normalized);
 }
 function statusLabel(status) {
     return ({not_created:'未创建',created:'已创建',collaborating:'协作中',completed:'已完成',setup_incomplete:'远端配置未完成',disabled:'Gitea 未启用',unverified:'未验证',pending:'待配置'})[status] || status || '未验证';

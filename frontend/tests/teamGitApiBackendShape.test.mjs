@@ -91,7 +91,9 @@ assert.equal(projects[0].repositoryCard.leader, '谢渝');
 assert.ok(projects[0].repositoryCard.members.includes('谢渝'));
 assert.equal(projects[0].repositoryCard.updatedAt, '2026年7月5日12点00分');
 assert.equal(projects[0].repository.lastSyncedAt, '2026年7月5日12点00分');
-assert.equal(projects[0].workflowSteps.length, 6);
+for (const id of ['clone', 'branch', 'commit', 'push', 'pull_request', 'merge']) {
+  assert.ok(projects[0].workflowSteps.some(step => step.id === id), `Missing original workflow card: ${id}`);
+}
 assert.equal(projects[0].teamSummary.totalMembers, 2);
 assert.equal(projects[0].teamSummary.contributionRanking[0].commitCount, 9);
 assert.equal(projects[0].teamSummary.contributionRanking[0].prCount, 2);

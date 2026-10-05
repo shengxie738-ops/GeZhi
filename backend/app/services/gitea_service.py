@@ -10,6 +10,7 @@ import requests
 from requests.exceptions import RequestException
 
 from app.core.config import settings
+from app.services.student_git_workflow import pull_request_observation_fields
 
 STALE_GITEA_URL_MARKERS = (
     "git.gezhi.local",
@@ -776,6 +777,7 @@ class GiteaService:
             status = "merged" if merged else ("closed" if closed else "open")
             results.append(
                 {
+                    **pull_request_observation_fields(item),
                     "number": int(item.get("number") or 0),
                     "title": str(item.get("title") or f"Pull Request #{item.get('number') or ''}"),
                     "state": str(item.get("state") or status),
