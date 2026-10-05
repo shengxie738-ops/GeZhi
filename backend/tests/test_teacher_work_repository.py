@@ -471,7 +471,7 @@ def test_task_has_no_second_current_lesson():
     assert not {"lesson", "content", "resource_ids", "requirements", "base_version_id"} & fields
     repository, memory = setup_repository()
     task = create(repository, memory)
-    assert not {"lesson", "content", "resource_ids", "requirements", "base_version_id"} & set(task.model_fields)
+    assert not {"lesson", "content", "resource_ids", "requirements", "base_version_id"} & set(type(task).model_fields)
     assert set(vars(memory.tasks[task.task_id])) == {"task", "create_idempotency_key", "create_request_digest"}
 
 

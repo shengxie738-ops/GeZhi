@@ -1,0 +1,295 @@
+{
+  "baseline": "24b54a2ac64dd0e227724254af690d1f94ed7401",
+  "branch": "102V12",
+  "main_unchanged": "1718a66b5495ff75e0959b051552bfb7a2e997ae",
+  "native_runs": [
+    {
+      "label": "chat-first-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-70_75j_1",
+      "summary": "11 failed in 36.92s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "0dfcc395-c10a-11f1-ba94-7fc04720cda4",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-aebaa4e4d7994876a4056a8eb6baa8ba",
+        "container_id": "af494b9a002d3578f11ba7d94268c6320f6d85fe6e68f666bb682a3381a585b2",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-second-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-3raeiex6",
+      "summary": "6 failed, 5 passed in 54.02s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "39e6d329-c10a-11f1-98b9-e8674b436f62",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-711ef44d71a241a98c1810f68effa2ca",
+        "container_id": "a961a43c221654a754178eaee666e93c2b7ed3bdf2add077b9d3c8b856ef3e2d",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-third-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-1w7qsp1c",
+      "summary": "1 failed, 10 passed in 41.49s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "6e4e97b3-c10a-11f1-8263-dc377ed3a7cb",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c1f008a6b7f546029cea2cdc11a5f085",
+        "container_id": "43b535aec9c24be04a1979cc3ee6195d457b8ec53f6a67c21355fc1af26e763a",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-fourth-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-ity6_jpn",
+      "summary": "1 failed, 10 passed in 40.71s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "9d7c2feb-c10a-11f1-adeb-e7612fc9649a",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-dcf7ddb6bd1746dc9adc11e1d1208db0",
+        "container_id": "0b96455e36609322fa4b5d177c5af8a77987e61fdbe4e082f544d2afce3be129",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-final-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-glrsyg11",
+      "summary": "11 passed in 48.52s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "e4c65e0e-c10a-11f1-8343-e65f27a7d121",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-0f9fed6853d5464bbe67049eece5f100",
+        "container_id": "c49b8aea7cc3830f3a1845d38c7f4d67553b08229b3095e9f941a3c4f8092a48",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-reviewed-final-run",
+      "evidence_directory": "/tmp/gezhi-tw-native-ohiljpx3",
+      "summary": "11 passed in 39.90s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "2482be35-c10b-11f1-93b2-ac76490c5fbb",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-59cac310f44d4446a5d6ac456c636e9b",
+        "container_id": "a6f4be306278eeccede2a5f8447fd47dea48cea403a1ae648f5580cc5e47a08d",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-shared-schema-regression",
+      "evidence_directory": "/tmp/gezhi-tw-native-qyd6klz5",
+      "summary": "22 passed in 58.18s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "5de2c83e-c10b-11f1-862e-0aec83cb6ec3",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c253134781d04c59b03b92f2310fd53b",
+        "container_id": "daaf7520eed87d7a13d355e7bd6d724e3a793a32c29f75f5c9056f5837bd1c0e",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "label": "chat-shared-repository-regression",
+      "evidence_directory": "/tmp/gezhi-tw-native-r92t2h3z",
+      "summary": "7 passed in 32.52s",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "73126853-c10b-11f1-816c-d109b9836779",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-f3709a7111a843a2b34e2964505ebe17",
+        "container_id": "bce4185deb52a5829556eb561f7ddb0109f91cc01c50ea417921daaf3342aaa7",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    }
+  ],
+  "final_native_total": 40,
+  "final_native_chat_cases": 11,
+  "native_schema_resource_cleanup_cases": 2,
+  "ordinary_regression": "104 passed in 5.49s",
+  "production_code_changes": [],
+  "production_gate": "TEACHER_WORK_LIVE_GATES_UNVERIFIED",
+  "provider_entry": {
+    "database": "tw_native_17a18a9d23a54efc89c8873b46275060",
+    "open_roots": 0,
+    "last_committed_operation": "reserve_chat_call",
+    "run_id": "c13c1daf-5cd5-4cc8-bf0f-270183fa546d",
+    "stage": "CHAT_RUNNING",
+    "provider_call_count": 1,
+    "token": {
+      "run_id": "c13c1daf-5cd5-4cc8-bf0f-270183fa546d",
+      "attempt": 1,
+      "call_no": 1,
+      "lease_revision": 2,
+      "process_instance": "30000000-0000-0000-0000-000000000001"
+    },
+    "max_output_tokens": 128,
+    "timeout_seconds": 10
+  },
+  "observed_owner_race": {
+    "database": "tw_native_9ce85e209801432d8177d751df470c55",
+    "connection_ids": {
+      "winner": 210,
+      "loser": 211
+    },
+    "observed_lock_wait": [
+      "teacher_work_owner_run_leases",
+      211,
+      210
+    ]
+  },
+  "normal_discovery_native_imports": false,
+  "source_sha256": {
+    "backend/tests/native_teacher_work_chat.py": "1654e1ba84abe322995de9af7ce3f0905979127447fab34d65651347c9f6f829",
+    "backend/tests/native_teacher_work_mysql.py": "62aec5ac45607df371293fd80de1a11b77dd8ab7c6ac185cecdfcccc675ec8ee",
+    "backend/tests/native_teacher_work_repository.py": "2aa2ee0f3b848b45cc87da20de33abfc731889434d2249d9635d591e1f621e40",
+    "backend/tests/test_teacher_work_repository.py": "683d8fc728db70fefc2630109ffce0d1ca51b1da4b41716a8a1e7c38315ee332",
+    "backend/tests/requirements-native-teacher-work.txt": "869b475198a66267fcc3894b0bb447228a0713647805be1c6b023f0d2db65eaf",
+    "backend/app/repositories/teacher_work.py": "ae6cef2fbd9222687a6b7ce8c501d89b6ef8d521e98f1853a7bcf213f7e3f4d1",
+    "backend/app/repositories/teacher_work_sql.py": "a5d792cf2ec132d1a2eb5f956396515c830819b52a3f09c20a4fe779cec52ad0",
+    "backend/app/services/teacher_work/run_persistence.py": "d8d6786b57420f9efabfe771300178cc0c4d68585c30642b99186503ea6d3aac",
+    "backend/app/services/teacher_work/chat_execution.py": "2c4d5ff5b9b3494d1b70d53b26d9a4185af79e9da6e0165a8bebe6acf5cbb895",
+    "backend/app/services/teacher_work/chat.py": "2238dee2b7002aa5e80b25c811e94d76ae5a2e86ba54ac7c9f1d9f574f28330c",
+    "backend/app/services/teacher_work/bootstrap.py": "e11edfb43340932834939c9d29284df119ba517a78ebe0d9a63614ea0e7bf31d",
+    "backend/app/models/teacher_work.py": "013ffd8518121722afc6b8954bf452a6b72905fc9aa54389d87d5d94baab4128",
+    "backend/app/models/domain_record.py": "0211fdb4bb54d2b1ce81f99ab4440a3d44f5982797bf0380e7de18047b25b88f",
+    "backend/app/services/teacher_work/schema_mysql.py": "0f91a28103050dfe3ea8ada4565b7a3f3605a0f5e13087c5c70a74e6c1481319",
+    "backend/migrations/v20261005_teacher_work_mysql.py": "457f845da0e329cfef01bd9a519420c97d9d6015d61e8a118e3a10a89b50ba8b"
+  },
+  "independent_review": {
+    "blocking_findings": [],
+    "corrected": [
+      "Use the same charged fixed-provider Task for cancellation/expiry settlement",
+      "Compare full persisted run and lease from a fresh Session after settlement"
+    ]
+  },
+  "final_docker_inventory": {
+    "containers": [],
+    "volumes": []
+  },
+  "ci": "Precise pushed-commit Actions/check-runs/status response is retained separately in the archive; no absence is treated as passing.",
+  "scope_limits": [
+    "synthetic private role only; no actual authentication or production request owner",
+    "fixed local provider only; real executor covers normal completion/replay",
+    "cancel/expiry use coordinator orchestration with actual local Task settlement",
+    "one observed owner lock race, not general concurrent acceptance",
+    "no production factory, app.main, deployment, browsers, mobile, external AI or production database"
+  ]
+}

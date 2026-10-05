@@ -162,7 +162,8 @@ def native_db(native_server):
     with native_server.admin.connect() as c:
         c.execute(text(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin"))
     engine = create_engine(f"mysql+pymysql://root@localhost/{name}",
-        connect_args={"unix_socket": native_server.socket}, poolclass=NullPool)
+        connect_args={"unix_socket": native_server.socket, "connect_timeout": 2,
+            "read_timeout": 5, "write_timeout": 5}, poolclass=NullPool)
     try:
         with engine.connect() as c:
             expected = identity(c)

@@ -77,3 +77,5 @@ PYTHONPATH=backend /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/t
 原始脱敏记录保留在本次 `/tmp/gezhi-mysql-native/evidence/` 和 pytest 打印的 `/tmp/gezhi-tw-native-*` 目录。最终实例身份、结果、资源清理与源文件摘要将保存于本目录的 `102V12-teacher-work-native-mysql-evidence.json`。不把不确定状态、失败清理或无 CI 记录当作通过。
 
 未验证：生产身份／鉴权与账号复用、真实 HTTP／聊天、提供商、完整教师 Work、并发锁等待／死锁、真实网络提交结果丢失及生产性能。两个 bootstrap 工厂仍返回 `TEACHER_WORK_LIVE_GATES_UNVERIFIED`。没有启用功能、合并 main、部署、浏览器或移动端测试，也没有开发 Gitea/RAGFlow。
+
+后续有限聊天持久化与单个 owner 锁竞争的原生验证另见 [聊天 MySQL 切片](102V12-teacher-work-native-chat-mysql.md)；不改变本记录前两阶段的历史证据范围。

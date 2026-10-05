@@ -58,7 +58,7 @@ def repository_db(native_db):
 
 
 @contextmanager
-def caller(db):
+def caller(db, *, run_models=None, clock=None):
     with db.engine.connect().execution_options(isolation_level="READ COMMITTED") as connection:
         with Session(bind=connection, autoflush=False, expire_on_commit=False) as session:
             session.begin()
@@ -68,8 +68,8 @@ def caller(db):
             repository = build_sql_repository(session,
                 models=SqlWorkModels(WorkTask, OwnerRunLease, PackageVersion, db.domain),
                 draft_store=JsonStore(session, commit_policy="caller_owned", record_model=db.domain),
-                authorize_locked=authorize, clock=lambda: NOW.replace(tzinfo=timezone.utc),
-                new_uuid=uuid4, mode="write")
+                authorize_locked=authorize, clock=clock or (lambda: NOW.replace(tzinfo=timezone.utc)),
+                new_uuid=uuid4, mode="write", run_models=run_models)
             yield session, repository
 
 
