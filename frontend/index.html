@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="./styles/teaching-workbench.css">
     <link rel="stylesheet" href="./styles/student-dashboard.css">
     <link rel="stylesheet" href="./styles/workspace-light.css">
+    <link rel="stylesheet" href="./styles/teacher-work.css">
     <!-- Vue 3 ESM (Local Lib) -->
     <script type="importmap">
     {
@@ -2592,6 +2593,15 @@
             @select-mode="teachingSelectMode" @load-more="teachingLoadMore" @retry="teachingRetry"
             @open-tool="teachingOpenTool" @logout="handleLogout">
         </teaching-workbench-shell>
+        <teacher-work v-else-if="isLoggedIn && authVerified && currentRole === 'teacher' && currentView === 't_work' && teachingLegacyRenderAllowed"
+            :state="teacherWorkState" :menus="activeMenus" :current-user="currentUser"
+            @navigate="teachingOpenTool" @logout="handleLogout" @open-user-center="openUserCenter"
+            @retry-capabilities="teacherWorkRetryCapabilities" @toggle-navigation="teacherWorkToggleNavigation"
+            @toggle-taskrail="teacherWorkToggleTaskRail" @toggle-artifacts="teacherWorkToggleArtifacts"
+            @open-artifacts="teacherWorkOpenArtifacts" @close-artifacts="teacherWorkCloseArtifacts"
+            @set-artifact-tab="teacherWorkSetArtifactTab" @open-catalog="teacherWorkOpenCatalog"
+            @close-catalog="teacherWorkCloseCatalog" @update-input="teacherWorkUpdateInput">
+        </teacher-work>
         <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
             :class="{ 'student-legacy-shell': currentRole === 'student' }">
             <!-- Galaxy粒子背景 -->

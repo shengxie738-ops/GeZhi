@@ -1,0 +1,181 @@
+/* Approved Teacher Work desktop shell. Kept separate from legacy teacher/student presentation. */
+.teacher-work {
+    --tw-nav-width: 76px;
+    --tw-task-width: 264px;
+    --tw-accent: #c80b1b;
+    --tw-ink: #17202d;
+    --tw-muted: #626e80;
+    --tw-line: #e0e5eb;
+    display: grid;
+    grid-template-columns: var(--tw-nav-width) var(--tw-task-width) minmax(480px, 1fr);
+    width: 100%; height: 100%; min-width: 1024px; min-height: 0;
+    overflow: hidden; position: relative; background: #fff; color: var(--tw-ink);
+    font-family: 'Barlow', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px; line-height: 1.6;
+}
+.teacher-work *, .teacher-work *::before, .teacher-work *::after { box-sizing: border-box; }
+.teacher-work button, .teacher-work textarea { font: inherit; }
+.teacher-work button { cursor: pointer; }
+.teacher-work button:disabled { cursor: not-allowed; opacity: .56; }
+.teacher-work button:focus-visible, .teacher-work textarea:focus-visible,
+.teacher-work [tabindex="-1"]:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
+.teacher-work h1, .teacher-work h2, .teacher-work h3, .teacher-work p { margin: 0; }
+.teacher-work h1, .teacher-work h2, .teacher-work-preview-heading h3 {
+    font-family: 'Noto Serif SC', Georgia, serif; font-weight: 600; color: #111827;
+}
+.teacher-work--navigation-collapsed { --tw-nav-width: 44px; }
+.teacher-work--tasks-collapsed { --tw-task-width: 48px; }
+.teacher-work-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.teacher-work-icon-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 5px;
+    background: transparent; color: #647184; font-size: 20px; line-height: 1; }
+.teacher-work-icon-button:hover { background: #f2f5f8; color: var(--tw-ink); }
+.teacher-work-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    min-height: 42px; padding: 9px 14px; border: 1px solid var(--tw-line); border-radius: 6px;
+    background: #fff; color: var(--tw-ink); font-size: 14px; font-weight: 500; line-height: 1.4; }
+.teacher-work-button i { font-size: 18px; }
+.teacher-work-button--primary { background: var(--tw-accent); border-color: var(--tw-accent); color: #fff; }
+.teacher-work-button--primary:hover { background: #ae0a18; }
+.teacher-work-button--outline { color: var(--tw-accent); border-color: var(--tw-accent); }
+.teacher-work-button--quiet:hover:not(:disabled) { background: #f5f7fa; }
+.teacher-work-muted { color: var(--tw-muted); font-size: 13px; line-height: 1.7; }
+
+.teacher-work-navigation { display: flex; flex-direction: column; align-items: center; gap: 16px;
+    min-height: 0; padding: 24px 6px 14px; border-right: 1px solid var(--tw-line); background: #fff; }
+.teacher-work-brand { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;
+    border-radius: 5px; background: var(--tw-accent); color: #fff;
+    font-family: 'Noto Serif SC', serif; font-size: 28px; font-weight: 500; line-height: 1; }
+.teacher-work--navigation-collapsed .teacher-work-brand { width: 30px; height: 32px; font-size: 23px; }
+.teacher-work-navigation-fold { width: 32px; height: 32px; }
+.teacher-work-navigation-items { width: 100%; display: flex; flex-direction: column; gap: 10px;
+    flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.teacher-work-navigation-item { position: relative; display: flex; align-items: center; justify-content: center;
+    width: 100%; min-height: 46px; flex-shrink: 0; border: 0; border-radius: 6px; background: transparent;
+    color: #435064; font-size: 24px; line-height: 1; }
+.teacher-work-navigation-item:hover { background: #f5f7fa; }
+.teacher-work-navigation-item--active { color: var(--tw-accent); background: #fff0f1; }
+.teacher-work-navigation-item--active::before { content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px;
+    width: 3px; border-radius: 0 3px 3px 0; background: var(--tw-accent); }
+.teacher-work-navigation-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 8px; }
+.teacher-work-user { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px;
+    border-radius: 50%; border: 1px solid var(--tw-line); background: #f2f5f8; color: #556174; font-size: 15px; font-weight: 600; }
+.teacher-work--navigation-collapsed .teacher-work-user { width: 30px; height: 30px; font-size: 13px; }
+
+.teacher-work-tasks { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tw-line); background: #fff; }
+.teacher-work-task-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; flex-shrink: 0;
+    padding: 28px 18px 18px 22px; }
+.teacher-work-task-heading h2 { font-size: 26px; line-height: 1.5; white-space: nowrap; }
+.teacher-work--tasks-collapsed .teacher-work-task-heading { padding: 20px 6px; justify-content: center; }
+.teacher-work-task-content { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0 20px 18px; }
+.teacher-work-new-task { width: 100%; min-height: 46px; font-size: 16px; }
+.teacher-work-task-groups { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 26px 0; }
+.teacher-work-task-group { margin-bottom: 26px; }
+.teacher-work-task-group h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+.teacher-work-task-group h3 i { font-size: 14px; color: #667386; }
+.teacher-work-task-group p { padding: 10px 0 0 25px; font-size: 13px; color: var(--tw-muted); }
+.teacher-work-task-tools { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
+    padding-top: 16px; border-top: 1px solid var(--tw-line); }
+.teacher-work-task-tools button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
+    padding: 8px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--tw-ink);
+    font-family: 'Noto Serif SC', Georgia, serif; font-size: 18px; font-weight: 500; text-align: left; }
+.teacher-work-task-tools button:hover { background: #f5f7fa; }
+.teacher-work-task-tools button i { font-size: 23px; }
+.teacher-work-task-tools button i:last-child { margin-left: auto; font-size: 16px; color: var(--tw-muted); }
+
+.teacher-work-stage { display: grid; grid-template-columns: minmax(480px, 1fr) 380px;
+    grid-template-rows: 54px minmax(0, 1fr); min-width: 480px; min-height: 0; background: #f8fafc; }
+.teacher-work-breadcrumb { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; padding: 0 28px; min-width: 0; border-bottom: 1px solid var(--tw-line); background: #f8fafc;
+    color: #626e80; font-size: 13px; line-height: 1.4; }
+.teacher-work-breadcrumb strong { color: var(--tw-ink); font-weight: 600; }
+.teacher-work-breadcrumb-divider { padding: 0 12px; color: #a1aab8; }
+.teacher-work-breadcrumb .teacher-work-button { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+.teacher-work-private-label { font-size: 12px; color: var(--tw-muted); }
+.teacher-work-conversation { grid-column: 1; grid-row: 2; display: flex; flex-direction: column;
+    min-width: 480px; min-height: 0; padding: 0 28px; background: #f8fafc; }
+.teacher-work-dialogue { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 28px 0 24px; }
+.teacher-work-dialogue h1 { font-size: 38px; line-height: 1.4; letter-spacing: .01em; }
+.teacher-work-lesson-meta { margin-top: 7px !important; font-size: 15px; color: #626e80; }
+.teacher-work-flow { display: flex; justify-content: space-between; align-items: center; gap: 12px; list-style: none;
+    padding: 0; margin: 28px 0 32px; font-size: 15px; color: #626e80; }
+.teacher-work-flow i { font-size: 18px; color: #98a2af; }
+.teacher-work-availability { padding-left: 18px; border-left: 3px solid var(--tw-accent); }
+.teacher-work-availability h2 { margin-bottom: 12px; font-size: 23px; line-height: 1.6; }
+.teacher-work-availability p { margin-top: 7px; font-size: 14px; line-height: 1.8; }
+.teacher-work-reason-code { font-family: 'Barlow', sans-serif; font-size: 11px !important;
+    color: #626e80; letter-spacing: .035em; overflow-wrap: anywhere; }
+.teacher-work-availability-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.teacher-work-empty-conversation { padding: 38px 0 12px; color: var(--tw-muted); }
+.teacher-work-empty-conversation > i { display: block; margin-bottom: 10px; font-size: 28px; color: #a0aab8; }
+.teacher-work-empty-conversation h3 { font-size: 15px; font-weight: 500; }
+.teacher-work-empty-conversation p { margin-top: 5px; font-size: 13px; line-height: 1.8; }
+.teacher-work-composer { flex-shrink: 0; padding: 14px 14px 10px; background: #fff;
+    border: 1px solid #d2dbe5; border-radius: 9px; box-shadow: 0 2px 5px rgba(24, 39, 59, .025); }
+.teacher-work-composer textarea { display: block; width: 100%; min-height: 72px; max-height: 180px; resize: vertical;
+    padding: 0 2px 8px; border: 0; background: #fff; color: var(--tw-ink); font-size: 15px; line-height: 1.65; }
+.teacher-work-composer textarea::placeholder { color: #626e80; }
+.teacher-work-composer-controls { display: flex; align-items: center; gap: 9px; padding-top: 4px; }
+.teacher-work-composer-controls .teacher-work-button { min-height: 38px; padding: 8px 10px; font-size: 13px; }
+.teacher-work-composer-controls .teacher-work-button i { font-size: 17px; }
+.teacher-work-send { display: flex; align-items: center; justify-content: center; width: 44px; height: 42px;
+    margin-left: auto; padding: 0; border: 0; border-radius: 6px; background: var(--tw-accent); color: #fff; font-size: 23px; }
+.teacher-work-composer-note { margin-top: 8px !important; font-size: 11px; color: #626e80; }
+.teacher-work-input-error { margin-top: 9px !important; color: #a10b18; font-size: 13px; }
+.teacher-work-review-note { flex-shrink: 0; padding: 8px 0 12px; text-align: center; font-size: 11px; color: #626e80; }
+
+.teacher-work-artifacts { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    border-left: 1px solid var(--tw-line); background: #fff; overflow: hidden; }
+.teacher-work-artifact-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 25px 22px 18px; flex-shrink: 0; }
+.teacher-work-artifact-heading h2 { font-size: 27px; line-height: 1.5; }
+.teacher-work-artifact-tabs { display: flex; flex-shrink: 0; gap: 14px; margin: 0 22px; border-bottom: 1px solid var(--tw-line); }
+.teacher-work-artifact-tabs button { position: relative; min-height: 44px; padding: 9px 12px 13px;
+    border: 0; background: transparent; color: #697587; font-size: 16px; font-weight: 500; }
+.teacher-work-artifact-tabs button[aria-selected="true"] { color: var(--tw-accent); }
+.teacher-work-artifact-tabs button[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px; background: var(--tw-accent); }
+.teacher-work-artifact-content { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 24px 22px; }
+.teacher-work-artifact-empty { padding: 24px 0 30px; border-bottom: 1px solid var(--tw-line); }
+.teacher-work-artifact-empty > i { display: block; margin-bottom: 12px; color: #98a4b3; font-size: 29px; }
+.teacher-work-artifact-empty h3 { font-size: 15px; font-weight: 500; }
+.teacher-work-artifact-empty p { margin-top: 8px; font-size: 13px; color: var(--tw-muted); }
+.teacher-work-preview { margin-top: 28px; }
+.teacher-work-preview-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.teacher-work-preview-heading h3 { font-size: 19px; line-height: 1.6; }
+.teacher-work-preview-heading span { color: #626e80; font-size: 11px; }
+.teacher-work-preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; min-height: 205px; margin-top: 14px; padding: 24px; border: 1px solid #e0e5eb; border-radius: 3px;
+    background: #fff; color: #626e80; text-align: center; font-size: 14px; }
+.teacher-work-preview-empty i { font-size: 30px; color: #a5afbd; }
+.teacher-work-preview-empty small { font-size: 11px; color: #626e80; }
+.teacher-work-artifact-private { flex-shrink: 0; margin: 0 22px !important; padding: 15px 0 20px;
+    border-top: 1px solid var(--tw-line); color: #626e80; font-size: 12px; }
+.teacher-work--artifacts-collapsed:not(.teacher-work--drawer-mode) .teacher-work-stage { grid-template-columns: minmax(480px, 1fr) 48px; }
+.teacher-work--artifacts-collapsed:not(.teacher-work--drawer-mode) .teacher-work-artifact-heading { justify-content: center; padding: 24px 6px; }
+.teacher-work--drawer-mode .teacher-work-stage { grid-template-columns: minmax(480px, 1fr); }
+.teacher-work-artifacts--drawer { position: absolute; z-index: 52; top: 54px; right: 0; bottom: 0; width: 420px;
+    max-width: calc(100% - 96px); box-shadow: -8px 0 24px rgba(24, 39, 59, .08); }
+.teacher-work-backdrop { position: absolute; z-index: 50; inset: 0; background: rgba(28, 39, 56, .18); }
+.teacher-work-catalog-backdrop { position: absolute; z-index: 60; inset: 0; display: flex; justify-content: center; align-items: center;
+    padding: 56px; background: rgba(28, 39, 56, .18); }
+.teacher-work-catalog { display: flex; flex-direction: column; width: 560px; max-height: 100%;
+    border: 1px solid var(--tw-line); border-radius: 8px; background: #fff; box-shadow: 0 12px 40px rgba(24, 39, 59, .12); }
+.teacher-work-catalog > header { display: flex; justify-content: space-between; align-items: center;
+    padding: 22px 26px; border-bottom: 1px solid var(--tw-line); }
+.teacher-work-catalog h2 { font-size: 26px; line-height: 1.5; }
+.teacher-work-catalog-content { min-height: 0; overflow-y: auto; padding: 32px 26px 28px; }
+.teacher-work-catalog-content > i { display: block; margin-bottom: 16px; color: #8994a3; font-size: 30px; }
+.teacher-work-catalog-content h3 { font-size: 18px; font-weight: 500; }
+.teacher-work-catalog-content p { margin-top: 10px; font-size: 14px; }
+.teacher-work-catalog-content .teacher-work-button { margin-top: 24px; }
+@media (max-width: 1359px) {
+    .teacher-work-stage { grid-template-columns: minmax(480px, 1fr); }
+    .teacher-work-artifacts:not(.teacher-work-artifacts--drawer) { display: none; }
+    .teacher-work-dialogue h1 { font-size: 36px; }
+}
+@media (max-width: 1179px) {
+    .teacher-work:not(.teacher-work--tasks-collapsed) { --tw-task-width: 248px; }
+    .teacher-work-breadcrumb { padding-right: 22px; padding-left: 22px; }
+    .teacher-work-conversation { padding-right: 22px; padding-left: 22px; }
+}

@@ -1,19 +1,22 @@
-"""Pure Teacher Work persistence values, never row readers or durable writers.
+"""Pure Teacher Work persistence candidates and strict attribute-row decoders.
 
 Supplied tokens/counts/receipts are strict records, not authority or evidence of
 admission, dispatch, settlement, cancellation, storage or a committed reply. The
-later SQL boundary must decode all-or-none fields, compare current authority,
-charge before dispatch and finalize the actual assistant row atomically.
+SQL boundary supplies already-read attributes, compares current authority,
+charges before dispatch and finalizes the actual assistant row atomically.
+Nothing here imports SQL, obtains rows or certifies a transaction outcome.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
 
-from app.schemas.teacher_work import ChatResult, MessageKey, RunDTO, WorkMessageDTO
-from app.services.teacher_work.runs import WorkBudget, WorkRunError
+from app.schemas.teacher_work import ChatResult, MessageKey, RunDTO, WorkMessageDTO, WorkTaskDTO
+from app.services.teacher_work.runs import CallLimits, OwnerLeaseFacts, WorkBudget, WorkRunError
+from app.services.teacher_work.types import WorkContext
 
 
 def encode_work_key(key: str) -> bytes:
@@ -137,3 +140,298 @@ def validate_chat_completion(run: RunDTO, message: WorkMessageDTO, completion_ru
             or message.role != "assistant" or chat_result_from_message(message) is None):
         raise WorkRunError("INVALID_CHAT_COMPLETION", 503)
     return ChatCompletionReceipt(run_id=run.run_id, message_id=message.message_id)
+
+
+def _validate_chat_candidate(task: WorkTaskDTO, state: StoredRunState,
+                             lease: OwnerLeaseFacts, *, code: str,
+                             context: WorkContext | None = None) -> None:
+    """Check detached value coherence, never current authority or commit."""
+    try:
+        if type(task) is not WorkTaskDTO or type(state) is not StoredRunState or type(lease) is not OwnerLeaseFacts:
+            raise ValueError("exact candidate records required")
+        WorkTaskDTO.model_validate(task.model_dump())
+        StoredRunState.__post_init__(state)
+        OwnerLeaseFacts.__post_init__(lease)
+        if (type(lease.owner_storage_id) is not UUID
+                or (lease.active_run_id is not None and type(lease.active_run_id) is not UUID)
+                or (lease.process_instance is not None and type(lease.process_instance) is not UUID)
+                or state.run.kind != "chat"
+                or state.run.stage not in {"PENDING", "CHAT_RUNNING", "COMPLETE", "FAILED", "CANCELLED", "INTERRUPTED"}
+                or (state.run.owner, state.run.task_id) != (task.owner_subject, task.task_id)
+                or (lease.owner, lease.owner_storage_id) != (task.owner_subject, task.owner_storage_id)):
+            raise ValueError("candidate binding mismatch")
+        if context is not None:
+            if type(context) is not WorkContext:
+                raise ValueError("exact context required")
+            WorkContext.__post_init__(context)
+            if (type(context.owner_storage_id) is not UUID or type(context.task_id) is not UUID
+                    or (context.offering_id is not None and type(context.offering_id) is not UUID)
+                    or (context.actor_subject, context.owner_storage_id, context.task_id,
+                        context.institution_id, context.offering_id, context.input_revision,
+                        context.working_revision) !=
+                    (task.owner_subject, task.owner_storage_id, task.task_id,
+                     task.institution_id, task.offering_id, task.input_revision, task.working_revision)):
+                raise ValueError("candidate context mismatch")
+    except (WorkRunError, ValidationError, ValueError, TypeError, AttributeError):
+        raise WorkRunError(code, 503) from None
+
+
+@dataclass(frozen=True)
+class ChatRunAdmission:
+    """Uncommitted admission/replay facts; created never certifies dispatch."""
+    task: WorkTaskDTO
+    context: WorkContext
+    state: StoredRunState
+    user_message: WorkMessageDTO
+    lease: OwnerLeaseFacts
+    created: bool
+
+    def __post_init__(self):
+        code = "INVALID_CHAT_ADMISSION"
+        if type(self.context) is not WorkContext or type(self.created) is not bool:
+            raise WorkRunError(code, 503)
+        _validate_chat_candidate(self.task, self.state, self.lease, code=code, context=self.context)
+        _validate_message(self.user_message)
+        message = self.user_message
+        if (type(message) is not WorkMessageDTO or message.role != "user"
+                or message.client_message_key is None
+                or (message.owner, message.task_id, message.run_id) !=
+                (self.state.run.owner, self.state.run.task_id, self.state.run.run_id)
+                or message.result_type is not None or message.omitted_context is not None):
+            raise WorkRunError(code, 503)
+        # Replay may observe a historical revision or another run's current lease.
+        # The command coordinator, not this value, decides whether creation is valid.
+
+
+@dataclass(frozen=True)
+class ChatRequestObservation:
+    """Authorized lookup candidate; its construction proves no authorization."""
+    task: WorkTaskDTO
+    context: WorkContext
+    admission: ChatRunAdmission | None
+
+    def __post_init__(self):
+        code = "INVALID_CHAT_OBSERVATION"
+        try:
+            if type(self.task) is not WorkTaskDTO or type(self.context) is not WorkContext:
+                raise ValueError("exact observation records required")
+            WorkTaskDTO.model_validate(self.task.model_dump())
+            WorkContext.__post_init__(self.context)
+            if (type(self.context.owner_storage_id) is not UUID or type(self.context.task_id) is not UUID
+                    or (self.context.offering_id is not None and type(self.context.offering_id) is not UUID)):
+                raise ValueError("exact context UUIDs required")
+            if (self.context.actor_subject, self.context.owner_storage_id, self.context.task_id,
+                    self.context.institution_id, self.context.offering_id, self.context.input_revision,
+                    self.context.working_revision) != (
+                    self.task.owner_subject, self.task.owner_storage_id, self.task.task_id,
+                    self.task.institution_id, self.task.offering_id, self.task.input_revision,
+                    self.task.working_revision):
+                raise ValueError("observation binding mismatch")
+            if self.admission is not None:
+                if type(self.admission) is not ChatRunAdmission:
+                    raise ValueError("exact admission required")
+                ChatRunAdmission.__post_init__(self.admission)
+                if (self.admission.created or self.admission.task != self.task
+                        or self.admission.context != self.context):
+                    raise ValueError("observation receipt mismatch")
+        except (WorkRunError, ValidationError, ValueError, TypeError, AttributeError):
+            raise WorkRunError(code, 503) from None
+
+
+@dataclass(frozen=True)
+class ChatCallReservation:
+    """Uncommitted charged-call candidate, never permission to open transport."""
+    task: WorkTaskDTO
+    context: WorkContext
+    state: StoredRunState
+    lease: OwnerLeaseFacts
+    token: ProviderCallToken
+    limits: CallLimits
+
+    def __post_init__(self):
+        code = "INVALID_CHAT_RESERVATION"
+        if type(self.context) is not WorkContext:
+            raise WorkRunError(code, 503)
+        _validate_chat_candidate(self.task, self.state, self.lease, code=code, context=self.context)
+        if type(self.token) is not ProviderCallToken or type(self.limits) is not CallLimits:
+            raise WorkRunError(code, 503)
+        ProviderCallToken.__post_init__(self.token)
+        CallLimits.__post_init__(self.limits)
+        if (self.state.active_call != self.token or self.state.run.stage != "CHAT_RUNNING"
+                or self.state.run.cancelled_at is not None
+                or self.state.run.input_revision != self.context.input_revision
+                or (self.lease.active_run_id, self.lease.process_instance, self.lease.revision) !=
+                (self.token.run_id, self.token.process_instance, self.token.lease_revision)):
+            raise WorkRunError(code, 503)
+
+
+@dataclass(frozen=True)
+class ChatRunOutcome:
+    """Uncommitted run/receipt observation, not a successful commit receipt."""
+    task: WorkTaskDTO
+    state: StoredRunState
+    lease: OwnerLeaseFacts
+    completion: ChatCompletionReceipt | None
+
+    def __post_init__(self):
+        code = "INVALID_CHAT_OUTCOME"
+        _validate_chat_candidate(self.task, self.state, self.lease, code=code)
+        if self.completion is None:
+            if self.state.run.stage == "COMPLETE":
+                raise WorkRunError(code, 503)
+            return
+        if type(self.completion) is not ChatCompletionReceipt:
+            raise WorkRunError(code, 503)
+        ChatCompletionReceipt.__post_init__(self.completion)
+        if (self.completion.run_id != self.state.run.run_id
+                or self.state.run.stage != "COMPLETE" or self.state.active_call is not None):
+            raise WorkRunError(code, 503)
+
+
+def _stored_uuid(value: object) -> UUID:
+    if type(value) is not str:
+        raise ValueError("canonical stored UUID required")
+    decoded = UUID(value)
+    if str(decoded) != value:
+        raise ValueError("canonical stored UUID required")
+    return decoded
+
+
+def _stored_optional_uuid(value: object) -> UUID | None:
+    return None if value is None else _stored_uuid(value)
+
+
+def _stored_integer(value: object, *, minimum: int, maximum: int | None = None) -> int:
+    if type(value) is not int or value < minimum or (maximum is not None and value > maximum):
+        raise ValueError("exact bounded stored integer required")
+    return value
+
+
+def _stored_subject(value: object) -> str:
+    if type(value) is not str or not value or value != value.strip() or len(value) > 255:
+        raise ValueError("exact stored subject required")
+    return value
+
+
+def _stored_utc(value: object) -> datetime:
+    """MySQL DATETIME stores UTC without tzinfo under the Work SQL contract.
+
+    Only an actual datetime is accepted: naive MySQL values receive UTC tzinfo,
+    while aware values are converted to UTC. Text/epoch values are not decoded.
+    """
+    if type(value) is not datetime:
+        raise ValueError("stored datetime required")
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    if value.utcoffset() is None:
+        raise ValueError("stored datetime offset required")
+    return value.astimezone(timezone.utc)
+
+
+def _stored_optional_utc(value: object) -> datetime | None:
+    return None if value is None else _stored_utc(value)
+
+
+def _stored_boolean(value: object) -> bool:
+    """Documented MySQL BOOLEAN representations: native bool or exact int 0/1."""
+    if type(value) is bool:
+        return value
+    if type(value) is int and value in (0, 1):
+        return value == 1
+    raise ValueError("documented stored Boolean required")
+
+
+def _stored_result_refs(value: object) -> tuple[UUID, ...]:
+    # The SQL boundary supplies decoded JSON. A JSON string, tuple, scalar,
+    # UUID object or malformed canonical UUID must not be silently converted.
+    if type(value) is not list or len(value) > 10:
+        raise ValueError("stored result-ref JSON array required")
+    refs = tuple(_stored_uuid(item) for item in value)
+    if len(set(refs)) != len(refs):
+        raise ValueError("stored result refs must be distinct")
+    return refs
+
+
+def decode_stored_run(row: object) -> StoredRunState:
+    """Decode trusted attribute-shaped row data without importing SQL objects.
+
+    Every nullable attribute must exist explicitly. There are no defaults for
+    historical budgets or token fields and no coercion of binary receipt keys.
+    """
+    try:
+        run = RunDTO(
+            run_id=_stored_uuid(row.run_id), owner=_stored_subject(row.owner),
+            task_id=_stored_uuid(row.task_id), kind=row.kind, skill_ref=row.skill_ref,
+            input_revision=_stored_integer(row.input_revision, minimum=1),
+            outline_revision=(None if row.outline_revision is None else
+                              _stored_integer(row.outline_revision, minimum=1)),
+            idempotency_key=decode_work_key(row.idempotency_key), request_digest=row.request_digest,
+            stage=row.stage, attempt=_stored_integer(row.attempt, minimum=1, maximum=2),
+            provider_call_count=_stored_integer(row.provider_call_count, minimum=0, maximum=3),
+            deadline=_stored_utc(row.deadline), cancelled_at=_stored_optional_utc(row.cancelled_at),
+            error_code=row.error_code, result_version_id=_stored_optional_uuid(row.result_version_id),
+        )
+        repairs = _stored_integer(row.repair_count, minimum=0, maximum=1)
+        fields = (row.active_call_no, row.active_call_attempt,
+                  row.active_call_lease_revision, row.active_call_process_instance)
+        active = None
+        if any(value is not None for value in fields):
+            if any(value is None for value in fields):
+                raise ValueError("stored token fields must be paired")
+            active = ProviderCallToken(
+                run_id=run.run_id,
+                attempt=_stored_integer(row.active_call_attempt, minimum=1, maximum=2),
+                call_no=_stored_integer(row.active_call_no, minimum=1, maximum=3),
+                lease_revision=_stored_integer(row.active_call_lease_revision, minimum=1),
+                process_instance=_stored_uuid(row.active_call_process_instance),
+            )
+        return StoredRunState(run, repairs, active)
+    except (WorkRunError, ValidationError, ValueError, TypeError, AttributeError, OverflowError):
+        raise WorkRunError("INVALID_STORED_RUN", 503) from None
+
+
+def decode_stored_message(row: object) -> tuple[WorkMessageDTO, UUID | None]:
+    """Return the exact message plus its separate completion-run identity.
+
+    Historical unclassified messages stay unclassified; no answer/omission
+    metadata or assistant client key is fabricated from role or run linkage.
+    """
+    try:
+        fields = (row.completion_run_id, row.result_type, row.omitted_context)
+        classified = any(value is not None for value in fields)
+        if classified and any(value is None for value in fields):
+            raise ValueError("stored completion fields must be paired")
+        completion_run_id = _stored_optional_uuid(row.completion_run_id)
+        run_id = _stored_optional_uuid(row.run_id)
+        client_key = None if row.client_message_key is None else decode_work_key(row.client_message_key)
+        if classified and (row.role != "assistant" or client_key is not None
+                           or run_id is None or run_id != completion_run_id):
+            raise ValueError("stored completion linkage mismatch")
+        message = WorkMessageDTO(
+            message_id=_stored_uuid(row.message_id), task_id=_stored_uuid(row.task_id),
+            owner=_stored_subject(row.owner), client_message_key=client_key, role=row.role,
+            plain_text=row.plain_text, run_id=run_id, result_refs=_stored_result_refs(row.result_refs),
+            result_type=row.result_type,
+            omitted_context=_stored_boolean(row.omitted_context) if classified else None,
+            created_at=_stored_utc(row.created_at),
+        )
+        return message, completion_run_id
+    except (WorkRunError, ValidationError, ValueError, TypeError, AttributeError, OverflowError):
+        raise WorkRunError("INVALID_STORED_MESSAGE", 503) from None
+
+
+def decode_owner_lease(row: object) -> OwnerLeaseFacts:
+    """Decode one existing namespace row; never initialize or renew a lease."""
+    try:
+        fields = (row.active_run_id, row.process_instance, row.expires_at)
+        if any(value is not None for value in fields) and any(value is None for value in fields):
+            raise ValueError("stored active lease fields must be paired")
+        return OwnerLeaseFacts(
+            owner=_stored_subject(row.owner), owner_storage_id=_stored_uuid(row.owner_storage_id),
+            active_run_id=_stored_optional_uuid(row.active_run_id),
+            process_instance=_stored_optional_uuid(row.process_instance),
+            expires_at=_stored_optional_utc(row.expires_at),
+            revision=_stored_integer(row.revision, minimum=1),
+        )
+    except (WorkRunError, ValueError, TypeError, AttributeError, OverflowError):
+        raise WorkRunError("INVALID_LEASE", 503) from None

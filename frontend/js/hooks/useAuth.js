@@ -26,6 +26,7 @@ const teacherMenus = [
     { id: 't_homework', name: '作业管理', icon: 'ph-article', title: '作业管理中心', desc: '管理班级作业提交、查看智能诊断与协同评阅' },
     { id: 't_projects', name: '项目管理', icon: 'ph-projector-screen', title: '项目实训管理', desc: '管理大作业递交与编程团队实训' },
     { id: 't_courses', name: '公共资料', icon: 'ph-books', title: '公共资料目录', desc: '浏览原有公共资源，目录不代表课程访问或选课关系' },
+    { id: 't_work', name: '教师 Work', icon: 'ph-folder-simple', title: '教师 Work', desc: '教师私人备课任务与对话' },
     { id: 't_lesson_prep', name: 'AI备课', icon: 'ph-notebook', title: 'AI备课中心', desc: '课件检索 · 教案生成 · 草稿编辑' },
     { id: 'agents', name: 'AI 工坊', icon: 'ph-robot', title: 'Agent 编排与预设', desc: '配置班级级公共智能体参数与 Prompt' }
 ];
