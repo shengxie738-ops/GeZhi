@@ -11,7 +11,7 @@ from app.services.teacher_work.types import canonical_digest
 
 
 TEACHER_WORK_COMPONENT = "teacher_work"
-TEACHER_WORK_SCHEMA_VERSION = 2
+TEACHER_WORK_SCHEMA_VERSION = 1
 OPTIONS = {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_bin"}
 
 
@@ -46,24 +46,20 @@ TEACHER_WORK_SCHEMA_CONTRACT = {
             }),
         "teacher_work_runs": _table(_columns({
             "run_id": "varchar(36)", "owner": "varchar(255)", "task_id": "varchar(36)", "kind": "varchar(32)",
-            "input_revision": "integer", "idempotency_key": "varbinary(512)", "request_digest": "varchar(64)", "stage": "varchar(32)",
-            "attempt": "integer", "provider_call_count": "integer", "repair_count": "integer", "deadline": "datetime(6)",
-        }, {"skill_ref": "varchar(64)", "outline_revision": "integer", "cancelled_at": "datetime(6)", "error_code": "varchar(64)", "result_version_id": "varchar(36)",
-            "active_call_no": "integer", "active_call_attempt": "integer", "active_call_lease_revision": "integer", "active_call_process_instance": "varchar(36)"}),
+            "input_revision": "integer", "idempotency_key": "varchar(128)", "request_digest": "varchar(64)", "stage": "varchar(32)",
+            "attempt": "integer", "provider_call_count": "integer", "deadline": "datetime(6)",
+        }, {"skill_ref": "varchar(64)", "outline_revision": "integer", "cancelled_at": "datetime(6)", "error_code": "varchar(64)", "result_version_id": "varchar(36)"}),
             ("run_id",), unique=(("owner", "task_id", "kind", "idempotency_key"),), foreign_keys={"task_id": "teacher_work_tasks.task_id"}, checks={
                 "ck_tw_run_revisions": "input_revision >= 1 AND (outline_revision IS NULL OR outline_revision >= 1)",
-                "ck_tw_run_budget": "attempt >= 1 AND attempt <= 2 AND provider_call_count >= 0 AND provider_call_count <= 3 AND repair_count >= 0 AND repair_count <= 1 AND repair_count <= provider_call_count",
-                "ck_tw_run_active_call": "(active_call_no IS NULL AND active_call_attempt IS NULL AND active_call_lease_revision IS NULL AND active_call_process_instance IS NULL) OR (active_call_no IS NOT NULL AND active_call_attempt IS NOT NULL AND active_call_lease_revision IS NOT NULL AND active_call_process_instance IS NOT NULL AND active_call_no = provider_call_count AND active_call_no BETWEEN 1 AND 3 AND active_call_attempt = attempt AND active_call_attempt BETWEEN 1 AND 2 AND active_call_lease_revision >= 1)",
+                "ck_tw_run_budget": "attempt >= 1 AND attempt <= 2 AND provider_call_count >= 0 AND provider_call_count <= 3",
                 "ck_tw_run_kind": "kind IN ('chat','outline','package','revise','reference_search')",
             }),
         "teacher_work_messages": _table(_columns({
             "message_id": "varchar(36)", "task_id": "varchar(36)", "owner": "varchar(255)", "role": "varchar(16)",
             "plain_text": "mediumtext", "result_refs": "json", "created_at": "datetime(6)",
-        }, {"client_message_key": "varbinary(512)", "run_id": "varchar(36)", "completion_run_id": "varchar(36)",
-            "result_type": "varchar(32)", "omitted_context": "tinyint(1)"}), ("message_id",), unique=(("task_id", "client_message_key"), ("completion_run_id",)),
-            foreign_keys={"task_id": "teacher_work_tasks.task_id", "run_id": "teacher_work_runs.run_id", "completion_run_id": "teacher_work_runs.run_id"},
-            checks={"ck_tw_message_role": "role IN ('user','assistant','tool')",
-                    "ck_tw_message_completion_metadata": "(completion_run_id IS NULL AND result_type IS NULL AND omitted_context IS NULL) OR (completion_run_id IS NOT NULL AND result_type IS NOT NULL AND omitted_context IS NOT NULL AND role = 'assistant' AND run_id IS NOT NULL AND run_id = completion_run_id AND result_type IN ('answer','outline_proposal','revision_proposal','skill_suggestion') AND omitted_context IN (0,1))"}),
+        }, {"client_message_key": "varchar(128)", "run_id": "varchar(36)"}), ("message_id",), unique=(("task_id", "client_message_key"),),
+            foreign_keys={"task_id": "teacher_work_tasks.task_id", "run_id": "teacher_work_runs.run_id"},
+            checks={"ck_tw_message_role": "role IN ('user','assistant','tool')"}),
         "teacher_work_evidence_snapshots": _table(_columns({
             "evidence_id": "varchar(36)", "task_id": "varchar(36)", "name": "varchar(200)", "excerpt": "text",
             "resource_content_digest": "varchar(64)", "acquired_at": "datetime(6)", "evidence_type": "varchar(16)",
@@ -117,15 +113,6 @@ TEACHER_WORK_SCHEMA_CONTRACT = {
         "teacher_work_schema_versions": _table(_columns({"component": "varchar(32)", "version": "integer", "contract_hash": "varchar(64)", "completed_at": "datetime(6)"}), ("component",),
             checks={"ck_tw_schema_version": "version >= 1"}),
     },
-}
-# Explicit normalized server-default observations are part of the v2 shape.
-# None denotes no server default, not an invented historical value. The frozen
-# v1 comparator intentionally has no such facts and remains byte-identical.
-TEACHER_WORK_SCHEMA_CONTRACT["tables"]["teacher_work_runs"]["server_defaults"] = {
-    "repair_count": "0",
-}
-TEACHER_WORK_SCHEMA_CONTRACT["tables"]["teacher_work_messages"]["server_defaults"] = {
-    "completion_run_id": None, "result_type": None, "omitted_context": None,
 }
 TEACHER_WORK_CONTRACT_HASH = canonical_digest(TEACHER_WORK_SCHEMA_CONTRACT)
 

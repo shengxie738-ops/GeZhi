@@ -19,6 +19,7 @@ BODY_LIMIT = 256 * 1024
 FROZEN_CONTENT_LIMIT = 128 * 1024
 SkillRef = Literal["lesson_outline@1", "lesson_package@1", "classroom_exercises@1", "reference_search@1"]
 ProviderID = Literal["arxiv", "openalex", "crossref"]
+ChatResultType = Literal["answer", "outline_proposal", "revision_proposal", "skill_suggestion"]
 Revision = Annotated[int, Field(strict=True, ge=1)]
 Digest = Annotated[str, Field(strict=True, pattern=r"^[0-9a-f]{64}$")]
 ShortText = Annotated[str, Field(strict=True, min_length=1, max_length=200)]
@@ -305,7 +306,20 @@ class WorkMessageDTO(FrozenDTO):
     plain_text: str = Field(max_length=32768)
     run_id: UUID | None = None
     result_refs: UUIDRefs = ()
+    result_type: ChatResultType | None = None
+    omitted_context: bool | None = None
     created_at: UTCDateTime
+
+    @model_validator(mode="after")
+    def actual_result_metadata(self) -> WorkMessageDTO:
+        if self.result_type is None and self.omitted_context is None:
+            return self  # Historical messages remain explicitly unclassified.
+        if (self.result_type is None or self.omitted_context is None
+                or self.role != "assistant" or self.run_id is None or not self.plain_text.strip()):
+            raise ValueError("classified messages require an actual linked assistant result")
+        ChatResult.model_validate({"type": self.result_type, "plain_text": self.plain_text,
+                                   "result_refs": self.result_refs, "omitted_context": self.omitted_context})
+        return self
 
 
 class OutlineSnapshotDTO(FrozenDTO):
@@ -468,7 +482,7 @@ class ReviewDTO(FrozenDTO):
 
 
 class ChatResult(FrozenDTO):
-    type: Literal["answer", "outline_proposal", "revision_proposal", "skill_suggestion"]
+    type: ChatResultType
     plain_text: str = Field(max_length=32768)
     result_refs: UUIDRefs = ()
     omitted_context: bool = False

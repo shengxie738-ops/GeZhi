@@ -7,7 +7,7 @@ come from the separately reviewed Task4b boundaries; equality is not readiness.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
@@ -127,6 +127,21 @@ def match_chat_replay(ctx: WorkContext, command: ChatCommand, key: str, existing
     if existing.input_revision != command.input_revision or existing.skill_ref is not None:
         raise WorkRunError("RUN_RECEIPT_MISMATCH", 503)
     return existing  # Receipt observation only; never dispatch or allocate.
+
+
+def chat_absolute_deadline(started_at: datetime, configured_timeout_seconds: int) -> datetime:
+    """Compute once before admission; attempts, repairs and gaps consume it.
+
+    This pure value does not persist a deadline or enforce an upstream timeout.
+    The later writer must retain it and the transport must bound local duration.
+    """
+    if type(configured_timeout_seconds) is not int or configured_timeout_seconds < 1:
+        raise WorkRunError("INVALID_CALL_LIMITS", 503)
+    try:
+        start = _instant(started_at, "INVALID_CALL_LIMITS")
+        return start + timedelta(seconds=3 * min(configured_timeout_seconds, 90))
+    except (OverflowError, ValueError):
+        raise WorkRunError("INVALID_CALL_LIMITS", 503) from None
 
 
 def chat_call_limits(configured_output_tokens: int, configured_timeout_seconds: int, *, deadline: datetime, now: datetime) -> CallLimits:

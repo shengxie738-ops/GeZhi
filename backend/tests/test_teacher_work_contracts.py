@@ -40,6 +40,7 @@ PURE_MODULES = {
     "app.services.teacher_work.types": "app/services/teacher_work/types.py",
     "app.services.teacher_work.capabilities": "app/services/teacher_work/capabilities.py",
     "app.services.teacher_work.schema": "app/services/teacher_work/schema.py",
+    "app.services.teacher_work.schema_v1": "app/services/teacher_work/schema_v1.py",
     "migrations.v20261005_teacher_work": "migrations/v20261005_teacher_work.py",
 }
 PURE_IMPORT_ROOTS = {
@@ -572,7 +573,7 @@ def test_catalog_enum_contract():
 def test_schema_readiness_contract():
     """Readiness needs exact supplied shape/version/hash; it opens no connection."""
     module = _feature("app.services.teacher_work.schema")
-    assert module.TEACHER_WORK_SCHEMA_VERSION == 1
+    assert module.TEACHER_WORK_SCHEMA_VERSION == 2
     assert module.TEACHER_WORK_CONTRACT_HASH == _symbol("app.services.teacher_work.types", "canonical_digest")(module.TEACHER_WORK_SCHEMA_CONTRACT)
     inspect = module.inspect_teacher_work_schema
     missing = inspect(None)
@@ -616,7 +617,10 @@ def test_additive_migration_and_no_startup_ddl():
     """Static new-module boundary: no implicit SQL/startup/import work is allowed."""
     migration_path = BACKEND / "migrations/v20261005_teacher_work.py"
     assert migration_path.is_file(), "Missing explicit additive prepare/check contract"
-    sources = [migration_path, BACKEND / "app/services/teacher_work/schema.py", BACKEND / "app/models/teacher_work.py"]
+    v2_path = BACKEND / "migrations/v20261005_teacher_work_v2.py"
+    v1_schema_path = BACKEND / "app/services/teacher_work/schema_v1.py"
+    assert v2_path.is_file() and v1_schema_path.is_file(), "Missing pinned v1 or explicit nonexecuting v2 prepare/check contract"
+    sources = [migration_path, v2_path, v1_schema_path, BACKEND / "app/services/teacher_work/schema.py", BACKEND / "app/models/teacher_work.py"]
     for path in sources:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -627,6 +631,9 @@ def test_additive_migration_and_no_startup_ddl():
     tree = ast.parse(migration_path.read_text(encoding="utf-8"))
     symbols = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
     assert {"prepare_teacher_work_schema", "check_teacher_work_schema"} <= symbols
+    tree = ast.parse(v2_path.read_text(encoding="utf-8"))
+    symbols = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    assert {"prepare_teacher_work_v2_schema", "check_teacher_work_v2_schema"} <= symbols
     main = (BACKEND / "app/main.py").read_text(encoding="utf-8")
     assert "v20261005_teacher_work" not in main
     assert "models.teacher_work" not in main
@@ -695,7 +702,7 @@ def test_multibyte_message_storage_capacity():
 
 def test_preparation_rejects_malformed_present_ledger():
     """P2-3: missing ledger allows completion proposal; malformed presence fails."""
-    schema = _feature("app.services.teacher_work.schema")
+    schema = _feature("app.services.teacher_work.schema_v1")
     migration = _feature("migrations.v20261005_teacher_work")
     prepare = migration.prepare_teacher_work_schema
     good = {"dialect": "mysql", "tables": deepcopy(schema.TEACHER_WORK_SCHEMA_CONTRACT["tables"]),

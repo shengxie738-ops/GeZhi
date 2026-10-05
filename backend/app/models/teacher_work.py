@@ -6,7 +6,7 @@ these declarations alone do not establish transactions or runtime immutability.
 """
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME, MEDIUMTEXT, VARBINARY
 from sqlalchemy.orm import declarative_base
 
@@ -67,11 +67,17 @@ class WorkRun(TeacherWorkBase):
     skill_ref = Column(String(64), nullable=True)
     input_revision = Column(Integer, nullable=False)
     outline_revision = Column(Integer, nullable=True)
-    idempotency_key = Column(String(128), nullable=False)
+    idempotency_key = Column(VARBINARY(512), nullable=False)
     request_digest = Column(String(64), nullable=False)
     stage = Column(String(32), nullable=False)
     attempt = Column(Integer, nullable=False, default=1)
     provider_call_count = Column(Integer, nullable=False, default=0)
+    repair_count = Column(Integer, nullable=False, server_default="0")
+    # A cancelled run keeps its unsettled token until the real call settles.
+    active_call_no = Column(Integer, nullable=True)
+    active_call_attempt = Column(Integer, nullable=True)
+    active_call_lease_revision = Column(Integer, nullable=True)
+    active_call_process_instance = Column(String(36), nullable=True)
     deadline = Column(UTC_DATETIME, nullable=False)
     cancelled_at = Column(UTC_DATETIME, nullable=True)
     error_code = Column(String(64), nullable=True)
@@ -79,7 +85,8 @@ class WorkRun(TeacherWorkBase):
     __table_args__ = (
         UniqueConstraint("owner", "task_id", "kind", "idempotency_key", name="uq_tw_run_owner_task_kind_key"),
         CheckConstraint("input_revision >= 1 AND (outline_revision IS NULL OR outline_revision >= 1)", name="ck_tw_run_revisions"),
-        CheckConstraint("attempt >= 1 AND attempt <= 2 AND provider_call_count >= 0 AND provider_call_count <= 3", name="ck_tw_run_budget"),
+        CheckConstraint("attempt >= 1 AND attempt <= 2 AND provider_call_count >= 0 AND provider_call_count <= 3 AND repair_count >= 0 AND repair_count <= 1 AND repair_count <= provider_call_count", name="ck_tw_run_budget"),
+        CheckConstraint("(active_call_no IS NULL AND active_call_attempt IS NULL AND active_call_lease_revision IS NULL AND active_call_process_instance IS NULL) OR (active_call_no IS NOT NULL AND active_call_attempt IS NOT NULL AND active_call_lease_revision IS NOT NULL AND active_call_process_instance IS NOT NULL AND active_call_no = provider_call_count AND active_call_no BETWEEN 1 AND 3 AND active_call_attempt = attempt AND active_call_attempt BETWEEN 1 AND 2 AND active_call_lease_revision >= 1)", name="ck_tw_run_active_call"),
         CheckConstraint("kind IN ('chat','outline','package','revise','reference_search')", name="ck_tw_run_kind"),
         TABLE_OPTIONS,
     )
@@ -90,15 +97,21 @@ class WorkMessage(TeacherWorkBase):
     message_id = Column(String(36), primary_key=True, default=_new_uuid)
     task_id = Column(String(36), ForeignKey("teacher_work_tasks.task_id"), nullable=False)
     owner = Column(String(255), nullable=False)
-    client_message_key = Column(String(128), nullable=True)
+    client_message_key = Column(VARBINARY(512), nullable=True)
     role = Column(String(16), nullable=False)
     plain_text = Column(Text().with_variant(MEDIUMTEXT(), "mysql"), nullable=False)
     run_id = Column(String(36), ForeignKey("teacher_work_runs.run_id"), nullable=True)
+    # A separate nullable receipt never occupies the user-message key namespace.
+    completion_run_id = Column(String(36), ForeignKey("teacher_work_runs.run_id"), nullable=True)
+    result_type = Column(String(32), nullable=True)
+    omitted_context = Column(Boolean, nullable=True)
     result_refs = Column(JSON, nullable=False)
     created_at = Column(UTC_DATETIME, nullable=False)
     __table_args__ = (
         UniqueConstraint("task_id", "client_message_key", name="uq_tw_message_task_client_key"),
+        UniqueConstraint("completion_run_id", name="uq_tw_message_completion_run"),
         CheckConstraint("role IN ('user','assistant','tool')", name="ck_tw_message_role"),
+        CheckConstraint("(completion_run_id IS NULL AND result_type IS NULL AND omitted_context IS NULL) OR (completion_run_id IS NOT NULL AND result_type IS NOT NULL AND omitted_context IS NOT NULL AND role = 'assistant' AND run_id IS NOT NULL AND run_id = completion_run_id AND result_type IN ('answer','outline_proposal','revision_proposal','skill_suggestion') AND omitted_context IN (0,1))", name="ck_tw_message_completion_metadata"),
         TABLE_OPTIONS,
     )
 

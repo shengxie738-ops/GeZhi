@@ -9,7 +9,7 @@ MySQL DDL is not promised to roll back atomically; retries must re-inspect shape
 """
 from dataclasses import dataclass
 
-from app.services.teacher_work.schema import TEACHER_WORK_COMPONENT, TEACHER_WORK_CONTRACT_HASH, TEACHER_WORK_SCHEMA_VERSION, inspect_teacher_work_schema
+from app.services.teacher_work.schema_v1 import TEACHER_WORK_COMPONENT, TEACHER_WORK_CONTRACT_HASH, TEACHER_WORK_SCHEMA_VERSION, inspect_teacher_work_schema
 
 
 @dataclass(frozen=True)
