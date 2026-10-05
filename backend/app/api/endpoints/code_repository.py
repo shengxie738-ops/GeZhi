@@ -25,7 +25,6 @@ from app.services.code_repository_service import (
     list_repositories,
     list_repository_reports,
     publish_repository,
-    enqueue_code_repository_git_coach_feedback,
     toggle_repository_favorite,
     toggle_repository_star,
 )
@@ -250,7 +249,6 @@ async def receive_code_repository_webhook(
         result = apply_code_repository_gitea_webhook(db, project_id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    background_tasks.add_task(enqueue_code_repository_git_coach_feedback, project_id, payload)
     return ok(result)
 
 

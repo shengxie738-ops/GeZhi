@@ -1226,15 +1226,13 @@ def _ensure_pull_requests_from_member_progress(project: dict[str, Any]) -> bool:
             "targetBranch": repo.get("defaultBranch") or "main",
             "status": status,
             "statusLabel": "已合并" if status == "merged" else "PR 待审核",
-            "leaderReviewStatus": "recommended",
-            "leaderReviewer": project.get("project", {}).get("leaderId") or "",
-            "teacherReviewStatus": "approved" if status == "merged" else "pending",
-            "teacherReviewer": "teacher_chen" if status == "merged" else "",
-            "reviewComment": (
-                "教师已确认合并，功能演示和测试记录基本完整。"
-                if status == "merged"
-                else "队长已完成初审，建议教师重点查看异常路径测试和 README 运行说明。"
-            ),
+            "leaderReviewStatus": "pending",
+            "leaderReviewer": "",
+            "teacherReviewStatus": "unknown",
+            "teacherReviewer": "",
+            "reviewComment": "",
+            "reviewScope": "legacy_unverified",
+            "nativeReview": None,
             "createdAt": created_at,
             "updatedAt": project.get("updatedAt") or _now_label(),
             "url": f"{html_url}/pulls/{max_number}" if html_url else "",
@@ -1289,6 +1287,7 @@ def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[
             "url": pr.get("url") or prev.get("url") or "",
             "updatedAt": pr.get("updatedAt") or prev.get("updatedAt") or _now_label(),
             "createdAt": pr.get("createdAt") or prev.get("createdAt") or _now_label(),
+            "nativeReview": prev.get("nativeReview"),
             "source": "gitea",
         }
         member = _find_existing_member_for_gitea_match(project, match, creator_login)
@@ -1300,7 +1299,7 @@ def _apply_gitea_prs_to_project(db: Session, project: dict[str, Any], prs: list[
                 merged_counts[member_key] = merged_counts.get(member_key, 0) + 1
         if status == "merged":
             row["statusLabel"] = prev.get("statusLabel") if prev.get("status") == "merged" else "已合并"
-            row["teacherReviewStatus"] = prev.get("teacherReviewStatus") or "approved"
+            row["teacherReviewStatus"] = prev.get("teacherReviewStatus") or "unknown"
         elif status == "open":
             row["statusLabel"] = prev.get("statusLabel") or "待审核"
             if member:
@@ -2225,11 +2224,6 @@ def apply_gitea_webhook(db: Session, project_id: str, payload: dict[str, Any], *
                     "targetBranch": target_branch,
                     "status": status,
                     "statusLabel": "Merged" if status == "merged" else ("Closed" if status == "closed" else "PR pending review"),
-                    "leaderReviewStatus": "pending",
-                    "leaderReviewer": "",
-                    "teacherReviewStatus": "pending",
-                    "teacherReviewer": "",
-                    "reviewComment": "",
                     "createdAt": _now_label(),
                     "updatedAt": _now_label(),
                     "url": pr.get("html_url") or payload.get("url") or f"{repo.get('htmlUrl', '').rstrip('/')}/pulls/{number}",
@@ -2396,6 +2390,8 @@ def review_pull_request(
     now = _now_label()
 
     if action in {"leader_approve", "recommend_merge"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["leaderReviewStatus"] = "recommended"
         pr["leaderReviewer"] = actor_display
         pr["leaderReviewedAt"] = now
@@ -2404,6 +2400,8 @@ def review_pull_request(
         event_type = "pr_recommended"
         event_text = f"{actor_display} 初审 PR #{pr_number} 并建议合并"
     elif action in {"request_changes", "leader_reject"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["leaderReviewStatus"] = "changes_requested"
         pr["leaderReviewer"] = actor_display
         pr["leaderReviewedAt"] = now
@@ -2463,6 +2461,8 @@ def review_pull_request(
         event_type = "pr_merged"
         event_text = f"{actor_display} 审核并合并 PR #{pr_number}"
     elif action in {"teacher_reject", "reject"}:
+        pr["reviewScope"] = "learning_system"
+        pr.setdefault("nativeReview", None)
         pr["teacherReviewStatus"] = "rejected"
         pr["teacherReviewer"] = actor_display
         pr["teacherReviewedAt"] = now

@@ -1,6 +1,7 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { repositoryApi, fetchGiteaIdentity, rotateGiteaToken } from '../api/repository.js';
 import { formatTime } from '../utils/helpers.js';
+import { repositoryCoachPresentation } from '../utils/teamProvenance.js';
 
 export default {
     name: 'StudentCodeRepository',
@@ -467,6 +468,7 @@ export default {
         }, { immediate: true });
 
         return {
+            repositoryCoachPresentation,
             projects,
             currentProject,
             loading,
@@ -692,11 +694,14 @@ export default {
                                 </section>
 
                                 <section class="rounded-2xl bg-white/55 border border-white/70 p-4 min-w-0">
-                                    <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3"><i class="ph ph-robot"></i> AI Git 教练</h3>
-                                    <div v-if="(currentProject.aiGitCoachFeedback || []).length === 0" class="text-[11px] text-slate-400">等待提交后生成反馈。</div>
+                                    <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3"><i class="ph ph-robot"></i> Git 教练反馈</h3>
+                                    <div v-if="(currentProject.aiGitCoachFeedback || []).length === 0" class="text-[11px] text-slate-400">暂无已保存反馈；此仓库教练分析暂未实现</div>
                                     <div v-else class="space-y-2">
                                         <article v-for="feedback in (currentProject.aiGitCoachFeedback || []).slice(0, 3)" :key="feedback.id || feedback.sha" class="text-[11px] text-slate-600 leading-relaxed">
-                                            {{ feedback.summary }}
+                                            <p class="font-bold">{{ repositoryCoachPresentation(feedback).statusLabel }}</p>
+                                            <p>{{ repositoryCoachPresentation(feedback).summary }}</p>
+                                            <p class="text-[10px]">来源：{{ repositoryCoachPresentation(feedback).source }}</p>
+                                            <p class="text-[10px]">证据：{{ repositoryCoachPresentation(feedback).evidenceReason }}</p>
                                         </article>
                                     </div>
                                 </section>

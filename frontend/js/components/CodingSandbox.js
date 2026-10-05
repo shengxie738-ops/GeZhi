@@ -12,7 +12,7 @@ import request from '../utils/request.js';
 import { formatDisplayDateTime } from '../utils/timeFormat.js';
 import RadarChart from './RadarChart.js';
 import TeamCoachFeedback from './TeamCoachFeedback.js';
-import { isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning } from '../utils/teamProvenance.js';
+import { isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning, remoteRefreshMessage, pullRequestReviewMessage, pullRequestReviewLabel } from '../utils/teamProvenance.js';
 import { createTeamRequestScope } from '../utils/teamCoachFeed.js';
 
 export default {
@@ -137,7 +137,7 @@ export default {
         const copiedTeamAuthClone = ref(false);
         const teamCloneMode = ref('token');
         const reminderMessage = ref('今晚 22:00 前请完成 push 并创建 Pull Request，队长会先做代码初审。');
-        const prReviewComment = ref('本地测试通过，代码结构清晰，建议教师合并。');
+        const prReviewComment = ref('');
 
         // 竞技排位赛区状态
         const rankedTab = ref('lobby');
@@ -590,10 +590,11 @@ export default {
             if (collabActionLoading.value) return;
             collabActionLoading.value = 'sync-repository-prs';
             try {
-                const detail = await teamApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value, stage: 'pull_request' });
+                const previous = collabData.value;
+                const detail = await teamApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value });
                 collabData.value = detail;
                 repositoryHome.value = await teamApi.getRepositoryHome(collabProjectId.value);
-                if (showToast) emit('show-toast', '已从 Gitea 同步 Pull Request 状态', 'success');
+                if (showToast) emit('show-toast', remoteRefreshMessage(previous, detail), 'success');
             } catch (err) {
                 if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '同步 Pull Request 失败', 'error');
@@ -944,6 +945,7 @@ export default {
             if (!canReviewPullRequest(pr) || collabActionLoading.value) return;
             collabActionLoading.value = `review-pr-${pr.number}`;
             try {
+                const previous = collabData.value;
                 const detail = await teamApi.reviewPullRequest(collabProjectId.value, pr.number, {
                     action,
                     comment: prReviewComment.value,
@@ -953,11 +955,7 @@ export default {
                 if (collabViewMode.value === 'home') {
                     repositoryHome.value = await teamApi.getRepositoryHome(collabProjectId.value);
                 }
-                const message = action === 'approve_merge' || action === 'leader_merge' || action === 'merge' || action === 'teacher_approve'
-                    ? `已合并 PR #${pr.number}`
-                    : action === 'recommend_merge'
-                        ? `已推荐合并 PR #${pr.number}`
-                        : `已要求 PR #${pr.number} 修改`;
+                const message = pullRequestReviewMessage(action, pr, previous, detail);
                 emit('show-toast', message, 'success');
             } catch (err) {
                 if (err?.name === 'AbortError') return;
@@ -990,12 +988,13 @@ export default {
             if (collabActionLoading.value) return;
             collabActionLoading.value = `refresh-${stage}`;
             try {
+                const previous = collabData.value;
                 const detail = await teamApi.refreshStatus(collabProjectId.value, { actor: collabViewerName.value });
                 collabData.value = detail;
                 if (collabViewMode.value === 'home') {
                     await loadRepositoryHome(collabProjectId.value);
                 }
-                emit('show-toast', stage === 'merged' ? '已同步合并状态，任务进度已更新' : '状态已刷新，等待系统检测结果已展示', 'success');
+                emit('show-toast', remoteRefreshMessage(previous, detail), 'success');
             } catch (err) {
                 if (err?.name === 'AbortError') return;
                 emit('show-toast', err?.message || '刷新状态失败', 'error');
@@ -2688,7 +2687,7 @@ ${review.code}
         });
 
         return {
-            isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning,
+            isVerifiedPullRequest, canReviewPullRequest, pullRequestLabel, repositoryContentWarning, pullRequestReviewLabel,
             renderMarkdown,
             problems,
             selectedProblemId,
@@ -4644,7 +4643,7 @@ ${review.code}
                                                 v-model="prReviewComment"
                                                 rows="2"
                                                 class="mb-4 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] outline-none focus:border-teal-500 resize-none"
-                                                placeholder="队长审核意见，会随要求修改或同意合并写入学习系统记录"
+                                                placeholder="请填写具体检查内容、证据与待确认事项；仅保存学习系统初审记录"
                                             ></textarea>
                                             <div v-if="repositoryHomePullRequests.length === 0" class="rounded-xl bg-slate-50 border border-slate-100 p-8 text-center">
                                                 <i class="ph ph-git-pull-request text-2xl text-slate-300"></i>
@@ -4689,7 +4688,7 @@ ${review.code}
                                                         </button>
                                                     </div>
                                                     <p v-if="isVerifiedPullRequest(pr) && pr.reviewComment" class="mt-3 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
-                                                        审核意见：{{ pr.reviewComment }}
+                                                        {{ pullRequestReviewLabel(pr) }}：{{ pr.reviewComment }}
                                                     </p>
                                                 </article>
                                             </div>
@@ -5002,7 +5001,7 @@ ${review.code}
                                     <i class="ph ph-link"></i> 绑定已有仓库
                                 </button>
                                 <button @click="refreshCollabStatus('merged')" :disabled="!!collabActionLoading" class="min-h-[40px] px-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1.5">
-                                    <i class="ph ph-seal-check"></i> 模拟合并
+                                    <i class="ph ph-arrows-clockwise"></i> 刷新远端状态
                                 </button>
                             </div>
                             </div>
@@ -5019,7 +5018,7 @@ ${review.code}
                                         我已完成拉取
                                     </button>
                                     <button @click="refreshCollabStatus('pr')" :disabled="!!collabActionLoading" class="min-h-[40px] px-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50">
-                                        模拟 PR 检测
+                                        刷新 PR 状态
                                     </button>
                                 </div>
                             </div>
@@ -5130,7 +5129,7 @@ ${review.code}
                             <p v-if="syncErrorMessage" class="mb-3 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                                 {{ syncErrorMessage }}
                             </p>
-                            <textarea v-if="canManageCollab" v-model="prReviewComment" rows="2" class="mb-3 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] outline-none focus:border-teal-500 resize-none" placeholder="队长初审意见，会随推荐合并同步到后端"></textarea>
+                            <textarea v-if="canManageCollab" v-model="prReviewComment" rows="2" class="mb-3 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] outline-none focus:border-teal-500 resize-none" placeholder="请填写具体检查内容、证据与待确认事项；仅保存学习系统初审记录"></textarea>
                             <div v-if="pullRequests.length === 0" class="rounded-xl bg-slate-50 border border-slate-100 p-5 text-center text-xs text-slate-500">
                                 {{ isGiteaEmptyPr ? '暂无真实 Gitea PR' : '尚未创建 Pull Request。' }}
                             </div>
@@ -5161,7 +5160,7 @@ ${review.code}
                                         </button>
                                     </div>
                                     <p v-if="isVerifiedPullRequest(pr) && pr.reviewComment" class="mt-2 text-[10px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
-                                        审核意见：{{ pr.reviewComment }}
+                                        {{ pullRequestReviewLabel(pr) }}：{{ pr.reviewComment }}
                                     </p>
                                 </article>
                             </div>
