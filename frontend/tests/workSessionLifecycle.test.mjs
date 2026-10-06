@@ -9,6 +9,7 @@ import { reconcileModeHistory, resolvePaperHistoryState } from '../js/utils/conv
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const response = data => ({ok:true,text:async()=>JSON.stringify(data)});
+const streamResponse = data => new Response(`data: ${JSON.stringify({type:'complete',...data})}\n\n`,{headers:{'Content-Type':'text/event-stream'}});
 let storage;
 function setup(handler = async()=>response({status:'success',data:[]})) {
     storage = new Map();
@@ -180,14 +181,14 @@ test('obsolete unauthorized transport response cannot expire the next account se
     assert.deepEqual(events,[]);
 });
 
-for(const outcome of ['success','notSaved','invalid']) test(`nonstream completion marks sync only from an actual ${outcome} receipt`,async()=>{
+for(const outcome of ['success','notSaved','invalid']) test(`chat nonstream fallback marks sync only from an actual ${outcome} receipt`,async()=>{
     setup(async(url,options)=>{
         if(String(url).endsWith('/chat/stream')) throw new Error('offline stream');
         if(String(url).endsWith('/chat')) return response({reply:'source-grounded reply',history_saved:outcome==='success',history_receipt:outcome==='invalid'?{user_message_id:'bad',assistant_message_id:'bad'}:{user_message_id:101,assistant_message_id:102}});
         return response({status:'success',data:[]});
     });
-    const {state,scope}=makeHook(useChat); await settle(); state.agentMode.value='paper'; state.inputText.value='Explain metadata'; await state.sendMessage();
-    const rows=state.modeMessageBuckets.value.paper;
+    const {state,scope}=makeHook(useChat); await settle(); state.agentMode.value='chat'; state.inputText.value='Explain metadata'; await state.sendMessage();
+    const rows=state.modeMessageBuckets.value.chat;
     assert.equal(rows[1].syncState,outcome==='success'?'saved':'failed');
     assert.equal(rows[1].id.startsWith('db-'),outcome==='success'); scope.stop();
 });
@@ -237,8 +238,8 @@ test('pending clear cannot reset a newer mode task and duplicate same-mode clear
 
 for(const userId of [null,401]) test(`authoritative invalidated reply removes deleted local rows (user receipt ${userId})`,async()=>{
     setup(async(url)=>{
-        if(String(url).endsWith('/chat/stream')) throw new Error('stream unavailable');
-        if(String(url).endsWith('/chat')) return response({reply:'answer from invalidated context',history_saved:false,history_invalidated:true,history_receipt:{user_message_id:userId,assistant_message_id:null}});
+        if(String(url).endsWith('/chat/stream')) return streamResponse({content:'',delivery_status:'failed',history_saved:false,history_invalidated:true,history_receipt:{user_message_id:userId,assistant_message_id:null}});
+        if(String(url).endsWith('/chat')) assert.fail('paper must not automatically resubmit');
         return response({status:'success',data:[]});
     });
     const {state,scope}=makeHook(useChat);await settle();state.agentMode.value='paper';state.inputText.value='deleted context prompt';await state.sendMessage();
@@ -265,14 +266,14 @@ test('invalidated stream removes live rows even when a history refresh replaced 
     assert.equal(state.modeMessageBuckets.value.chat.length,0);scope.stop();
 });
 
-test('successful receipt deduplicates live canonical rows loaded during the request',async()=>{
-    const fallback=deferred();let hasRemote=false;setup(async url=>{
-        if(String(url).endsWith('/chat/stream')) throw new Error('stream unavailable');
-        if(String(url).endsWith('/chat')) return await fallback.promise;
+test('successful paper stream receipt deduplicates live canonical rows loaded during the request',async()=>{
+    const terminal=deferred();let hasRemote=false;setup(async url=>{
+        if(String(url).endsWith('/chat/stream')) return await terminal.promise;
+        if(String(url).endsWith('/chat')) assert.fail('paper must not automatically resubmit');
         return response({status:'success',data:hasRemote?[row(601,'same prompt','receipt-task'),{...row(602,'same final reply','receipt-task'),role:'assistant',sender_id:'agent_paper'}]:[],pagination:{has_more:false,complete:true}});
     });
     const {state,scope}=makeHook(useChat);await settle();state.agentMode.value='paper';state.activeConversationId.value='receipt-task';state.inputText.value='same prompt';const sending=state.sendMessage();await settle();hasRemote=true;
-    await state.loadChatHistory('paper');fallback.resolve(response({reply:'same final reply',history_saved:true,history_receipt:{user_message_id:601,assistant_message_id:602}}));await sending;
+    await state.loadChatHistory('paper');terminal.resolve(streamResponse({content:'same final reply',delivery_status:'complete',history_saved:true,history_receipt:{user_message_id:601,assistant_message_id:602}}));await sending;
     assert.deepEqual(state.modeMessageBuckets.value.paper.map(message=>message.id),['db-601','db-602']);scope.stop();
 });
 

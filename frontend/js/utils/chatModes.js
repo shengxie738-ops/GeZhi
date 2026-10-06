@@ -46,6 +46,10 @@ export function getHistoryPanelTitle(agentMode = 'tutor') {
 }
 
 export function validateChatSkillSelection({ skillIds = [], forceRAG = false, agentMode = 'tutor', repositoryId = '', courseDatasetIds = null } = {}) {
+    if (normalizeAgentMode(agentMode) === 'paper' && (forceRAG || repositoryId?.trim()
+        || (courseDatasetIds && (!Array.isArray(courseDatasetIds) || courseDatasetIds.length > 0)))) {
+        throw new Error('论文研读仅使用当前论文资料；请关闭强制知识库检索并移除知识库或课程选择后发送');
+    }
     if (!Array.isArray(skillIds) || skillIds.length > 1 || skillIds.some(id => id !== 'academic-review')) {
         throw new Error('学术 Skill 选择无效，请重新选用 Academic Reviewer');
     }

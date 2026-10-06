@@ -400,11 +400,13 @@ def discard_invalidated_origin(db, receipt):
 
 
 def save_chat_reply_if_current(db: Session, *, current_record: ChatRequestReceipt, content: str,
-                               sender_id: str | None = None) -> ChatMessage | None:
+                               sender_id: str | None = None, before_write=None) -> ChatMessage | None:
     """A clear/delete during inference must not resurrect a removed request.
 
     MySQL FOR UPDATE is a current read and holds the origin row until the reply
     commit. This also prevents the clear-check/insert race across workers.
+    The paper caller rechecks its deadline after these synchronous locking
+    reads, before starting a new write. Other callers retain existing behavior.
     """
     if admission_invalidated() or not content or not content.strip():
         return None
@@ -423,6 +425,8 @@ def save_chat_reply_if_current(db: Session, *, current_record: ChatRequestReceip
             if len(surviving) != len(current_record.context_ids):
                 db.rollback()
                 return None
+        if before_write is not None:
+            before_write()
         return save_chat_message(db, user_id=origin.user_id, agent_mode=origin.agent_mode,
                                  role='assistant', content=content, sender_id=sender_id,
                                  conversation_id=origin.conversation_id, project_id=origin.project_id)

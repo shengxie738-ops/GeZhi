@@ -214,7 +214,7 @@ test('student Work skill: unselected installed reviewer keeps ordinary chat requ
 });
 
 for (const mode of ['chat', 'paper']) {
-    test(`student Work skill: ${mode} snapshots mounted choice and model through delayed nonstream fallback`, async () => {
+    test(`student Work skill: ${mode} preserves submitted choice after delayed stream failure`, async () => {
         const h = setup({ withChat: true }), pending = deferred();
         try {
             await settle(); h.connectSelection(); h.plugins.insertPluginToInput(reviewer());
@@ -228,10 +228,15 @@ for (const mode of ['chat', 'paper']) {
             h.state.currentModel.value = 'later-selected-model';
             pending.reject(new Error('synthetic stream unavailable'));
             await sending;
-            assert.equal(h.chatCalls().length, 2);
-            assert.equal(h.chatCalls()[0].options.body, h.chatCalls()[1].options.body);
-            assert.equal(h.chatCalls()[1].payload.agent_model, 'owner-selected-model');
-            assert.deepEqual(h.chatCalls()[1].payload.skill_ids, ['academic-review']);
+            assert.equal(h.chatCalls().length, mode === 'paper' ? 1 : 2);
+            assert.equal(h.chatCalls()[0].payload.agent_model, 'owner-selected-model');
+            if (mode === 'chat') {
+                assert.equal(h.chatCalls()[0].options.body, h.chatCalls()[1].options.body);
+                assert.equal(h.chatCalls()[1].payload.agent_model, 'owner-selected-model');
+                assert.deepEqual(h.chatCalls()[1].payload.skill_ids, ['academic-review']);
+            } else {
+                assert.equal(h.state.modeMessageBuckets.value.paper.at(-1).syncState, 'failed');
+            }
             assert.deepEqual(h.plugins.selectedChatSkillIds.value, []);
         } finally { await h.close(); }
     });

@@ -3811,7 +3811,7 @@
                                                             class="bg-white border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm shadow-sm markdown-body text-[14px] text-slate-800"
                                                             v-html="renderMarkdown(msg.content)"></div>
 
-                                                        <p v-if="msg.deliveryError" role="alert" class="mt-1 text-[11px] text-rose-700">{{ msg.deliveryError }} · 本次未保存模型回复</p>
+                                                        <p v-if="msg.deliveryError" role="alert" class="mt-1 text-[11px] text-rose-700">{{ msg.deliveryError }} · {{ msg.historyConfirmationStatus === 'unknown' ? '云端保存未确认，请刷新历史核对' : '本次未保存模型回复' }}</p>
                                                         <p v-else-if="msg.deliveryStatus === 'empty'" role="status" class="mt-1 text-[11px] text-amber-700">模型未返回可显示的文本；请修正问题后重试</p>
                                                         <p v-if="msg.syncState === 'pending'" role="status" class="mt-1 text-[11px] text-sky-600">正在确认云端保存...</p>
                                                         <p v-else-if="msg.syncState === 'failed'" role="status" class="mt-1 text-[11px] text-amber-700">{{ msg.syncError || '云端保存未确认，请刷新历史记录核对' }}</p>

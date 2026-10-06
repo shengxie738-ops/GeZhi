@@ -57,6 +57,10 @@ from app.services.student_work_skills import (
     classify_student_skill_completion,
     resolve_student_work_skill,
 )
+from app.services.student_paper_reading import (
+    current_paper_state, paper_deadline, paper_request_scope,
+    paper_remaining_seconds, paper_timeout_scope, remember_paper_origin, mark_paper_write,
+)
 from app.tools.ragflow_tool import query_data_structure_knowledge
 
 router = APIRouter()
@@ -86,6 +90,11 @@ def _validate_task_identity(request: ChatRequest) -> None:
         raise HTTPException(status_code=422, detail='message must contain non-whitespace text')
     if request.conversation_id is not None and len(request.conversation_id.strip()) > 64:
         raise HTTPException(status_code=422, detail='conversation_id must be at most 64 characters')
+    if resolve_agent_mode(request) == "paper":
+        conflicts = [field for field in ("force_rag", "repository_id", "course_dataset_ids", "is_diagnosis",
+                     "problem_id", "problem_title", "user_code") if getattr(request, field, None)]
+        if conflicts:
+            raise HTTPException(status_code=422, detail="paper reading cannot combine retrieval or diagnosis: " + ", ".join(conflicts))
     _resolve_student_work_skill(request)
 
 
@@ -184,6 +193,13 @@ def get_request_chat_model(config: dict, *, temperature: float = 0.1):
     model_id = configurable.get("agent_model")
     custom_base_url = configurable.get("custom_model_base_url")
     custom_api_key = configurable.get("custom_model_api_key")
+    paper_options = {}
+    if configurable.get("agent_mode") == "paper":
+        paper_options = {"request_timeout": paper_remaining_seconds(), "max_retries": 0}
+        if custom_base_url:
+            custom_base_url = custom_base_url.strip().rstrip("/")
+            if custom_base_url.endswith("/chat/completions"):
+                custom_base_url = custom_base_url[:-len("/chat/completions")]
     if custom_base_url and custom_api_key:
         return ChatOpenAI(
             model=model_id,
@@ -191,7 +207,11 @@ def get_request_chat_model(config: dict, *, temperature: float = 0.1):
             openai_api_base=custom_base_url,
             base_url=custom_base_url,
             temperature=temperature,
+            **paper_options,
         )
+    if paper_options:
+        return build_chat_model(model_id, temperature=temperature,
+            client_factory=lambda **options: ChatOpenAI(**options, **paper_options))
     return build_chat_model(model_id, temperature=temperature)
 
 
@@ -375,6 +395,144 @@ def _invalidated_reply(reason):
             'retry_allowed': False}
 
 
+def _paper_rollback(db):
+    try:
+        db.rollback()
+    except Exception:
+        # A committed transaction can reject rollback after an acknowledgement
+        # fault. Discard the session state without assuming commit or rollback.
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _paper_failure(db, origin, code, *, completion_status=None, unknown=False):
+    messages = {
+        "timeout": "论文研读已达到请求时限，请刷新历史核对后重试。",
+        "model_error": "论文研读模型调用失败，请检查所选模型后重试。",
+        "model_unavailable": MODEL_UNAVAILABLE_MESSAGE,
+        "incomplete_response": "论文研读未正常完整结束，本次回复未保存，请重试。",
+        "empty_response": "模型未返回有效论文研读文本，本次回复未保存。",
+        "storage_error": "论文研读保存未确认，请刷新历史核对后重试。",
+    }
+    if unknown or origin is None:
+        receipt = {"history_saved": False, "history_receipt": {
+            "user_message_id": origin.id if origin else None, "assistant_message_id": None},
+            "history_invalidated": False, "history_invalidation_reason": None}
+    else:
+        receipt = chat_history_receipt(db, current_record=origin, saved_reply=None)
+    result = {"reply": "", "content": "", "final_content": "", "history": [],
+        "error": code, "message": messages[code], "delivery_status": "empty" if code == "empty_response" else "failed",
+        "response_status": "empty" if code == "empty_response" else "error", "retry_allowed": False, **receipt}
+    if completion_status is not None:
+        result["model_completion_status"] = completion_status
+    if unknown:
+        result["history_confirmation_status"] = "unknown"
+    return result
+
+
+def _paper_failed_event(result):
+    return f"data: {json.dumps({'type': 'complete', **result})}\n\n"
+
+
+def _paper_messages(config, task_messages, selected_skill):
+    instructions = (build_student_work_skill_instructions(selected_skill) if selected_skill else
+        build_system_prompt(config["configurable"].get("agent_prompt"), agent_id="agent_paper", agent_mode="paper").content)
+    return [SystemMessage(content=instructions), SystemMessage(content=SOURCE_CONTEXT_POLICY), *task_messages]
+
+
+async def _paper_reply(request, db, origin, config, task_messages, selected_skill):
+    if is_configured_model_unavailable(request, config=config):
+        return _paper_failure(db, origin, "model_unavailable")
+    paper_remaining_seconds()
+    try:
+        response = await get_request_chat_model(config, temperature=0.1).ainvoke(
+            _paper_messages(config, task_messages, selected_skill))
+    except TimeoutError:
+        raise
+    except Exception:
+        return _paper_failure(db, origin, "model_error")
+    paper_remaining_seconds()
+    status = classify_student_skill_completion(getattr(response, "response_metadata", None))
+    raw = getattr(response, "additional_kwargs", None) or {}
+    if status != "complete" or getattr(response, "tool_calls", None) or getattr(response, "invalid_tool_calls", None) or raw.get("tool_calls") or raw.get("function_call"):
+        return _paper_failure(db, origin, "incomplete_response", completion_status=status)
+    text = strip_reference_source_block(response.content) if isinstance(response.content, str) else ""
+    if not text.strip():
+        return _paper_failure(db, origin, "empty_response", completion_status=status)
+    if await chat_client_disconnected():
+        return _invalidated_reply("client_disconnected")
+    try:
+        saved = save_chat_reply_if_current(db, current_record=origin, content=text,
+            sender_id=get_runtime_agent_id(config), before_write=mark_paper_write)
+        paper_remaining_seconds()
+        receipt = chat_history_receipt(db, current_record=origin, saved_reply=saved)
+        paper_remaining_seconds()
+    except TimeoutError:
+        raise
+    except Exception:
+        _paper_rollback(db)
+        return _paper_failure(db, origin, "storage_error", unknown=True)
+    current_paper_state().write_started = False
+    return {"reply": "" if receipt["history_invalidated"] else text, "history": [],
+            "delivery_status": "failed" if receipt["history_invalidated"] else "complete",
+            "model_completion_status": status, "retry_allowed": False, **receipt}
+
+
+async def _paper_stream(request, db, origin, config, task_messages, selected_skill):
+    from contextlib import aclosing
+    if is_configured_model_unavailable(request, config=config):
+        yield _paper_failed_event(_paper_failure(db, origin, "model_unavailable"))
+        return
+    yield f"data: {json.dumps({'type': 'progress', 'agent': 'PaperBot', 'status': '正在研读当前任务中已提供的论文资料...'})}\n\n"
+    status, text, saw_tool_call = "unknown", "", False
+    paper_remaining_seconds()
+    try:
+        async with aclosing(get_request_chat_model(config, temperature=0.1).astream(
+                _paper_messages(config, task_messages, selected_skill))) as chunks:
+            async for chunk in chunks:
+                paper_remaining_seconds()
+                chunk_status = classify_student_skill_completion(getattr(chunk, "response_metadata", None))
+                if chunk_status == "incomplete" or (chunk_status == "complete" and status != "incomplete"):
+                    status = chunk_status
+                raw = getattr(chunk, "additional_kwargs", None) or {}
+                saw_tool_call = saw_tool_call or bool(getattr(chunk, "tool_calls", None) or getattr(chunk, "invalid_tool_calls", None) or getattr(chunk, "tool_call_chunks", None) or raw.get("tool_calls") or raw.get("function_call"))
+                if isinstance(chunk.content, str) and chunk.content and status != "incomplete":
+                    text += chunk.content
+                    yield f"data: {json.dumps({'type': 'token', 'agent': 'PaperBot', 'content': chunk.content})}\n\n"
+    except TimeoutError:
+        raise
+    except Exception:
+        yield _paper_failed_event(_paper_failure(db, origin, "model_error"))
+        return
+    paper_remaining_seconds()
+    if status != "complete" or saw_tool_call:
+        yield _paper_failed_event(_paper_failure(db, origin, "incomplete_response", completion_status=status))
+        return
+    text = strip_reference_source_block(text)
+    if not text.strip():
+        yield _paper_failed_event(_paper_failure(db, origin, "empty_response", completion_status=status))
+        return
+    if await chat_client_disconnected():
+        yield _paper_failed_event(_paper_failure(db, origin, "model_error"))
+        return
+    try:
+        saved = save_chat_reply_if_current(db, current_record=origin, content=text,
+            sender_id=get_runtime_agent_id(config), before_write=mark_paper_write)
+        paper_remaining_seconds()
+        event = _stream_complete(db, origin, saved, text, model_completion_status=status)
+        paper_remaining_seconds()
+    except TimeoutError:
+        raise
+    except Exception:
+        _paper_rollback(db)
+        yield _paper_failed_event(_paper_failure(db, origin, "storage_error", unknown=True))
+        return
+    current_paper_state().write_started = False
+    yield event
+
+
 async def _chat_admitted(request, auth, db, connection=None, admission=None):
     from contextlib import nullcontext
     with (nullcontext(admission) if admission else admit_chat_request(auth['sub'], resolve_agent_mode(request), request.conversation_id)) as ticket:
@@ -391,6 +549,27 @@ async def chat(request: ChatRequest, auth: dict = Depends(get_auth_payload), db:
     _validate_task_identity(request)
     request.sessionId = auth["sub"]
     request.thread_id = auth["sub"]
+    if resolve_agent_mode(request) == "paper":
+        with paper_request_scope() as state:
+            try:
+                # Authentication is already resolved to immutable owner fields.
+                # Release its read transaction before waiting for the task lock.
+                db.rollback()
+                paper_remaining_seconds()
+                async with paper_timeout_scope():
+                    result = await _run_chat_request(request, auth, db, http_request)
+                    paper_remaining_seconds()
+                    return result
+            except TimeoutError:
+                _paper_rollback(db)
+                return _paper_failure(db, state.origin, "timeout", unknown=state.write_started)
+            except Exception:
+                _paper_rollback(db)
+                return _paper_failure(db, state.origin, "storage_error", unknown=True)
+    return await _run_chat_request(request, auth, db, http_request)
+
+
+async def _run_chat_request(request, auth, db, http_request=None):
     with admit_chat_request(auth['sub'], resolve_agent_mode(request), request.conversation_id) as ticket:
         if http_request is None:
             return await _chat_admitted(request, auth, db, admission=ticket)
@@ -410,7 +589,9 @@ async def chat(request: ChatRequest, auth: dict = Depends(get_auth_payload), db:
         finally:
             if not operation.done():
                 operation.cancel()
-                await asyncio.gather(operation, return_exceptions=True)
+            # Deadline cancellation can race with a completed child exception.
+            # Retrieve it even when no cancellation of that child is necessary.
+            await asyncio.gather(operation, return_exceptions=True)
 
 
 async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
@@ -426,6 +607,7 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
+    mark_paper_write()
     current_record = save_chat_message(
         db,
         user_id=user_id,
@@ -437,6 +619,10 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
         payload={"_request_token": uuid.uuid4().hex},
     )
     current_record = chat_request_receipt(current_record)
+    remember_paper_origin(current_record)
+    if current_paper_state():
+        current_paper_state().write_started = False
+        paper_remaining_seconds()
     if admission_invalidated():
         discard_invalidated_origin(db, current_record)
         return _invalidated_reply(admission_invalidated())
@@ -484,10 +670,10 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
             message=user_content,
             user_id=user_id,
             db=db,
-            strict_custom_credentials=bool(selected_skill),
+            strict_custom_credentials=bool(selected_skill) or agent_mode == "paper",
         )
     except Exception:
-        if not selected_skill:
+        if not selected_skill and agent_mode != "paper":
             raise
         db.rollback()
         return {"reply": "", "history": [], "error": "model_error",
@@ -506,6 +692,10 @@ async def _chat_sql(request: ChatRequest, auth: dict, db: Session):
     # End the read transaction before waiting on a model; the immutable receipt
     # and a later locking current-read protect clear/delete across workers.
     db.rollback()
+
+    if agent_mode == "paper":
+        remember_paper_origin(current_record)
+        return await _paper_reply(request, db, current_record, config, task_messages, selected_skill)
 
     if selected_skill:
         if is_configured_model_unavailable(request, config=config):
@@ -841,15 +1031,42 @@ def _stream_complete(db, current_record, saved_reply, content, *, status='comple
 
 
 async def stream_chat_events(request: ChatRequest, db: Session, admission=None):
+    from contextlib import aclosing
     _validate_task_identity(request)
-    from contextlib import nullcontext
+    if resolve_agent_mode(request) == "paper":
+        with paper_request_scope(getattr(request, "_paper_deadline", None)) as state:
+            try:
+                async with paper_timeout_scope():
+                    async with aclosing(_stream_chat_admitted(request, db, admission)) as events:
+                        async for event in events:
+                            paper_remaining_seconds()
+                            yield event
+            except TimeoutError:
+                _paper_rollback(db)
+                yield _paper_failed_event(_paper_failure(db, state.origin, "timeout", unknown=state.write_started))
+            except Exception:
+                _paper_rollback(db)
+                yield _paper_failed_event(_paper_failure(db, state.origin, "storage_error", unknown=True))
+        return
+    async for event in _stream_chat_admitted(request, db, admission):
+        yield event
+
+
+async def _stream_chat_admitted(request, db, admission=None):
+    from contextlib import aclosing, nullcontext
     with (nullcontext(admission) if admission else admit_chat_request(resolve_user_id(request), resolve_agent_mode(request), request.conversation_id)) as ticket:
         async with task_request_lock(resolve_user_id(request), resolve_agent_mode(request), request.conversation_id):
             if ticket.reason:
                 yield f"data: {json.dumps({'type':'complete', **_invalidated_reply(ticket.reason), 'content':'', 'final_content':'', 'delivery_status':'failed', 'response_status':'invalidated'})}\n\n"
                 return
-            async for event in _stream_chat_events_sql(request, db):
-                yield event
+            events = _stream_chat_events_sql(request, db)
+            if resolve_agent_mode(request) == "paper":
+                async with aclosing(events):
+                    async for event in events:
+                        yield event
+            else:
+                async for event in events:
+                    yield event
 
 
 async def _stream_chat_events_sql(request: ChatRequest, db: Session):
@@ -862,6 +1079,7 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
     ref_docs = set()
     
     cleaned_msg = clean_message_content(request.message)
+    mark_paper_write()
     current_record = save_chat_message(
         db,
         user_id=user_id,
@@ -873,6 +1091,10 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
         payload={"_request_token": uuid.uuid4().hex},
     )
     current_record = chat_request_receipt(current_record)
+    remember_paper_origin(current_record)
+    if current_paper_state():
+        current_paper_state().write_started = False
+        paper_remaining_seconds()
     if admission_invalidated():
         discard_invalidated_origin(db, current_record)
         yield _stream_complete(db, current_record, None, '', status='failed')
@@ -928,10 +1150,10 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
             message=user_content,
             user_id=user_id,
             db=db,
-            strict_custom_credentials=bool(selected_skill),
+            strict_custom_credentials=bool(selected_skill) or agent_mode == "paper",
         )
     except Exception:
-        if not selected_skill:
+        if not selected_skill and agent_mode != "paper":
             raise
         db.rollback()
         yield f"data: {json.dumps({'type': 'error', 'code': 'model_error', 'message': '无法读取所选模型的配置，请检查后重试。'})}\n\n"
@@ -948,6 +1170,14 @@ async def _stream_chat_events_sql(request: ChatRequest, db: Session):
     # End the read transaction before waiting on a model; the immutable receipt
     # and a later locking current-read protect clear/delete across workers.
     db.rollback()
+
+    if agent_mode == "paper":
+        from contextlib import aclosing
+        remember_paper_origin(current_record)
+        async with aclosing(_paper_stream(request, db, current_record, config, task_messages, selected_skill)) as events:
+            async for event in events:
+                yield event
+        return
 
     if selected_skill:
         if is_configured_model_unavailable(request, config=config):
@@ -1113,7 +1343,33 @@ class AdmittedChatStreamingResponse(StreamingResponse):
     """Register before response headers can suspend; release even if body never starts."""
     def __init__(self, request, db):
         self.chat_request, self.chat_db = request, db
+        if resolve_agent_mode(request) == "paper":
+            request._paper_deadline = paper_deadline()
+            db.rollback()
         super().__init__(iter(()), media_type="text/event-stream")
+
+    async def stream_response(self, send):
+        deadline = getattr(self.chat_request, "_paper_deadline", None)
+        if deadline is None:
+            return await super().stream_response(send)
+        async def bounded_send(message):
+            try:
+                async with asyncio.timeout_at(deadline):
+                    await send(message)
+            except TimeoutError:
+                # A blocked socket cannot receive a terminal receipt. End the
+                # response; the desktop marks missing completion as unconfirmed
+                # and never resubmits paper automatically.
+                raise asyncio.CancelledError("paper response transport deadline")
+        try:
+            return await super().stream_response(bounded_send)
+        finally:
+            # Starlette streams in a child task. Close all suspended paper
+            # generators there, where their ContextVar/deadline scopes began.
+            # Shield only cleanup from its disconnect cancellation scope.
+            from anyio import CancelScope
+            with CancelScope(shield=True):
+                await self.body_iterator.aclose()
 
     async def __call__(self, scope, receive, send):
         request = self.chat_request

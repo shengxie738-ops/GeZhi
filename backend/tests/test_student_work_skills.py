@@ -46,6 +46,7 @@ def load_helper():
 class Message:
     def __init__(self, content):
         self.content = content
+        self.response_metadata = {"finish_reason": "stop"}
 
 
 class HumanMessage(Message):
@@ -104,10 +105,12 @@ class RecordingPorts:
         record.context_messages = messages
         return record
 
-    def save_reply(self, _db, *, current_record, content, sender_id):
+    def save_reply(self, _db, *, current_record, content, sender_id, before_write=None):
         self.events.append("save_reply_if_current")
         if self.invalidated or self.disconnected:
             return None
+        if before_write is not None:
+            before_write()
         row = SimpleNamespace(id=2, current_record=current_record, content=content, sender_id=sender_id)
         self.reply_rows.append(row)
         return row
@@ -207,6 +210,8 @@ def load_endpoints(ports):
         "_chat_admitted", "chat", "_chat_sql", "chat_stream", "stream_chat_events",
         "_stream_chat_events_sql", "_stream_complete", "build_model_unavailable_notice",
         "build_model_unavailable_event",
+        "_run_chat_request", "_stream_chat_admitted", "_paper_failure", "_paper_failed_event",
+        "_paper_messages", "_paper_reply", "_paper_stream", "_paper_rollback",
     }
     functions = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
     assert names <= {node.name for node in functions}, "student skill endpoint validation wiring is missing"
@@ -217,7 +222,7 @@ def load_endpoints(ports):
     original_import = __import__
 
     def synthetic_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name in {"__future__", "contextlib"}:
+        if name in {"__future__", "contextlib", "anyio"}:
             return original_import(name, globals, locals, fromlist, level)
         if name == "app.services.profile_extractor":
             return SimpleNamespace(extract_and_update_profile=no_profile)
@@ -229,7 +234,7 @@ def load_endpoints(ports):
         "get_auth_payload": None, "get_db": None, "HTTPException": HTTPException,
         "HumanMessage": HumanMessage, "AIMessage": AIMessage, "SystemMessage": SystemMessage,
         "json": json, "uuid": uuid, "re": re,
-        "asyncio": SimpleNamespace(sleep=no_sleep, create_task=close_profile),
+        "asyncio": asyncio,
         "logger": SimpleNamespace(warning=lambda *_args: None),
         "resolve_student_work_skill": helper.resolve_student_work_skill,
         "build_student_work_skill_instructions": helper.build_student_work_skill_instructions,
@@ -261,6 +266,10 @@ def load_endpoints(ports):
         "query_data_structure_knowledge": SimpleNamespace(invoke=ports.forbidden),
         "AdmittedChatStreamingResponse": lambda request, db: SimpleNamespace(request=request, db=db),
     }
+    paper = load_file("student_paper_deadline_contract", ENDPOINT.parents[2] / "services/student_paper_reading.py")
+    for name in ("current_paper_state", "paper_deadline", "paper_request_scope", "paper_remaining_seconds",
+                 "paper_timeout_scope", "remember_paper_origin", "mark_paper_write"):
+        namespace[name] = getattr(paper, name)
     exec(compile(selected, str(ENDPOINT), "exec"), namespace)
     return SimpleNamespace(**namespace)
 
@@ -495,12 +504,12 @@ class StudentWorkSkillDispatchTests(unittest.TestCase):
                 self.assertEqual(self.ports.reply_rows, [])
                 self.assertEqual(self.ports.graph_calls, [])
 
-    def test_unselected_requests_keep_legacy_graph_dispatch(self):
+    def test_unselected_nonpaper_requests_keep_legacy_graph_dispatch(self):
         for stream in (False, True):
             for skill_ids in (None, []):
                 with self.subTest(stream=stream, skill_ids=skill_ids):
                     self.setUp()
-                    result = self.run_request(stream=stream, skill_ids=skill_ids)
+                    result = self.run_request(stream=stream, skill_ids=skill_ids, agent_mode="chat")
                     response = result[-1] if stream else result
                     self.assertTrue(response["history_saved"])
                     self.assertEqual(len(self.ports.graph_calls), 1)

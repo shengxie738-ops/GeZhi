@@ -1,5 +1,7 @@
 """SQL-authoritative task history and model-context regressions; mocked providers only."""
 import asyncio
+import json
+from dataclasses import replace
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,6 +15,8 @@ from app.models.chat_message import ChatMessage
 from app.services import chat_history as history, agent_workflow
 from app.api.endpoints import chat
 from app.schemas.chat import ChatRequest
+from app.services import model_registry
+from tests.support.student_paper_transport import PaperTransport
 
 
 @pytest.fixture
@@ -37,14 +41,44 @@ def snapshot():
 
 @pytest.fixture
 def model_inputs(monkeypatch):
-    inputs = []
+    class Inputs(list):
+        pass
+    inputs = Inputs()
+    inputs.provider_messages = []
     async def invoke(state, **kwargs):
         inputs.append(state['messages'])
         return {'messages': [*state['messages'], AIMessage(content='offline response')]}
     async def stream(state, **kwargs):
         inputs.append(state['messages'])
         yield {'event':'on_chat_model_stream', 'data':{'chunk':AIMessage(content='offline response')}}
-    monkeypatch.setattr(chat, 'agent_graph', SimpleNamespace(ainvoke=invoke, astream_events=stream))
+    # Preserve the old upstream delay/deletion scenarios at the HTTP boundary.
+    # Production model/auth/context/SQL code executes normally; the backend
+    # graph is never invoked by these paper route tests.
+    inputs.upstream = SimpleNamespace(ainvoke=invoke, astream_events=stream)
+    transport = PaperTransport()
+    async def script(request):
+        body = json.loads(request.content)
+        messages = []
+        for item in body['messages']:
+            cls = {'system': SystemMessage, 'assistant': AIMessage}.get(item['role'], HumanMessage)
+            messages.append(cls(content=item['content']))
+        inputs.provider_messages.append(messages)
+        state = {'messages': messages[2:]}
+        if body.get('stream'):
+            text = ''
+            async for item in inputs.upstream.astream_events(state):
+                chunk = item.get('data', {}).get('chunk')
+                if chunk:
+                    text += chunk.content
+        else:
+            result = await inputs.upstream.ainvoke(state)
+            text = result['messages'][-1].content
+        return {'content': text, 'reason': 'stop'}
+    transport.on_request = script
+    transport.install(monkeypatch)
+    config = model_registry._MODEL_CONFIGS['glm-5.1']
+    monkeypatch.setitem(model_registry._MODEL_CONFIGS, 'glm-5.1',
+        replace(config, api_key='synthetic-paper-only', base_url='http://synthetic.invalid/v1'))
     import app.services.profile_extractor as profiles
     monkeypatch.setattr(profiles, 'extract_and_update_profile', AsyncMock())
     monkeypatch.setattr(chat, 'retrieve_chunks_for_user', lambda *args, **kwargs: [])
@@ -139,8 +173,8 @@ def test_cleared_inflight_request_does_not_resurrect_assistant_history(db, monke
     async def events(state, **kwargs):
         history.clear_chat_history(db, user_id='alice', agent_mode='paper')
         yield {'event':'on_chat_model_stream','data':{'chunk':AIMessage(content='deleted request answer')}}
-    monkeypatch.setattr(chat.agent_graph, 'ainvoke', invoke)
-    monkeypatch.setattr(chat.agent_graph, 'astream_events', events)
+    monkeypatch.setattr(model_inputs.upstream, 'ainvoke', invoke)
+    monkeypatch.setattr(model_inputs.upstream, 'astream_events', events)
     req = ChatRequest(message='Await then clear', sessionId='alice', agent_mode='paper', conversation_id='a')
     async def run():
         if stream:
@@ -179,7 +213,7 @@ def test_same_task_requests_serialize_while_other_tasks_remain_independent(db, m
             gates['entered'].set()
             await gates['release'].wait()
         return {'messages': [AIMessage(content='answer:' + latest)]}
-    monkeypatch.setattr(chat.agent_graph, 'ainvoke', invoke)
+    monkeypatch.setattr(model_inputs.upstream, 'ainvoke', invoke)
     async def run():
         gates.update(entered=asyncio.Event(), release=asyncio.Event())
         def req(message, task): return ChatRequest(message=message,agent_mode='paper',conversation_id=task)
@@ -257,8 +291,8 @@ def test_deleted_context_row_during_inference_cannot_be_reintroduced_in_saved_an
     async def events(state, **kwargs):
         history.delete_chat_message(db,user_id='alice',message_id=deleted.id)
         yield {'event':'on_chat_model_stream','data':{'chunk':AIMessage(content='quoted OLD PRIVATE SOURCE')}}
-    monkeypatch.setattr(chat.agent_graph,'ainvoke',invoke)
-    monkeypatch.setattr(chat.agent_graph,'astream_events',events)
+    monkeypatch.setattr(model_inputs.upstream,'ainvoke',invoke)
+    monkeypatch.setattr(model_inputs.upstream,'astream_events',events)
     req = ChatRequest(message='explain source', sessionId='alice',agent_mode='paper',conversation_id='task-a')
     async def run():
         if stream: return [item async for item in chat.stream_chat_events(req, db)]
@@ -322,20 +356,13 @@ def test_real_graph_retains_tool_messages_within_one_invocation(monkeypatch):
     assert sum(isinstance(m,HumanMessage) and m.content=='tool request' for m in inputs[-1]) == 1
 
 
-def test_cold_graph_restores_sql_and_deleted_same_thread_rows_stay_removed(db, monkeypatch, model_inputs):
-    captured = []
-    class Model:
-        def bind_tools(self, tools): return self
-        def stream(self, messages):
-            captured.append(messages)
-            yield AIMessage(content='offline response')
-    monkeypatch.setattr(agent_workflow,'build_chat_model',lambda *args,**kwargs: Model())
-    monkeypatch.setattr(chat,'agent_graph',agent_workflow.workflow.compile())
+def test_cold_paper_request_restores_sql_and_deleted_same_thread_rows_stay_removed(db, monkeypatch, model_inputs):
     removed = save(db,'PRIVATE DELETED USER')
     save(db,'Saved paper search',role='assistant',payload=snapshot())
     history.delete_chat_message(db,user_id='alice',message_id=removed.id)
     req = ChatRequest(message='continue cold task',agent_mode='paper',conversation_id='task-a')
     asyncio.run(chat.chat(req,auth={'sub':'alice'},db=db))
+    captured = model_inputs.provider_messages
     contents = '\n'.join(m.content for m in captured[-1])
     assert 'PRIVATE DELETED USER' not in contents
     assert 'Graph medicine' in contents and 'Message passing for molecules' in contents
