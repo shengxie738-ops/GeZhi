@@ -67,7 +67,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         const current = state.materials, snapshot = current.snapshot, outline = snapshot?.outline;
         const valid = validateDraft(), taskReady = state.taskReadStatus === 'ready' && !state.taskConflict &&
             !Object.keys(teacherWorkingChanges(state)).length && state.composerStatus !== 'saving';
-        const busy = Boolean(readFlight || writeFlight || operation);
+        const busy = Boolean(readFlight || writeFlight || operation || state.packageWriteBusy);
         const revisions = snapshot && snapshot.input_revision === state.input_revision && snapshot.working_revision === state.working_revision;
         current.canSave = Boolean(usable('save') && valid && taskReady && !busy && !current.conflict && revisions &&
             snapshot.source_status !== 'unavailable' && snapshot.current_source_digest !== null);
@@ -157,7 +157,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
     function cancelMaterialsReplace() { state.materials.pendingReplace = false; return true; }
     async function submit(kind, retry = false) {
         flags();
-        if (!usable(kind === 'save' ? 'save' : 'approve') || writeFlight || readFlight || typeof api[kind === 'save' ? 'saveMaterials' : 'approveMaterials'] !== 'function') return false;
+        if (state.packageWriteBusy || !usable(kind === 'save' ? 'save' : 'approve') || writeFlight || readFlight || typeof api[kind === 'save' ? 'saveMaterials' : 'approveMaterials'] !== 'function') return false;
         if (retry) { if (!operation || operation.kind !== kind || !state.materials.retryAvailable || operation.task_id !== state.task_id) return false; }
         else {
             if (operation || !(kind === 'save' ? state.materials.canSave : state.materials.canApprove)) return false;
@@ -233,7 +233,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         stash(scopeToken); flags();
     }, { flush: 'sync' });
     watch(() => [state.taskReadStatus, state.taskConflict, state.createOpen, state.composerStatus, state.composerText,
-        state.draftTargetSlideCount, JSON.stringify(state.draftResourceIds)], () => {
+        state.draftTargetSlideCount, JSON.stringify(state.draftResourceIds), state.packageWriteBusy], () => {
         if (state.createOpen) { abortRead(); abortWrite(); stash(scopeToken); }
         flags();
     }, { flush: 'sync' });

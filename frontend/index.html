@@ -2612,7 +2612,11 @@
             @update-materials-draft="teacherWorkUpdateMaterialsDraft" @save-materials="teacherWorkSaveMaterials"
             @reload-materials="teacherWorkReloadMaterials" @replace-materials-draft="teacherWorkReplaceMaterialsDraft"
             @cancel-materials-replace="teacherWorkCancelMaterialsReplace" @approve-materials="teacherWorkApproveMaterials"
-            @retry-materials="teacherWorkRetryMaterials" @retry-materials-capabilities="teacherWorkRetryMaterialsCapabilities">
+            @retry-materials="teacherWorkRetryMaterials" @retry-materials-capabilities="teacherWorkRetryMaterialsCapabilities"
+            @retry-packages-capabilities="teacherWorkRetryPackagesCapabilities" @reload-packages="teacherWorkReloadPackages"
+            @load-older-packages="teacherWorkLoadOlderPackages" @open-package="teacherWorkOpenPackage" @create-package="teacherWorkCreatePackage"
+            @replay-package="teacherWorkReplayPackage" @retry-package="teacherWorkRetryPackage" @download-package-artifact="teacherWorkDownloadPackageArtifact"
+            @refresh-package="teacherWorkRefreshPackage">
         </teacher-work>
         <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
             :class="{ 'student-legacy-shell': currentRole === 'student' }">

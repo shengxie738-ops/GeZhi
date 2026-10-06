@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/env.js';
+import { createTeacherWorkPackagesApi } from './teacherWorkPackages.js';
 import { validateMaterialsCapabilities, validateMaterialsSnapshot, validateMaterialsSaveBody, validateMaterialsApprovalBody,
     materialsBodyMaximumBytes } from './teacherWorkMaterials.js';
 
@@ -251,6 +252,7 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
         return decoded;
     };
     return Object.freeze({
+        ...createTeacherWorkPackagesApi({ fetchImpl, getToken, dispatchAuthExpired }),
         getCapabilities: (options = {}) => send('/teacher/work/capabilities', 'GET', undefined, options, capabilities, 16384),
         getMaterialsCapabilities: (options = {}) => send('/teacher/work/materials/capabilities', 'GET', undefined, options,
             validateMaterialsCapabilities, materialsBodyMaximumBytes, false, false, materialsBodyMaximumBytes, true),

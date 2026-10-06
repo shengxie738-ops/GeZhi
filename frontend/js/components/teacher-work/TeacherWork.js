@@ -1,10 +1,11 @@
 import { computed } from 'vue';
 import TeacherWorkMaterials from './TeacherWorkMaterials.js';
+import TeacherWorkPackages from './TeacherWorkPackages.js';
 import { teacherWorkReasonText } from '../../controllers/teacherWorkState.js';
 
 export default {
     name: 'TeacherWork',
-    components: { TeacherWorkMaterials },
+    components: { TeacherWorkMaterials, TeacherWorkPackages },
     props: { state: { type: Object, required: true }, menus: { type: Array, default: () => [] },
         currentUser: { type: Object, default: () => ({}) } },
     emits: ['navigate', 'logout', 'open-user-center', 'retry-capabilities', 'toggle-navigation', 'toggle-taskrail',
@@ -12,18 +13,24 @@ export default {
         'open-create-task', 'close-create-task', 'update-create-form', 'create-task', 'reload-task', 'save-working',
         'toggle-resource', 'update-target-slides', 'reload-resources', 'update-chat-text', 'send-chat', 'retry-chat',
         'reload-chat-history', 'load-older-chat', 'refresh-chat-run', 'cancel-chat', 'update-materials-draft', 'save-materials',
-        'reload-materials', 'replace-materials-draft', 'cancel-materials-replace', 'approve-materials', 'retry-materials', 'retry-materials-capabilities'],
+        'reload-materials', 'replace-materials-draft', 'cancel-materials-replace', 'approve-materials', 'retry-materials', 'retry-materials-capabilities',
+        'retry-packages-capabilities', 'reload-packages', 'load-older-packages', 'open-package', 'create-package',
+        'replay-package', 'retry-package', 'download-package-artifact', 'refresh-package'],
     setup(props, { emit }) {
         const privateTaskAvailability = computed(() => props.state.privateTaskAvailability || { create: false, read: false, update: false });
         const privateTasksConnected = computed(() => Object.values(privateTaskAvailability.value).some(value => value === true));
         const privateChatAvailability = computed(() => props.state.privateChatAvailability || {});
+        const packageWriteBusy = computed(() => Boolean(props.state.packageWriteBusy));
+        const canCreateTask = computed(() => Boolean(props.state.createOpen && privateTaskAvailability.value.create &&
+            props.state.createStatus !== 'loading' && !packageWriteBusy.value));
         const chatBusy = computed(() => ['sending', 'cancelling', 'queued', 'running', 'checking'].includes(props.state.chatStatus));
         const canSendChat = computed(() => Boolean(props.state.task && !props.state.createOpen && privateChatAvailability.value.send &&
-            props.state.taskReadStatus === 'ready' && !props.state.taskConflict && !chatBusy.value &&
+            props.state.taskReadStatus === 'ready' && !props.state.taskConflict && !chatBusy.value && !packageWriteBusy.value &&
             !(props.state.chatRun && (!props.state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(props.state.chatRun.stage))) &&
             typeof props.state.chatText === 'string' && props.state.chatText.trim()));
-        const canCancelChat = computed(() => Boolean(privateChatAvailability.value.cancel && props.state.chatRun &&
+        const cancelChatVisible = computed(() => Boolean(privateChatAvailability.value.cancel && props.state.chatRun &&
             (!props.state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(props.state.chatRun.stage)) && props.state.chatStatus !== 'cancelling'));
+        const canCancelChat = computed(() => cancelChatVisible.value && !packageWriteBusy.value);
         const chatStatusText = computed(() => ({ idle: '问题尚未发送', sending: '正在提交问题 · 尚未确认入队',
             checking: '正在读取执行状态', uncertain: '提交结果未确认 · 输入已保留，可用同一请求标识重试', queued: '已入队 · 等待 AI 处理',
             running: 'AI 正在处理 · 回复尚未完成', complete: '处理已完成 · 回复以持久对话记录为准',
@@ -42,7 +49,7 @@ export default {
         const selectedTask = computed(() => props.state.task || null);
         const canEditTask = computed(() => Boolean(selectedTask.value && !props.state.createOpen && privateTaskAvailability.value.update));
         const canSave = computed(() => canEditTask.value && !props.state.createOpen && props.state.taskReadStatus === 'ready' &&
-            !props.state.taskConflict && props.state.composerStatus === 'unsaved');
+            !props.state.taskConflict && props.state.composerStatus === 'unsaved' && !packageWriteBusy.value);
         const composerNote = computed(() => props.state.createOpen ? '新建任务信息尚未提交 · 当前教学需求仍保留在页面' :
             !selectedTask.value ? '未发送 · 仅保留在当前页面' :
             props.state.taskConflict ? '未保存 · 版本已变更，重新读取后可继续保存；当前编辑可复制' :
@@ -85,7 +92,8 @@ export default {
             event.currentTarget.querySelectorAll('[role="tab"]')[index]?.focus();
         };
         return { dialogOpen, capabilityTitle, capabilityReason, teacherWorkReasonText, handleDialogKey, handleArtifactTabKey,
-            privateTaskAvailability, privateTasksConnected, privateChatAvailability, chatBusy, canSendChat, canCancelChat,
+            privateTaskAvailability, privateTasksConnected, privateChatAvailability, packageWriteBusy, canCreateTask,
+            chatBusy, canSendChat, canCancelChat, cancelChatVisible,
             chatStatusText, chatReasonText, resultLabel, createForm, resources, selectedTask, canEditTask, canSave, composerNote };
     },
     template: `
@@ -174,7 +182,7 @@ export default {
                             <p>私人任务按当前教师身份保存，教学需求需手动保存</p>
                             <p class="teacher-work-muted">{{ privateChatAvailability.send ? '私人教学对话已接通' : privateChatAvailability.provider_configured ?
                                 '私人教学对话暂不可发送' : 'AI 尚未配置，教学问题暂不可发送' }} · 外部模型尚未验证</p>
-                            <p class="teacher-work-muted">AI 生成与文件产物尚未接通</p>
+                            <p class="teacher-work-muted">AI 自动生成尚未接通；手动文件导出能力单独检查</p>
                         </template>
                         <template v-else-if="state.capabilities.status !== 'loading'">
                             <p>{{ teacherWorkReasonText(capabilityReason) }}</p><p class="teacher-work-reason-code">{{ capabilityReason }}</p>
@@ -192,6 +200,11 @@ export default {
                         @reload-materials="$emit('reload-materials')" @replace-materials-draft="$emit('replace-materials-draft')"
                         @cancel-materials-replace="$emit('cancel-materials-replace')" @approve-materials="$emit('approve-materials')"
                         @retry-materials="$emit('retry-materials')" @retry-materials-capabilities="$emit('retry-materials-capabilities')"></teacher-work-materials>
+                    <teacher-work-packages v-if="selectedTask && !state.createOpen" :state="state"
+                        @retry-packages-capabilities="$emit('retry-packages-capabilities')" @reload-packages="$emit('reload-packages')"
+                        @load-older-packages="$emit('load-older-packages')" @open-package="$emit('open-package', $event)"
+                        @create-package="$emit('create-package')" @replay-package="$emit('replay-package')" @retry-package="$emit('retry-package')"
+                        @download-package-artifact="$emit('download-package-artifact', $event)" @refresh-package="$emit('refresh-package')"></teacher-work-packages>
                     <section v-if="state.createOpen" id="teacher-work-create" class="teacher-work-create"
                         aria-labelledby="teacher-work-create-heading" :aria-busy="state.createStatus === 'loading'">
                         <div class="teacher-work-section-heading"><h2 id="teacher-work-create-heading">新建私人备课任务</h2>
@@ -232,7 +245,7 @@ export default {
                         <p v-if="state.operationError && state.operationError.operation === 'create'" class="teacher-work-input-error" role="alert">
                             {{ teacherWorkReasonText(state.operationError.reason) }}</p>
                         <button type="button" class="teacher-work-button teacher-work-button--primary"
-                            :disabled="!privateTaskAvailability.create || state.createStatus === 'loading'" @click="$emit('create-task')">创建私人任务</button>
+                            :disabled="!canCreateTask" @click="canCreateTask && $emit('create-task')">创建私人任务</button>
                     </section>
                     <section v-if="selectedTask && !state.createOpen" class="teacher-work-selected-task" aria-labelledby="teacher-work-current-heading">
                         <h2 id="teacher-work-current-heading">{{ selectedTask.title }}</h2>
@@ -284,7 +297,7 @@ export default {
                             :title="selectedTask ? '请在产物的来源页选择已有资料' : '请先创建或读取私人任务'">
                             <i class="ph ph-paperclip" aria-hidden="true"></i>引用资料<i class="ph ph-caret-down" aria-hidden="true"></i></button>
                         <button v-if="selectedTask" type="button" class="teacher-work-button teacher-work-button--primary"
-                            :disabled="!canSave" @click="$emit('save-working')">保存需求</button>
+                            :disabled="!canSave" @click="canSave && $emit('save-working')">保存需求</button>
                     </div>
                     <p v-if="state.operationError && !(state.createOpen && state.operationError.operation === 'create')"
                         class="teacher-work-input-error" role="alert">{{ teacherWorkReasonText(state.operationError.reason) }}</p>
@@ -297,13 +310,13 @@ export default {
                         @input="$emit('update-chat-text', $event.target.value)"></textarea>
                     <div class="teacher-work-composer-controls">
                         <button v-if="state.chatRetryAvailable" type="button" class="teacher-work-button teacher-work-button--quiet"
-                            :disabled="!canSendChat" @click="$emit('retry-chat')">用同一请求重试</button>
+                            :disabled="!canSendChat" @click="canSendChat && $emit('retry-chat')">用同一请求重试</button>
                         <button v-if="state.chatRun" type="button" class="teacher-work-button teacher-work-button--quiet"
                             :disabled="!privateChatAvailability.read_run || state.chatStatus === 'cancelling'" @click="$emit('refresh-chat-run')">查询执行状态</button>
-                        <button v-if="canCancelChat" type="button" class="teacher-work-button teacher-work-button--quiet"
-                            @click="$emit('cancel-chat')">取消当前问题</button>
+                        <button v-if="cancelChatVisible" type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="!canCancelChat"
+                            @click="canCancelChat && $emit('cancel-chat')">取消当前问题</button>
                         <button type="button" class="teacher-work-button teacher-work-button--primary" :disabled="!canSendChat || state.chatRetryAvailable"
-                            @click="$emit('send-chat')">发送教学问题</button>
+                            @click="canSendChat && !state.chatRetryAvailable && $emit('send-chat')">发送教学问题</button>
                     </div>
                     <p id="teacher-work-chat-status" class="teacher-work-composer-note" role="status" aria-live="polite">{{ chatStatusText }}</p>
                     <p v-if="state.chatError" class="teacher-work-input-error" role="alert">{{ chatReasonText(state.chatError.reason) }}</p>
@@ -358,15 +371,16 @@ export default {
                             <button type="button" class="teacher-work-button teacher-work-button--quiet"
                                 :disabled="state.resourcesStatus === 'loading' || !privateTasksConnected" @click="$emit('reload-resources')">重新读取资料</button>
                         </fieldset>
+                        <teacher-work-packages v-else-if="selectedTask && !state.createOpen && state.packages && state.ui.artifactTab !== 'sources'"
+                            :state="state" :view="state.ui.artifactTab" :id-prefix="'teacher-work-sidebar-packages-' + state.ui.artifactTab"
+                            @retry-packages-capabilities="$emit('retry-packages-capabilities')" @reload-packages="$emit('reload-packages')"
+                            @load-older-packages="$emit('load-older-packages')" @open-package="$emit('open-package', $event)"
+                            @create-package="$emit('create-package')" @replay-package="$emit('replay-package')" @retry-package="$emit('retry-package')"
+                            @download-package-artifact="$emit('download-package-artifact', $event)" @refresh-package="$emit('refresh-package')"></teacher-work-packages>
                         <section v-else class="teacher-work-artifact-empty">
                             <i class="ph" :class="state.ui.artifactTab === 'sources' ? 'ph-books' : state.ui.artifactTab === 'versions' ? 'ph-clock-counter-clockwise' : 'ph-files'" aria-hidden="true"></i>
                             <h3>{{ state.ui.artifactTab === 'sources' ? '暂无可显示的来源' : state.ui.artifactTab === 'versions' ? '暂无可显示的版本' : '暂无可显示的文件' }}</h3>
-                            <p>{{ privateTasksConnected ? '文件与版本产物读取尚未接通' : '当前任务及产物读取尚未接通' }}</p>
-                        </section>
-                        <section v-if="state.ui.artifactTab === 'files'" class="teacher-work-preview" aria-label="结构预览状态">
-                            <div class="teacher-work-preview-heading"><h3>PPT 结构预览</h3><span>非最终文件渲染</span></div>
-                            <div class="teacher-work-preview-empty"><i class="ph ph-presentation" aria-hidden="true"></i>
-                                <p>尚无待生成内容</p><small>结构预览入口尚未接通</small></div>
+                            <p>{{ selectedTask ? '文件导出能力单独检查；保存版本的文件与状态以服务端结果为准' : '请先创建或读取私人任务' }}</p>
                         </section>
                     </div>
                     <p class="teacher-work-artifact-private">教师私人草稿</p>

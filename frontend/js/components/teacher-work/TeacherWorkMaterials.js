@@ -393,7 +393,7 @@ export default {
                 <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="draft.slides.length >= 12" @click="addSlide">添加幻灯片</button>
             </fieldset>
             </div>
-            <p class="teacher-work-materials-export teacher-work-muted">PPTX 与 DOCX 文件导出尚未开放；保存与审阅仅针对以上大纲快照</p>
+            <p class="teacher-work-materials-export teacher-work-muted">PPTX 与 DOCX 文件导出能力单独检查；能力尚未确认时不可导出，保存与审阅仅针对以上大纲快照</p>
         </template>
     </section>`
 };

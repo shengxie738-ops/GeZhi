@@ -6,17 +6,23 @@ import { createTeacherWorkState, synchronizeTeacherWork, captureRequest, acceptR
 
 import { useTeacherWorkChat } from './useTeacherWorkChat.js';
 import { useTeacherWorkMaterials } from './useTeacherWorkMaterials.js';
+import { useTeacherWorkPackages } from './useTeacherWorkPackages.js';
 
 // Isolated teacher lifecycle. No student transcript, plugin, task-tree or cancellation handles.
 export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThis.localStorage,
     documentTarget = globalThis.document, eventTarget = globalThis.window, viewportTarget = globalThis.window,
     location = globalThis.window?.location, history = globalThis.window?.history,
-    newIdempotencyKey = () => globalThis.crypto?.randomUUID?.(), chatScheduler = globalThis, chatPollLimit = 60 } = {}) {
-    const state = reactive(createTeacherWorkState());
+    newIdempotencyKey = () => globalThis.crypto?.randomUUID?.(), chatScheduler = globalThis, chatPollLimit = 60, packageScheduler = globalThis, packagePollLimit = 60, urlApi = globalThis.URL } = {}) {
+    const state = reactive(createTeacherWorkState()); state.taskWriteBusy = false;
     const chat = useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler: chatScheduler, pollLimit: chatPollLimit });
     const materials = useTeacherWorkMaterials(state, { api, newIdempotencyKey,
         onTaskRevisionChange: () => { for (const name of ['read', 'save', 'resources']) abortSlot(name); },
         reconcileTask: minimumRevisions => readTask(state.task_id, { minimumRevisions }) });
+    const packages = useTeacherWorkPackages(state, { api, newIdempotencyKey, scheduler: packageScheduler, pollLimit: packagePollLimit, documentTarget, urlApi,
+        refreshContext: async () => {
+            if (!await readTask(state.task_id, { preserveEdits: state.taskConflict || state.composerStatus !== 'saved' })) return false;
+            return materials.reloadMaterials();
+        } });
     let disposed = false, flight = null, taskReadFlight = null, saveFlight = null, createFlight = null, resourceFlight = null,
         creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null;
     const eligible = () => !disposed && captureRequest(state) !== null;
@@ -30,7 +36,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     const abortSlot = name => {
         const previous = name === 'read' ? taskReadFlight : name === 'save' ? saveFlight : name === 'create' ? createFlight : resourceFlight;
         if (name === 'read') taskReadFlight = null;
-        else if (name === 'save') saveFlight = null;
+        else if (name === 'save') { saveFlight = null; state.taskWriteBusy = false; }
         else if (name === 'create') createFlight = null;
         else resourceFlight = null;
         previous?.controller.abort();
@@ -118,7 +124,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         return changed;
     }
     async function createTask() {
-        if (!eligible() || !state.privateTaskAvailability.create || createFlight || typeof api.createTask !== 'function') return false;
+        if (!eligible() || state.packageWriteBusy || !state.privateTaskAvailability.create || createFlight || typeof api.createTask !== 'function') return false;
         let body;
         try { body = validatePrivateTaskCreate({ ...state.createForm, scope: 'private' }); }
         catch (caught) { state.createStatus = 'error'; failOperation('create', caught); return false; }
@@ -179,7 +185,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     const reloadTask = () => readTask(state.task_id, { preserveEdits: state.task !== null && (state.taskConflict || state.composerStatus !== 'saved') });
     async function saveWorking() {
-        if (!eligible() || state.createOpen || !state.privateTaskAvailability.update || !state.task || state.taskReadStatus !== 'ready' ||
+        if (!eligible() || state.packageWriteBusy || state.createOpen || !state.privateTaskAvailability.update || !state.task || state.taskReadStatus !== 'ready' ||
             state.taskConflict || saveFlight || typeof api.updateWorking !== 'function') return false;
         const changes = teacherWorkingChanges(state);
         if (!Object.keys(changes).length) {
@@ -187,7 +193,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             // An explicit post-conflict save still confirms an identical local draft.
             changes.requirements = state.composerText;
         }
-        const request = makeTaskRequest(); saveFlight = request; state.composerStatus = 'saving'; state.operationError = null;
+        const request = makeTaskRequest(); saveFlight = request; state.taskWriteBusy = true; state.composerStatus = 'saving'; state.operationError = null;
         try {
             const data = validatePrivateTaskSnapshot(await api.updateWorking(state.task_id, {
                 expected_revision: request.workingRevision, changes }, { signal: request.controller.signal }));
@@ -202,7 +208,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             if (saveFlight !== request || !taskFresh(request)) return false;
             state.composerStatus = 'unsaved'; state.taskConflict = caught?.status === 409 || caught?.reason === 'revision_conflict';
             failOperation('save', caught); return false;
-        } finally { if (saveFlight === request) saveFlight = null; }
+        } finally { if (saveFlight === request) { saveFlight = null; state.taskWriteBusy = false; } }
     }
     function toggleResource(id, forCreate = false) {
         if (!eligible() || typeof id !== 'string' || !state.resourceCatalog.some(item => item.id === id) ||
@@ -348,7 +354,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         eventTarget?.removeEventListener?.('resize', updateViewport);
         eventTarget?.removeEventListener?.('popstate', locatorChanged);
     });
-    return { state, ...chat, ...materials, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
+    return { state, ...chat, ...materials, ...packages, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
         setArtifactTab, openCatalog, closeCatalog, updateInput, openCreateTask, closeCreateTask, updateCreateForm, createTask,
         readTask, reloadTask, saveWorking, toggleResource, updateTargetSlides, loadResources };
 }

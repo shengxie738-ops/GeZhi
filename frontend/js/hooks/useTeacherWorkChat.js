@@ -127,7 +127,7 @@ export function useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler = 
         state.chatText = text; state.chatError = null; return true;
     }
     async function submit(retry) {
-        if (!available('send') || state.taskReadStatus !== 'ready' || state.taskConflict || flights.send || flights.cancel ||
+        if (state.packageWriteBusy || !available('send') || state.taskReadStatus !== 'ready' || state.taskConflict || flights.send || flights.cancel ||
             state.chatRun && (!state.chatRun.stage || activeStages.has(state.chatRun.stage)) || typeof api.sendMessage !== 'function') return false;
         if (retry && (!operation || !state.chatRetryAvailable) || !retry && state.chatRetryAvailable) return false;
         if (!retry) {
@@ -163,7 +163,7 @@ export function useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler = 
         } finally { if (flights.send === value) flights.send = null; }
     }
     async function cancelChat() {
-        if (!available('cancel') || !state.chatRun || state.chatRun.stage && !activeStages.has(state.chatRun.stage) || flights.cancel || typeof api.cancelRun !== 'function') return false;
+        if (state.packageWriteBusy || !available('cancel') || !state.chatRun || state.chatRun.stage && !activeStages.has(state.chatRun.stage) || flights.cancel || typeof api.cancelRun !== 'function') return false;
         stopRunRead(); const value = request(), runId = state.chatRun.run_id; flights.cancel = value;
         state.chatStatus = 'cancelling'; state.chatError = null;
         try {
