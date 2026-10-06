@@ -49,7 +49,8 @@ export const renderer = Vue.createRenderer({
     },
     patchProp(node, key, _previous, value) { node.props[key] = value; }
 });
-export const compiled = component => ({ ...component, render: Vue.compile(component.template, {
+export const compiled = component => ({ ...component, ...(component.components ? { components: Object.fromEntries(
+    Object.entries(component.components).map(([name, child]) => [name, compiled(child)])) } : {}), render: Vue.compile(component.template, {
     hoistStatic: false, onError(error) { throw error; },
     decodeEntities(raw) { assert.doesNotMatch(raw, /&(?:#\d+|#x[\da-f]+|[a-z]+);/iu); return raw; }
 }) });

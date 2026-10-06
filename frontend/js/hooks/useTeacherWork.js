@@ -5,6 +5,7 @@ import { createTeacherWorkState, synchronizeTeacherWork, captureRequest, acceptR
     patchTeacherWorkPreferences, readTeacherWorkPreferences, writeTeacherWorkPreferences } from '../controllers/teacherWorkState.js';
 
 import { useTeacherWorkChat } from './useTeacherWorkChat.js';
+import { useTeacherWorkMaterials } from './useTeacherWorkMaterials.js';
 
 // Isolated teacher lifecycle. No student transcript, plugin, task-tree or cancellation handles.
 export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThis.localStorage,
@@ -13,6 +14,9 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     newIdempotencyKey = () => globalThis.crypto?.randomUUID?.(), chatScheduler = globalThis, chatPollLimit = 60 } = {}) {
     const state = reactive(createTeacherWorkState());
     const chat = useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler: chatScheduler, pollLimit: chatPollLimit });
+    const materials = useTeacherWorkMaterials(state, { api, newIdempotencyKey,
+        onTaskRevisionChange: () => { for (const name of ['read', 'save', 'resources']) abortSlot(name); },
+        reconcileTask: minimumRevisions => readTask(state.task_id, { minimumRevisions }) });
     let disposed = false, flight = null, taskReadFlight = null, saveFlight = null, createFlight = null, resourceFlight = null,
         creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null;
     const eligible = () => !disposed && captureRequest(state) !== null;
@@ -144,7 +148,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         } finally { if (createFlight === request) createFlight = null; }
     }
 
-    async function readTask(id, { preserveEdits = false } = {}) {
+    async function readTask(id, { preserveEdits = false, minimumRevisions = null } = {}) {
         if (!eligible() || !state.privateTaskAvailability.read || !isTeacherWorkTaskId(id) || typeof api.getTask !== 'function') return false;
         const switching = state.task_id !== id;
         if (switching) {
@@ -159,7 +163,8 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         try {
             const data = validatePrivateTaskSnapshot(await api.getTask(id, { signal: request.controller.signal }));
             if (taskReadFlight !== request || !taskFresh(request)) return false;
-            if (data.task_id !== id) throw { reason: 'invalid_response' };
+            if (data.task_id !== id || minimumRevisions && (data.input_revision < minimumRevisions.input_revision ||
+                data.working_revision < minimumRevisions.working_revision)) throw { reason: 'invalid_response' };
             abortSlot('resources');
             const accepted = applyTeacherTaskSnapshot(state, request.token, data, {
                 preserveEdits: hadTask && (retain || state.edit_epoch !== request.editEpoch),
@@ -343,7 +348,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         eventTarget?.removeEventListener?.('resize', updateViewport);
         eventTarget?.removeEventListener?.('popstate', locatorChanged);
     });
-    return { state, ...chat, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
+    return { state, ...chat, ...materials, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
         setArtifactTab, openCatalog, closeCatalog, updateInput, openCreateTask, closeCreateTask, updateCreateForm, createTask,
         readTask, reloadTask, saveWorking, toggleResource, updateTargetSlides, loadResources };
 }

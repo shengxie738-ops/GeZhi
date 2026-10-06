@@ -21,7 +21,8 @@ const renderer=Vue.createRenderer({createElement:tag=>node(tag),createText:text=
 const compiled=C=>!C.template?C:({...C,components:Object.fromEntries(Object.entries(C.components||{}).map(([k,v])=>[k,compiled(v)])),render:Vue.compile(C.template,{hoistStatic:false,decodeEntities(raw){assert.doesNotMatch(raw,/&(?:#\d+|#x[\da-f]+|[a-z]+);/iu);return raw;}})});
 // Read only the bounded root-gate region, never import the aggregate entry.
 const index=readFileSync(new URL('../index.html',import.meta.url),'utf8'),gateRegion=index.slice(index.indexOf('<!-- ==================== 认证模块'),index.indexOf('<!-- Galaxy粒子背景 -->'));
-assert.ok(gateRegion.length<4000);
+// Eight explicit manual-materials bindings grow the same root gate from 3695 to 4177 characters; predicates below remain exact.
+assert.ok(gateRegion.length<4500);
 const overlay=gateRegion.match(/<div v-if="([^"]+)"/)[1],shellGate=gateRegion.match(/<teaching-workbench-shell v-if="([^"]+)"/)[1],legacyGate=gateRegion.match(/<div v-else-if="([^"]+)"/)[1];
 const stage={configured:true,installed:true,available:true,reason:'read_ready',writes_available:false};
 const capabilities=()=>({account_role:'teacher',configured:true,available:true,can_create_course:false,reason:'available',assignments:{...stage},feedback:{...stage,available:false},revisions:{...stage,available:false},writes_available:false,write_reason:'write_safety_unproven'});

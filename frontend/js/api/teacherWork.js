@@ -1,4 +1,6 @@
 import { API_BASE_URL } from '../config/env.js';
+import { validateMaterialsCapabilities, validateMaterialsSnapshot, validateMaterialsSaveBody, validateMaterialsApprovalBody,
+    materialsBodyMaximumBytes } from './teacherWorkMaterials.js';
 
 const fields = Object.freeze(['chat', 'task_write', 'generate', 'storage', 'structural_preview', 'rendered_preview', 'publish']);
 const privateFields = Object.freeze(['create', 'read', 'update']);
@@ -31,8 +33,18 @@ const error = (reason, status = 0) => Object.assign(new Error({
     invalid_input: '请检查任务信息和资料选择', task_not_found: '任务不存在或当前身份无法读取',
     revision_conflict: '任务版本已变化，请重新读取后检查并保存', idempotency_conflict: '创建请求标识与内容不一致，请修改后重试',
     request_too_large: '消息内容过长，请缩短后重试', capacity_unavailable: '教师 Work 当前繁忙，请稍后重试',
-    owner_busy: '当前身份已有运行中的任务，请等待完成或明确取消后重试'
+    owner_busy: '当前身份已有运行中的任务，请等待完成或明确取消后重试',
+    outline_revision_conflict: '教案版本已变化，请重新读取后检查并保存',
+    outline_approval_conflict: '教案确认版本已变化，请重新读取后检查', source_changed: '资料内容已变化，请重新读取并保存教案',
+    normalization_required: '历史材料需要重新检查并保存', material_text_unrepresentable: '材料含有无法保存的字符，请检查后重试',
+    material_receipt_limit: '此任务已达到材料操作上限', material_sources_unavailable: '材料来源暂不可用，请稍后重试',
+    private_draft_too_large: '当前任务的教案存储空间不足，请精简部分内容后重试'
 }[reason] || '教师 Work 请求失败，请重试'), { name: 'TeacherWorkError', reason, status });
+
+const materialConflictReasons = Object.freeze({ REVISION_CONFLICT: 'revision_conflict', OUTLINE_REVISION_CONFLICT: 'outline_revision_conflict',
+    OUTLINE_APPROVAL_CONFLICT: 'outline_approval_conflict', IDEMPOTENCY_CONFLICT: 'idempotency_conflict', SOURCE_CHANGED: 'source_changed',
+    OWNER_RUN_BUSY: 'owner_busy', NORMALIZATION_REQUIRED: 'normalization_required', MATERIAL_TEXT_UNREPRESENTABLE: 'material_text_unrepresentable',
+    MATERIAL_RECEIPT_LIMIT: 'material_receipt_limit' });
 
 function capabilities(data) {
     const hasPrivate = object(data) && Object.hasOwn(data, 'private_tasks');
@@ -157,7 +169,7 @@ function catalog(data) {
 export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch(...args),
     getToken = () => globalThis.localStorage?.getItem('token') || '',
     dispatchAuthExpired = () => globalThis.window?.dispatchEvent(new CustomEvent('auth-expired')) } = {}) {
-    async function send(path, method, body, options, decode, maximum = 65536, create = false, chat = false, maximumBytes = null) {
+    async function send(path, method, body, options, decode, maximum = 65536, create = false, chat = false, maximumBytes = null, materials = false) {
         if (!object(options) || Object.keys(options).some(name => !['signal', ...(create ? ['idempotencyKey'] : [])].includes(name)) ||
             options.signal !== undefined && !(options.signal instanceof AbortSignal) ||
             create && (!text(options.idempotencyKey, 128, true) || /[\p{C}]/u.test(options.idempotencyKey))) throw error('invalid_input');
@@ -176,6 +188,22 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
             status = Number.isInteger(result?.status) && result.status >= 100 && result.status <= 599 ? result.status : 0;
             const raw = await result.text(); fence();
             if (status < 200 || status >= 300) {
+                if (materials) {
+                    let failure;
+                    try { if (typeof raw === 'string' && raw.length <= maximum && new TextEncoder().encode(raw).byteLength <= materialsBodyMaximumBytes) failure = JSON.parse(raw); }
+                    catch { /* Error contents never enter state or diagnostics. */ }
+                    if (!exact(failure, ['code', 'message', 'data']) || failure.code !== status || failure.data !== null ||
+                        typeof failure.message !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(failure.message)) throw error('request_failed', status);
+                    if (status === 401) { fence(); dispatchAuthExpired(); throw error('auth_required', status); }
+                    if (status === 403) throw error('teacher_required', status);
+                    if (status === 409) throw error(Object.hasOwn(materialConflictReasons, failure.message) ? materialConflictReasons[failure.message] : 'request_failed', status);
+                    if (status === 404) throw error(path.endsWith('/capabilities') ? 'TEACHER_WORK_UNAVAILABLE' : 'task_not_found', status);
+                    if (status === 503) throw error(failure.message === 'MATERIAL_SOURCES_UNAVAILABLE' ? 'material_sources_unavailable' : 'request_failed', status);
+                    if (status === 413) throw error('request_too_large', status);
+                    if (status === 422 && failure.message === 'PRIVATE_DRAFT_TOO_LARGE') throw error('private_draft_too_large', status);
+                    if (status === 400 || status === 422) throw error('invalid_input', status);
+                    throw error('request_failed', status);
+                }
                 if (status === 401) { fence(); dispatchAuthExpired(); throw error('auth_required', status); }
                 if (status === 403) throw error('teacher_required', status);
                 if (status === 409) {
@@ -215,8 +243,34 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
     const runDecoder = (taskId, runId, revision) => data => { const decoded = validatePrivateChatRun(data);
         if (decoded.task_id !== taskId || runId !== undefined && decoded.run_id !== runId ||
             revision !== undefined && decoded.input_revision !== revision) throw error('invalid_response'); return decoded; };
+    const materialsDecoder = (taskId, operation = null, command = null) => data => {
+        const decoded = validateMaterialsSnapshot(data);
+        if (decoded.task_id !== taskId || (operation === null ? decoded.receipt !== null : decoded.receipt?.operation !== operation) ||
+            operation === 'save' && (decoded.receipt.input_revision !== command.input_revision + 1 || decoded.receipt.working_revision !== command.expected_revision + 1) ||
+            operation === 'approve' && decoded.receipt.input_revision !== command.input_revision) throw error('invalid_response');
+        return decoded;
+    };
     return Object.freeze({
         getCapabilities: (options = {}) => send('/teacher/work/capabilities', 'GET', undefined, options, capabilities, 16384),
+        getMaterialsCapabilities: (options = {}) => send('/teacher/work/materials/capabilities', 'GET', undefined, options,
+            validateMaterialsCapabilities, materialsBodyMaximumBytes, false, false, materialsBodyMaximumBytes, true),
+        async getMaterials(taskId, options = {}) {
+            if (!isTeacherWorkTaskId(taskId)) throw error('invalid_input');
+            return send(`/teacher/work/tasks/${encodeURIComponent(taskId)}/materials`, 'GET', undefined, options,
+                materialsDecoder(taskId), materialsBodyMaximumBytes, false, false, materialsBodyMaximumBytes, true);
+        },
+        async saveMaterials(taskId, body, options = {}) {
+            if (!isTeacherWorkTaskId(taskId)) throw error('invalid_input');
+            const validated = validateMaterialsSaveBody(body);
+            return send(`/teacher/work/tasks/${encodeURIComponent(taskId)}/materials`, 'POST', validated, options,
+                materialsDecoder(taskId, 'save', validated), materialsBodyMaximumBytes, true, false, materialsBodyMaximumBytes, true);
+        },
+        async approveMaterials(taskId, body, options = {}) {
+            if (!isTeacherWorkTaskId(taskId)) throw error('invalid_input');
+            const validated = validateMaterialsApprovalBody(body);
+            return send(`/teacher/work/tasks/${encodeURIComponent(taskId)}/materials/approve`, 'POST', validated, options,
+                materialsDecoder(taskId, 'approve', validated), materialsBodyMaximumBytes, true, false, materialsBodyMaximumBytes, true);
+        },
         listResources: (options = {}) => send('/teacher/lesson-prep/resources', 'GET', undefined, options, catalog, 2 * 1024 * 1024),
         async createTask(body, options = {}) { return send('/teacher/work/tasks', 'POST', validatePrivateTaskCreate(body), options, validatePrivateTaskSnapshot, 65536, true); },
         async getTask(taskId, options = {}) {

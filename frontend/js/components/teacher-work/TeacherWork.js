@@ -1,15 +1,18 @@
 import { computed } from 'vue';
+import TeacherWorkMaterials from './TeacherWorkMaterials.js';
 import { teacherWorkReasonText } from '../../controllers/teacherWorkState.js';
 
 export default {
     name: 'TeacherWork',
+    components: { TeacherWorkMaterials },
     props: { state: { type: Object, required: true }, menus: { type: Array, default: () => [] },
         currentUser: { type: Object, default: () => ({}) } },
     emits: ['navigate', 'logout', 'open-user-center', 'retry-capabilities', 'toggle-navigation', 'toggle-taskrail',
         'toggle-artifacts', 'open-artifacts', 'close-artifacts', 'set-artifact-tab', 'open-catalog', 'close-catalog', 'update-input',
         'open-create-task', 'close-create-task', 'update-create-form', 'create-task', 'reload-task', 'save-working',
         'toggle-resource', 'update-target-slides', 'reload-resources', 'update-chat-text', 'send-chat', 'retry-chat',
-        'reload-chat-history', 'load-older-chat', 'refresh-chat-run', 'cancel-chat'],
+        'reload-chat-history', 'load-older-chat', 'refresh-chat-run', 'cancel-chat', 'update-materials-draft', 'save-materials',
+        'reload-materials', 'replace-materials-draft', 'cancel-materials-replace', 'approve-materials', 'retry-materials', 'retry-materials-capabilities'],
     setup(props, { emit }) {
         const privateTaskAvailability = computed(() => props.state.privateTaskAvailability || { create: false, read: false, update: false });
         const privateTasksConnected = computed(() => Object.values(privateTaskAvailability.value).some(value => value === true));
@@ -184,6 +187,11 @@ export default {
                                 @click="$emit('retry-capabilities')"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i>重新检查</button>
                         </div>
                     </section>
+                    <teacher-work-materials v-if="selectedTask && !state.createOpen" :state="state"
+                        @update-materials-draft="$emit('update-materials-draft', $event)" @save-materials="$emit('save-materials')"
+                        @reload-materials="$emit('reload-materials')" @replace-materials-draft="$emit('replace-materials-draft')"
+                        @cancel-materials-replace="$emit('cancel-materials-replace')" @approve-materials="$emit('approve-materials')"
+                        @retry-materials="$emit('retry-materials')" @retry-materials-capabilities="$emit('retry-materials-capabilities')"></teacher-work-materials>
                     <section v-if="state.createOpen" id="teacher-work-create" class="teacher-work-create"
                         aria-labelledby="teacher-work-create-heading" :aria-busy="state.createStatus === 'loading'">
                         <div class="teacher-work-section-heading"><h2 id="teacher-work-create-heading">新建私人备课任务</h2>

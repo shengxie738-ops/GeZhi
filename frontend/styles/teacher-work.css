@@ -220,3 +220,57 @@
     border: 0; background: transparent; color: var(--tw-ink); font: inherit; font-size: 14px; line-height: 1.7; }
 .teacher-work-chat-composer .teacher-work-composer-controls { gap: 8px; flex-wrap: wrap; }
 .teacher-work-chat-composer .teacher-work-button { min-height: 34px; padding: 7px 10px; font-size: 12px; }
+
+/* Manual materials uses the existing light desktop Work shell. */
+.teacher-work-materials { min-width: 0; margin-top: 26px; padding: 20px; border: 1px solid var(--tw-line);
+    border-radius: 8px; background: #fff; color: var(--tw-ink); }
+.teacher-work-materials-heading { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.teacher-work-materials-heading h2 { font-size: 22px; line-height: 1.5; }
+.teacher-work-materials h3 { font-size: 17px; font-weight: 600; }
+.teacher-work-materials h4 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+.teacher-work-materials h5 { margin: 0 0 9px; font-size: 14px; font-weight: 600; }
+.teacher-work-materials h4 small { margin-left: 8px; color: var(--tw-muted); font-size: 12px; font-weight: 400; }
+.teacher-work-materials-status { margin-bottom: 12px; font-size: 13px; }
+.teacher-work-materials-warning { margin-top: 14px; padding: 12px; border: 1px solid #e6c7cd;
+    border-radius: 6px; background: #fff8f8; color: #862331; font-size: 13px; }
+.teacher-work-materials-errors { padding-left: 20px; color: #a10b18; font-size: 13px; }
+.teacher-work-materials-saved { margin-top: 18px; padding: 14px; border: 1px solid var(--tw-line); border-radius: 6px; background: #f8fafc; }
+.teacher-work-materials-metadata { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 6px 10px; margin: 12px 0; font-size: 12px; }
+.teacher-work-materials-metadata dt { color: var(--tw-muted); }
+.teacher-work-materials-metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.teacher-work-materials-snapshot { margin: 14px 0; font-size: 13px; }
+.teacher-work-materials-snapshot summary { cursor: pointer; color: var(--tw-ink); }
+.teacher-work-materials-snapshot summary:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
+.teacher-work-materials-snapshot h4 { margin-top: 18px; }
+.teacher-work-materials-snapshot p, .teacher-work-materials-snapshot li { white-space: pre-wrap; overflow-wrap: anywhere; }
+.teacher-work-materials-snapshot-slide { margin-top: 12px; padding: 12px 0; border-top: 1px solid var(--tw-line); }
+.teacher-work-materials-receipt { margin-top: 10px !important; color: var(--tw-muted); font-size: 11px; overflow-wrap: anywhere; }
+.teacher-work-materials-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.teacher-work-materials-actions .teacher-work-button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.teacher-work-materials-form { min-width: 0; margin: 22px 0 0; padding: 16px; border: 1px solid var(--tw-line); border-radius: 6px; }
+.teacher-work-materials-form legend { padding: 0 5px; font-size: 16px; font-weight: 600; }
+.teacher-work-materials-form label { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 10px 0; font-size: 13px; font-weight: 500; }
+.teacher-work-materials-form input, .teacher-work-materials-form textarea, .teacher-work-materials-form select { width: 100%; min-width: 0;
+    min-height: 38px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; color: var(--tw-ink); font: inherit; }
+.teacher-work-materials-form textarea { resize: vertical; line-height: 1.65; }
+.teacher-work-materials-form select:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
+.teacher-work-materials-form:disabled input, .teacher-work-materials-form:disabled textarea, .teacher-work-materials-form:disabled select { background: #f8fafc; color: var(--tw-muted); }
+.teacher-work-materials-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.teacher-work-materials-array { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--tw-line); }
+.teacher-work-materials-item { display: flex; align-items: flex-end; gap: 8px; min-width: 0; margin: 8px 0; }
+.teacher-work-materials-item label { flex: 1; margin: 0; }
+.teacher-work-materials-item > .teacher-work-button { flex-shrink: 0; min-height: 34px; padding: 6px 9px; font-size: 12px; margin-bottom: 2px; }
+.teacher-work-materials-subform, .teacher-work-materials-slide { min-width: 0; margin-top: 12px; padding: 14px;
+    border: 1px solid var(--tw-line); border-radius: 6px; background: #fff; }
+.teacher-work-materials-slide-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.teacher-work-materials-slide-heading h4, .teacher-work-materials-slide-heading .teacher-work-materials-actions { margin: 0; }
+.teacher-work-materials-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
+.teacher-work-materials-columns > section { min-width: 0; }
+.teacher-work-materials-export { margin-top: 18px !important; padding-top: 14px; border-top: 1px solid var(--tw-line); }
+
+/* Compact manual editor disclosures retain the existing desktop layout. */
+.teacher-work-materials-technical { margin-top: 12px; color: var(--tw-muted); font-size: 12px; }
+.teacher-work-materials-technical summary { cursor: pointer; }
+.teacher-work-materials-technical summary:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
+.teacher-work-materials-access { margin-top: 12px !important; }
+.teacher-work-materials-editor { min-width: 0; }

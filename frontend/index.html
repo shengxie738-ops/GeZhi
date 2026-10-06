@@ -2608,7 +2608,11 @@
             @reload-resources="teacherWorkLoadResources"
             @update-chat-text="teacherWorkUpdateChatText" @send-chat="teacherWorkSendChat" @retry-chat="teacherWorkRetryChat"
             @reload-chat-history="teacherWorkReloadChatHistory" @load-older-chat="teacherWorkLoadOlderChat"
-            @refresh-chat-run="teacherWorkRefreshChatRun" @cancel-chat="teacherWorkCancelChat">
+            @refresh-chat-run="teacherWorkRefreshChatRun" @cancel-chat="teacherWorkCancelChat"
+            @update-materials-draft="teacherWorkUpdateMaterialsDraft" @save-materials="teacherWorkSaveMaterials"
+            @reload-materials="teacherWorkReloadMaterials" @replace-materials-draft="teacherWorkReplaceMaterialsDraft"
+            @cancel-materials-replace="teacherWorkCancelMaterialsReplace" @approve-materials="teacherWorkApproveMaterials"
+            @retry-materials="teacherWorkRetryMaterials" @retry-materials-capabilities="teacherWorkRetryMaterialsCapabilities">
         </teacher-work>
         <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
             :class="{ 'student-legacy-shell': currentRole === 'student' }">
