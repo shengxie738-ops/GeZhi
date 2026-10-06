@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Only the source-only bootstrap guard contract was updated for private CRU.
 # The original four selectors and every runtime fixture remain pinned below.
-SUPPORT_SHA = "edfdd60befd7116fbcd086d68a54f26c80e64d116c2ed9faa99c72f3c6c33d9c"
+SUPPORT_SHA = "cd625a4246275be68c14902b5c176f6c1c397a8bc8f845727b0e22310553922a"
 RUNTIME_AST_SHA = "3d345760c79c1ae7b35f68b8742c5d6208ada68b7ecdb903e2578c5975530209"
 
 

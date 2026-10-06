@@ -206,6 +206,19 @@ class OutlineApprovalRequest(StrictRequest):
     source_digest: Digest
 
 
+class PrivateMaterialSaveRequest(StrictRequest):
+    expected_revision: Revision
+    input_revision: Revision
+    expected_outline_revision: int = Field(ge=0)
+    lesson: LessonSnapshot
+    slides: Slides
+
+    @model_validator(mode="after")
+    def bounded_content(self):
+        FrozenPackageContent(lesson=self.lesson, slides=self.slides)
+        return self
+
+
 class ChatInput(StrictRequest):
     text: str = Field(min_length=1, max_length=4000)
     client_message_key: MessageKey
@@ -411,6 +424,77 @@ class ApprovalReceipt(FrozenDTO):
     outline_digest: Digest
     source_digest: Digest
     confirmed_at: UTCDateTime
+
+
+class MaterialWriteReceipt(FrozenDTO):
+    operation: Literal["save", "approve"]
+    outline_id: UUID
+    approval_id: UUID | None
+    input_revision: Revision
+    working_revision: Revision
+    replayed: bool
+
+
+class PrivateMaterialState(FrozenDTO):
+    task: WorkTaskDTO
+    last_outline_revision: int = Field(ge=0)
+    outline: OutlineSnapshotDTO | None
+    approval: ApprovalReceipt | None
+    source_status: Literal["unprepared", "current", "changed", "unavailable"]
+    current_source_digest: Digest | None
+    needs_normalization_fields: Annotated[tuple[IDText, ...], BeforeValidator(_array), Field(max_length=1000)]
+    approval_eligible: bool
+    approval_current: bool
+    approval_blocker: ErrorCode | None
+    receipt: MaterialWriteReceipt | None = None
+
+    @model_validator(mode="after")
+    def coherent(self):
+        if self.task.institution_id is not None or self.task.offering_id is not None:
+            raise ValueError("private material anchor required")
+        if self.outline is not None and (self.outline.task_id != self.task.task_id or self.outline.outline_revision != self.last_outline_revision):
+            raise ValueError("latest exact owned outline required")
+        if (self.outline is None) != (self.last_outline_revision == 0):
+            raise ValueError("actual outline sequence required")
+        if self.approval is not None and (self.outline is None or self.approval.owner != self.task.owner_subject
+                or (self.approval.task_id, self.approval.outline_id, self.approval.input_revision, self.approval.outline_revision,
+                    self.approval.outline_digest, self.approval.source_digest) != (self.task.task_id, self.outline.outline_id,
+                    self.outline.input_revision, self.outline.outline_revision, self.outline.outline_digest, self.outline.source_digest)):
+            raise ValueError("exact approval tuple required")
+        if self.approval_current and (self.approval is None or not self.approval_eligible):
+            raise ValueError("historical receipt cannot certify current approval")
+        if self.approval_eligible != (self.approval_blocker is None):
+            raise ValueError("actual approval eligibility required")
+        if (self.source_status == "unavailable") != (self.current_source_digest is None):
+            raise ValueError("actual source availability required")
+        if self.source_status == "unprepared" and self.outline is not None:
+            raise ValueError("unprepared source has no outline")
+        if self.source_status in ("current", "changed") and (self.outline is None
+                or (self.current_source_digest == self.outline.source_digest) != (self.source_status == "current")):
+            raise ValueError("actual source digest comparison required")
+        if self.approval_eligible and (self.outline is None or self.source_status != "current" or self.needs_normalization_fields
+                or self.task.current_outline_id != self.outline.outline_id or self.task.input_revision != self.outline.input_revision):
+            raise ValueError("current exact normalized outline required")
+        if self.receipt is not None and (self.receipt.working_revision > self.task.working_revision
+                or self.receipt.input_revision > self.task.input_revision
+                or (self.receipt.operation == "save") != (self.receipt.approval_id is None)):
+            raise ValueError("exact historical operation receipt required")
+        return self
+
+    def public_data(self):
+        return {"task_id": str(self.task.task_id), "input_revision": self.task.input_revision,
+            "working_revision": self.task.working_revision, "current_outline_id": str(self.task.current_outline_id) if self.task.current_outline_id else None,
+            **self.model_dump(mode="json", exclude={"task", "approval"}),
+            "approval": self.approval.model_dump(mode="json", exclude={"owner"}) if self.approval else None}
+
+
+class PrivateMaterialCapabilities(FrozenDTO):
+    save: bool
+    read: bool
+    approve: bool
+    source_configured: bool
+    files: Literal[False] = False
+    reasons: dict[str, str]
 
 
 class EvidenceSnapshotDTO(FrozenDTO):

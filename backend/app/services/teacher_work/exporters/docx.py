@@ -14,29 +14,13 @@ from app.services.teacher_work.exporters.theme import DOCX_FONT_DISCLOSURE
 from app.services.teacher_work.exporters.validation import (
     _check_stage_time, _docx_expected_paragraphs, _finalize_generated_office_bytes,
     _parts_and_roots, _paragraphs, _require_xml_text,
+    check_docx_snapshot_text,
 )
 
 
 def _exact_legacy_text(snapshot: LessonSnapshot) -> None:
     """Reject trimming/dropping/coercion instead of modifying the frozen lesson."""
-    payload = snapshot.model_dump()
-    _require_xml_text(payload, error="DOCX_UNREPRESENTABLE")
-    strings = [payload[key] for key in ("title", "topic", "course_name", "audience", "summary")]
-    for key in ("objectives", "key_points", "difficulties", "questions", "exercises", "homework"):
-        strings.extend(payload[key])
-    for stage in payload["teaching_flow"]:
-        strings.extend((stage["stage"], stage["content"]))
-    for citation in payload["citations"]:
-        strings.extend((citation["name"], citation["excerpt"]))
-        if not citation["name"] and not citation["excerpt"]:
-            raise ValueError("DOCX_UNREPRESENTABLE")
-    if any(text != text.strip() for text in strings):
-        raise ValueError("DOCX_UNREPRESENTABLE")
-    if snapshot.summary and any(not line or line != line.strip() for line in snapshot.summary.splitlines()):
-        raise ValueError("DOCX_UNREPRESENTABLE")
-    # XML/Office line ending normalization cannot silently alter a frozen string.
-    if any("\r" in text or "\v" in text or "\f" in text for text in strings):
-        raise ValueError("DOCX_UNREPRESENTABLE")
+    check_docx_snapshot_text(snapshot)
 
 
 def build_docx(snapshot: LessonSnapshot) -> bytes:

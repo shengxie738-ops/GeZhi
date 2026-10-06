@@ -88,6 +88,27 @@ def _require_xml_text(value, error="INVALID_XML_TEXT") -> None:
             _require_xml_text(item, error)
 
 
+def check_docx_snapshot_text(snapshot) -> None:
+    """Exact legacy text preflight shared with manual approval; renders nothing."""
+    payload = snapshot.model_dump()
+    _require_xml_text(payload, error="DOCX_UNREPRESENTABLE")
+    strings = [payload[key] for key in ("title", "topic", "course_name", "audience", "summary")]
+    for key in ("objectives", "key_points", "difficulties", "questions", "exercises", "homework"):
+        strings.extend(payload[key])
+    for stage in payload["teaching_flow"]:
+        strings.extend((stage["stage"], stage["content"]))
+    for citation in payload["citations"]:
+        strings.extend((citation["name"], citation["excerpt"]))
+        if not citation["name"] and not citation["excerpt"]:
+            raise ValueError("DOCX_UNREPRESENTABLE")
+    if any(text != text.strip() for text in strings):
+        raise ValueError("DOCX_UNREPRESENTABLE")
+    if snapshot.summary and any(not line or line != line.strip() for line in snapshot.summary.splitlines()):
+        raise ValueError("DOCX_UNREPRESENTABLE")
+    if any("\r" in text or "\v" in text or "\f" in text for text in strings):
+        raise ValueError("DOCX_UNREPRESENTABLE")
+
+
 def _normalized_name(name: str) -> str:
     if not name or name.startswith("/") or "\\" in name or ":" in name or any(ord(c) < 32 for c in name):
         raise ValueError("UNSAFE_PART_NAME")

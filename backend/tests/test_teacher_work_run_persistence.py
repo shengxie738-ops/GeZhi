@@ -373,7 +373,8 @@ def test_contract_slice_keeps_runtime_gates_closed():
     guard = next(item for item in bootstrap.body if isinstance(item, ast.FunctionDef) and item.name == "_require_live_admission")
     body = guard.body[1:] if isinstance(guard.body[0], ast.Expr) and isinstance(guard.body[0].value, ast.Constant) else guard.body
     assert ast.literal_eval(body[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
-        "private_chat_read": "read", "private_chat_write": "write"}
+        "private_chat_read": "read", "private_chat_write": "write",
+        "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write"}
     assert ast.unparse(body[1].test) == "operation not in expected or mode != expected[operation]"
     assert isinstance(body[1].body[0], ast.Raise)
     assert body[1].body[0].exc.args[0].value == "TEACHER_WORK_LIVE_GATES_UNVERIFIED" and body[1].body[0].exc.args[1].value == 503

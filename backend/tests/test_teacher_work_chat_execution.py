@@ -106,7 +106,8 @@ def _bootstrap_source_contract(tree, binding):
     guard = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_require_live_admission")
     statements = [node for node in guard.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))]
     assert ast.literal_eval(statements[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
-        "private_chat_read": "read", "private_chat_write": "write"}
+        "private_chat_read": "read", "private_chat_write": "write",
+        "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write"}
     assert ast.unparse(statements[1].test) == "operation not in expected or mode != expected[operation]"
     assert isinstance(statements[1].body[0], ast.Raise), "ordinary/chat admission must remain closed"
     def rejection(branch):
@@ -114,11 +115,14 @@ def _bootstrap_source_contract(tree, binding):
         assert ast.unparse(branch.body[0]) == "raise WorkAuthorizationError('TEACHER_WORK_LIVE_GATES_UNVERIFIED', 503)"
     rejection(statements[1])
     assert guard.args.defaults[0].value is None
-    rejection(statements[-2])
-    assert ast.unparse(statements[-2].test) == "settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True"
-    assert ast.unparse(statements[-1].test) == "operation in ('private_chat_read', 'private_chat_write') and settings.TEACHER_WORK_PRIVATE_CHAT_ENABLED is not True"
+    rejection(statements[-3])
+    assert ast.unparse(statements[-3].test) == "settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True"
+    assert ast.unparse(statements[-2].test) == "operation in ('private_chat_read', 'private_chat_write') and settings.TEACHER_WORK_PRIVATE_CHAT_ENABLED is not True"
+    assert not statements[-2].orelse and len(statements[-2].body) == 1
+    assert ast.unparse(statements[-2].body[0]) == "raise WorkAuthorizationError('PRIVATE_CHAT_DISABLED', 503)"
+    assert ast.unparse(statements[-1].test) == "operation in ('private_material_read', 'private_material_save', 'private_material_approve') and settings.TEACHER_WORK_PRIVATE_MATERIALS_ENABLED is not True"
     assert not statements[-1].orelse and len(statements[-1].body) == 1
-    assert ast.unparse(statements[-1].body[0]) == "raise WorkAuthorizationError('PRIVATE_CHAT_DISABLED', 503)"
+    assert ast.unparse(statements[-1].body[0]) == "raise WorkAuthorizationError('PRIVATE_MATERIALS_DISABLED', 503)"
     first_chat = next(node for node in finalizer.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)))
     assert isinstance(first_chat, ast.If) and ast.unparse(first_chat.test) == "self.operation not in (None, 'private_chat_read', 'private_chat_write')"
     assert not first_chat.orelse and len(first_chat.body) == 2

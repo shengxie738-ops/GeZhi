@@ -10,7 +10,8 @@ from pydantic import TypeAdapter, ValidationError
 from starlette.concurrency import run_in_threadpool
 from uuid import UUID
 
-from app.schemas.teacher_work import BODY_LIMIT, ChatCommand, CreateTaskRequest, MessageKey, WorkingPatchRequest
+from app.schemas.teacher_work import (BODY_LIMIT, ChatCommand, CreateTaskRequest, MessageKey, WorkingPatchRequest,
+    PrivateMaterialSaveRequest, OutlineApprovalRequest)
 
 from app.repositories.teacher_work import WorkRepositoryError
 from app.services.teacher_work.authorization import WorkAuthorizationError
@@ -194,6 +195,69 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         except ValueError:
             return _response(422, "INVALID_PRIVATE_CHAT_CANCEL_REQUEST")
         return await chat_operation(authorization, parsed, "cancel", run_id=run)
+
+    def material_operation(authorization, operation, *, task_id=None, body=None, key=None):
+        mode = "read" if operation == "private_material_read" else "write"
+        try:
+            with request_owner_factory(authorization, mode=mode, operation=operation) as session:
+                binding = dependencies_factory(session, authorization=authorization, mode=mode,
+                    operation=operation, clock=_clock, new_uuid=uuid4)
+                if operation == "private_material_save":
+                    value = binding.materials.save(binding.subject, task_id, body, key)
+                elif operation == "private_material_approve":
+                    value = binding.materials.approve(binding.subject, task_id, body, key)
+                else:
+                    value = binding.materials.get(binding.subject, task_id)
+                response = _response(200, "ok", value.public_data())
+                if len(response.body) > BODY_LIMIT:
+                    raise WorkRepositoryError("MATERIAL_RESPONSE_TOO_LARGE", 503)
+                binding.finish_material_outcome(value)
+                return response
+        except (WorkAuthorizationError, WorkRepositoryError) as error:
+            return _response(error.status_code, error.code)
+        except Exception:
+            return _response(503, "TEACHER_WORK_UNAVAILABLE")
+
+    @router.get("/materials/capabilities")
+    def material_capabilities(authorization: str | None = Header(default=None)):
+        try:
+            with request_owner_factory(authorization, mode="read", operation="private_read") as session:
+                binding = dependencies_factory(session, authorization=authorization, mode="read", operation="private_read", clock=_clock, new_uuid=uuid4)
+                return _response(200, "ok", binding.finish_material_capabilities().model_dump(mode="json"))
+        except (WorkAuthorizationError, WorkRepositoryError) as error:
+            return _response(error.status_code, error.code)
+        except Exception:
+            return _response(503, "TEACHER_WORK_UNAVAILABLE")
+
+    @router.get("/tasks/{task_id}/materials")
+    def get_materials(task_id: str, authorization: str | None = Header(default=None)):
+        try:
+            parsed = UUID(task_id)
+        except ValueError:
+            return _response(422, "INVALID_TASK_ID")
+        return material_operation(authorization, "private_material_read", task_id=parsed)
+
+    @router.post("/tasks/{task_id}/materials")
+    async def save_materials(task_id: str, request: Request, authorization: str | None = Header(default=None),
+                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+        try:
+            parsed = UUID(task_id)
+            key = TypeAdapter(MessageKey).validate_python(idempotency_key)
+            body = PrivateMaterialSaveRequest.model_validate_json(await request.body())
+        except (ValueError, ValidationError):
+            return _response(422, "INVALID_PRIVATE_MATERIAL_REQUEST")
+        return await run_in_threadpool(material_operation, authorization, "private_material_save", task_id=parsed, body=body, key=key)
+
+    @router.post("/tasks/{task_id}/materials/approve")
+    async def approve_materials(task_id: str, request: Request, authorization: str | None = Header(default=None),
+                                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+        try:
+            parsed = UUID(task_id)
+            key = TypeAdapter(MessageKey).validate_python(idempotency_key)
+            body = OutlineApprovalRequest.model_validate_json(await request.body())
+        except (ValueError, ValidationError):
+            return _response(422, "INVALID_PRIVATE_MATERIAL_APPROVAL_REQUEST")
+        return await run_in_threadpool(material_operation, authorization, "private_material_approve", task_id=parsed, body=body, key=key)
 
     return router
 
