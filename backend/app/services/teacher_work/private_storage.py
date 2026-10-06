@@ -127,6 +127,35 @@ class LocalPrivateStorage:
                 # Failed/unknown publication remains charged for reconciliation.
                 os.close(fd)
 
+    def check_metadata_path(self,key,*,allow_absent_owner=False):
+        """Check the path only; absent/changed bytes are not a new certificate."""
+        namespace,leaf=_parse(key)
+        with self._owner(namespace) as owner:
+            if owner is None:
+                if not allow_absent_owner:raise ValueError('PRIVATE_STORAGE_UNAVAILABLE')
+                # A failed/pending generation may never have made a directory.
+                # Recheck its safe absence against the currently named root.
+                with _directory(self.root) as root:
+                    s=os.fstat(root)
+                    if (s.st_dev,s.st_ino)!=self.identity:raise ValueError('PRIVATE_STORAGE_UNAVAILABLE')
+                    try:os.stat(namespace,dir_fd=root,follow_symlinks=False)
+                    except FileNotFoundError:return
+                    raise ValueError('PRIVATE_STORAGE_UNAVAILABLE')
+            try:fd=os.open(leaf,READ_FLAGS,dir_fd=owner)
+            except FileNotFoundError:
+                self._verify_owner_binding(namespace,owner)
+                return
+            try:
+                before=os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or not 0<=before.st_size<=FILE_CAP:
+                    raise ValueError('PRIVATE_STORAGE_UNAVAILABLE')
+                after=os.fstat(fd);current=os.stat(leaf,dir_fd=owner,follow_symlinks=False)
+                fields=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_nlink')
+                if any(getattr(before,f)!=getattr(after,f) for f in fields) or any(getattr(after,f)!=getattr(current,f) for f in fields):
+                    raise ValueError('PRIVATE_STORAGE_UNAVAILABLE')
+                self._verify_owner_binding(namespace,owner)
+            finally:os.close(fd)
+
     def read(self,key):
         namespace,leaf=_parse(key)
         with self._owner(namespace) as owner:

@@ -220,6 +220,7 @@ class _WorkRequestBindings:
         self._package_candidate=None
         self._package_current=False
         self._package_fence=None
+        self._package_metadata_read=False
         if operation in ('private_package_read','private_package_create','private_package_retry','private_package_file'):
             from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
             from app.services.teacher_work.private_exports import configured_storage
@@ -378,7 +379,8 @@ class _WorkRequestBindings:
         if self.operation in ('private_package_read','private_package_create','private_package_retry','private_package_file'):
             _require_live_admission(self.mode,self.operation)
             if self.packages is None or type(self._package_candidate) not in (PrivatePackageState,PrivatePackageList):raise WorkAuthorizationError('REQUEST_BINDING_CHANGED',503)
-            self.packages.verify_outcome(self._package_candidate,current=self._package_current,fence=self._package_fence)
+            self._verify_package_outcome(self._package_candidate,current=self._package_current,fence=self._package_fence,
+                metadata_read=self._package_metadata_read)
         return HeldAdmissionReceipt(self.subject, held.institution_id, held.offering_id,
             held.footprint_token, policy.generation, at, True)
 
@@ -528,14 +530,21 @@ class _WorkRequestBindings:
             raise
         return self._finish(value.task, self.mode, value=value)
 
-    def finish_package_outcome(self,value,*,current=False,fence=None):
+    def _verify_package_outcome(self,value,*,current=False,fence=None,metadata_read=False):
+        if type(metadata_read) is not bool or metadata_read and (self.mode!='read' or self.operation!='private_package_read'
+                or type(value) is not PrivatePackageState or current or fence is not None):
+            raise WorkAuthorizationError('REQUEST_BINDING_CHANGED',503)
+        self.packages.verify_outcome(value,current=current,fence=fence,metadata_read=metadata_read)
+
+    def finish_package_outcome(self,value,*,current=False,fence=None,metadata_read=False):
         if (self._finished or type(value) not in (PrivatePackageState,PrivatePackageList) or self.packages is None
                 or type(value) is PrivatePackageList and (self.mode!='read' or self.operation!='private_package_read')):
             self._cleanup();raise WorkAuthorizationError('REQUEST_BINDING_CHANGED',503)
-        self.packages.verify_outcome(value,current=current,fence=fence)
+        self._verify_package_outcome(value,current=current,fence=fence,metadata_read=metadata_read)
         self._package_candidate=value
         self._package_current=current
         self._package_fence=fence
+        self._package_metadata_read=metadata_read
         return self._finish(value.task,self.mode,value=value)
 
     def finish_package_capabilities(self):

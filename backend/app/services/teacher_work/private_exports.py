@@ -79,7 +79,9 @@ class PrivateExportRequests:
     def __init__(self,authorization,request_factory,dependencies_factory,clock):
         self.authorization,self.request_factory,self.dependencies_factory,self.clock=authorization,request_factory,dependencies_factory,clock
 
-    def transaction(self,operation,work,*,current=False):
+    def transaction(self,operation,work,*,current=False,metadata_read=False):
+        if metadata_read and (operation!='private_package_read' or current):
+            raise WorkAuthorizationError('REQUEST_BINDING_CHANGED',503)
         mode='read' if operation=='private_package_read' else 'write'
         with self.request_factory(self.authorization,mode=mode,operation=operation) as session:
             binding=self.dependencies_factory(session,authorization=self.authorization,mode=mode,operation=operation,clock=self.clock,new_uuid=uuid4)
@@ -88,7 +90,7 @@ class PrivateExportRequests:
             if token is not None and operation in ('private_package_create','private_package_retry'):execution_evidence(token,True)
             try:
                 saved=binding.finish_package_outcome(value,current=(current and token is not None) or binding.packages.completed_in_root,
-                    fence=token if token is not None and value.run.stage=='FILES_RUNNING' else None)
+                    fence=token if token is not None and value.run.stage=='FILES_RUNNING' else None,metadata_read=metadata_read)
             except BaseException:
                 if token is not None and operation in ('private_package_create','private_package_retry'):execution_evidence(token,False)
                 raise
@@ -103,7 +105,7 @@ class PrivateExportRequests:
         return self.execute(value,fence) if fence else value
 
     def get(self,task_id,version_id):
-        return self.transaction('private_package_read',lambda b:(b.packages.get(b.subject,task_id,version_id),None))[0]
+        return self.transaction('private_package_read',lambda b:(b.packages.get(b.subject,task_id,version_id),None),metadata_read=True)[0]
 
     def list(self,task_id,limit=20,before=None):
         return self.transaction('private_package_read',lambda b:(b.packages.list(b.subject,task_id,limit=limit,before=before),None))[0]

@@ -5,7 +5,7 @@ import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from uuid import uuid4
+from uuid import UUID,uuid4
 from hashlib import sha256
 from dataclasses import asdict
 from dataclasses import replace
@@ -461,10 +461,16 @@ def test_history_isolates_owned_missing_or_corrupt_file(export_db,fault):
         good_key=next(row['storage_key'] for row in rows if row['artifact_id']==good['artifact_id'])
         bad_path.symlink_to(Path(db.settings.TEACHER_WORK_STORAGE_ROOT)/good_key)
     listed=read_only_request(db,'GET',db.export_url+'?limit=1')
+    detail=read_only_request(db,'GET',db.export_url+'/'+second['version']['version_id'])
     if fault=='symlink':
         assert listed.status_code==503 and listed.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
+        assert detail.status_code==503 and detail.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
     else:
         assert listed.status_code==200,listed.text
+        assert detail.status_code==200,detail.text
+        assert detail.json()['data']=={**second,'receipt':None}
+        assert all(set(a)=={'artifact_id','version_id','kind','state','mime','download_name','byte_size','sha256',
+            'validation_summary','exporter_version','error_code'} for a in detail.json()['data']['artifacts'])
         page=listed.json()['data'];item=page['items'][0]
         assert page['truncated'] is True and page['next_before']==second['version']['version_id']
         assert item['version_id']==second['version']['version_id']
@@ -482,6 +488,8 @@ def test_history_isolates_owned_missing_or_corrupt_file(export_db,fault):
         assert all(a['download_available'] for a in complete['items'][1]['artifacts'])
         assert binary_request(db,db.export_task['task_id'],good).status_code==200
         assert binary_request(db,db.export_task['task_id'],first['artifacts'][0]).status_code==200
+        replay=package_create(db,'healthy-second-version')
+        assert replay.status_code==503 and replay.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
     refused=binary_request(db,db.export_task['task_id'],bad)
     assert refused.status_code==503 and refused.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
     assert package_rows(db)==before
@@ -495,6 +503,107 @@ def test_entry_capacity_is_reserved_before_create(export_db,monkeypatch):
     response=package_create(db)
     assert response.status_code==429 and response.json()['message']=='OWNER_STORAGE_QUOTA_EXCEEDED'
     assert package_rows(db)==before and not list(Path(db.settings.TEACHER_WORK_STORAGE_ROOT).iterdir())
+
+
+def test_metadata_read_mode_refuses_mutations_and_downloads(export_db):
+    from app.services.teacher_work.bootstrap import open_teacher_work_request,build_request_dependencies
+    from app.services.teacher_work.authorization import WorkAuthorizationError
+    from app.repositories.teacher_work import WorkRepositoryError
+    from app.api.endpoints.teacher_work import _clock
+    from tests.native_teacher_work_private_http import OWNER
+    db=export_db;value=package_create(db).json()['data'];before=package_rows(db)
+    authorization='Bearer '+db.tokens[OWNER]
+    for operation in ('private_package_create','private_package_retry','private_package_file'):
+        with open_teacher_work_request(authorization,mode='write',operation=operation) as session:
+            binding=build_request_dependencies(session,authorization=authorization,mode='write',operation=operation,clock=_clock,new_uuid=uuid4)
+            state=binding.packages.get(binding.subject,UUID(db.export_task['task_id']),UUID(value['version']['version_id']))
+            with pytest.raises(WorkRepositoryError) as refused:
+                binding.packages.verify_outcome(state,metadata_read=True)
+            assert refused.value.code=='PACKAGE_STATE_UNAVAILABLE'
+            with pytest.raises(WorkAuthorizationError) as refused:
+                binding.finish_package_outcome(state,metadata_read=True)
+            assert refused.value.code=='REQUEST_BINDING_CHANGED'
+    with open_teacher_work_request(authorization,mode='read',operation='private_package_read') as session:
+        binding=build_request_dependencies(session,authorization=authorization,mode='read',operation='private_package_read',clock=_clock,new_uuid=uuid4)
+        state=binding.packages.get(binding.subject,UUID(db.export_task['task_id']),UUID(value['version']['version_id']))
+        binding.packages.download_target=state.artifacts[0].artifact_id
+        with pytest.raises(WorkRepositoryError) as refused:
+            binding.finish_package_outcome(state,metadata_read=True)
+        assert refused.value.code=='PACKAGE_STATE_UNAVAILABLE'
+    assert package_rows(db)==before
+
+
+@pytest.mark.parametrize('unsafe',['root_symlink','owner_symlink','public_alias'])
+def test_package_metadata_get_refuses_unsafe_storage(export_db,monkeypatch,unsafe):
+    from tests.native_teacher_work_private_materials import read_only_request
+    db=export_db;value=package_create(db).json()['data'];before=package_rows(db)
+    root=Path(db.settings.TEACHER_WORK_STORAGE_ROOT)
+    if unsafe=='root_symlink':
+        moved=root.with_name(root.name+'-moved');root.rename(moved)
+        root.symlink_to(moved,target_is_directory=True)
+    elif unsafe=='owner_symlink':
+        key=before['teacher_work_artifacts'][0]['storage_key'];owner=root/Path(key).parent
+        moved=owner.with_name(owner.name+'-moved');owner.rename(moved)
+        owner.symlink_to(moved,target_is_directory=True)
+    else:
+        public=root.with_name(root.name+'-public-alias');public.symlink_to(root.parent,target_is_directory=True)
+        monkeypatch.setattr(db.settings,'COURSEWARE_FRONTEND_ROOT',str(public))
+    for path in (db.export_url,db.export_url+'/'+value['version']['version_id']):
+        refused=read_only_request(db,'GET',path)
+        assert refused.status_code==503 and refused.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
+    refused=binary_request(db,db.export_task['task_id'],value['artifacts'][1])
+    assert refused.status_code==503 and refused.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
+    assert package_rows(db)==before
+
+
+def test_package_metadata_read_does_not_relax_retry_ready_bytes(export_db,monkeypatch):
+    from app.services.teacher_work import office_execution
+    from tests.native_teacher_work_private_materials import read_only_request
+    db=export_db;original=office_execution.build_validated_office
+    def fail_pptx(kind,*args,**kwargs):
+        if kind=='pptx':raise ValueError('OFFICE_EXECUTION_FAILED')
+        return original(kind,*args,**kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(office_execution,'build_validated_office',fail_pptx)
+        response=package_create(db)
+    assert response.status_code==200,response.text
+    value=response.json()['data'];before=package_rows(db)
+    assert [a['state'] for a in value['artifacts']]==['FAILED','READY'] and value['retry_available'] is True
+    ready=value['artifacts'][1]
+    key=next(row['storage_key'] for row in before['teacher_work_artifacts'] if row['artifact_id']==ready['artifact_id'])
+    (Path(db.settings.TEACHER_WORK_STORAGE_ROOT)/key).write_bytes(b'synthetic-corrupt-ready-retry')
+    detail=read_only_request(db,'GET',db.export_url+'/'+value['version']['version_id'])
+    assert detail.status_code==200 and detail.json()['data']=={**value,'receipt':None}
+    retry_url=db.export_url.removesuffix('/packages')+'/runs/'+value['run']['run_id']+'/retry'
+    refused=request(db,'POST',retry_url,body={'expected_attempt':1})
+    assert refused.status_code==503 and refused.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
+    assert package_rows(db)==before
+
+
+@pytest.mark.parametrize('unsafe',['owner_symlink','artifact_symlink'])
+def test_metadata_get_checks_nonready_storage_paths(export_db,monkeypatch,unsafe):
+    from app.services.teacher_work import office_execution
+    from tests.native_teacher_work_private_materials import read_only_request
+    db=export_db
+    def fail_both(*args,**kwargs):raise ValueError('OFFICE_EXECUTION_FAILED')
+    monkeypatch.setattr(office_execution,'build_validated_office',fail_both)
+    response=package_create(db);assert response.status_code==200,response.text
+    value=response.json()['data'];before=package_rows(db)
+    assert [a['state'] for a in value['artifacts']]==['FAILED','FAILED']
+    url=db.export_url+'/'+value['version']['version_id']
+    root=Path(db.settings.TEACHER_WORK_STORAGE_ROOT)
+    key=before['teacher_work_artifacts'][0]['storage_key'];owner=root/Path(key).parent
+    assert not owner.exists()
+    detail=read_only_request(db,'GET',url)
+    assert detail.status_code==200 and detail.json()['data']=={**value,'receipt':None}
+    target=root.with_name(root.name+'-synthetic-link-target');target.mkdir(mode=0o700)
+    if unsafe=='owner_symlink':owner.symlink_to(target,target_is_directory=True)
+    else:
+        owner.mkdir(mode=0o700)
+        (root/key).symlink_to(target/'absent-synthetic-file')
+    refused=read_only_request(db,'GET',url)
+    assert refused.status_code==503 and refused.json()['message']=='PRIVATE_STORAGE_UNAVAILABLE'
+    assert package_rows(db)==before
 
 
 @pytest.mark.parametrize('boundary',['schema_name','server_uuid','datadir','socket','transaction','foreign_keys','unique_checks','temporary_shadow','partial'])

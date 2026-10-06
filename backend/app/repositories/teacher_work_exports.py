@@ -347,7 +347,11 @@ class PrivatePackageRepository:
         if len(raw)!=artifact.byte_size or sha256(raw).hexdigest()!=artifact.sha256:raise error('PRIVATE_STORAGE_UNAVAILABLE')
         return raw,artifact
 
-    def verify_outcome(self,value,*,current=False,fence=None):
+    def verify_outcome(self,value,*,current=False,fence=None,metadata_read=False):
+        if type(metadata_read) is not bool or metadata_read and (type(value) is not PrivatePackageState
+                or self.guard.state.mode!='read' or current or fence is not None or self.completed_in_root
+                or self.expected_lease is not None or self.download_target is not None):
+            raise error()
         if type(value) is PrivatePackageList:
             limit,before=self._list_request
             if self.list(value.task.owner_subject,value.task.task_id,limit=limit,before=before)!=value:raise error()
@@ -364,5 +368,11 @@ class PrivatePackageRepository:
         if self.download_target is not None and self.download_target not in {a.artifact_id for a in value.artifacts}:
             raise error()
         for artifact in value.artifacts:
-            if artifact.state=='READY' and self.download_target in (None,artifact.artifact_id):
+            if metadata_read:
+                # Check existing paths for every state without reading bytes.
+                # A nonREADY generation may never have made its owner directory.
+                try:self.storage.check_metadata_path(storage_key(value.task.owner_storage_id,artifact.artifact_id,artifact.kind),
+                    allow_absent_owner=artifact.state!='READY')
+                except (ValueError,OSError):raise error('PRIVATE_STORAGE_UNAVAILABLE') from None
+            elif artifact.state=='READY' and self.download_target in (None,artifact.artifact_id):
                 self.verified_download(value,artifact.artifact_id)

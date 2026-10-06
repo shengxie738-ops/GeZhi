@@ -1,5 +1,6 @@
 """Finite real-value export boundaries; native HTTP/MySQL are explicit-only."""
 import importlib
+import errno
 import os
 import subprocess
 import sys
@@ -39,6 +40,48 @@ def test_local_private_storage_tracks_single_inode_and_refuses_overwrite(tmp_pat
     assert storage.read(key) == b'synthetic-bytes'
     storage.remove(key)
     assert storage.inventory(UUID(int=1), {key}) == {key:0}
+
+
+def test_metadata_path_accepts_safe_absence_and_stable_changed_bytes(tmp_path):
+    m=feature('app.services.teacher_work.private_storage')
+    root=tmp_path/'private';root.mkdir();storage=m.LocalPrivateStorage(root)
+    key=m.storage_key(UUID(int=1),UUID(int=2),'docx')
+    storage.check_metadata_path(key,allow_absent_owner=True)
+    with pytest.raises(ValueError,match='PRIVATE_STORAGE_UNAVAILABLE'):storage.check_metadata_path(key)
+    storage.publish(key,b'committed-original')
+    (root/key).write_bytes(b'corrupt')
+    storage.check_metadata_path(key)
+    (root/key).write_bytes(b'')
+    storage.check_metadata_path(key)
+    (root/key).unlink()
+    storage.check_metadata_path(key)
+
+
+@pytest.mark.parametrize('unsafe',['owner_symlink','leaf_symlink','hardlink','fifo','directory','oversized','root_replaced'])
+def test_metadata_path_refuses_unsafe_existing_entries(tmp_path,unsafe):
+    m=feature('app.services.teacher_work.private_storage')
+    root=tmp_path/'private';root.mkdir();storage=m.LocalPrivateStorage(root)
+    key=m.storage_key(UUID(int=1),UUID(int=2),'docx');owner=root/str(UUID(int=1))
+    if unsafe=='root_replaced':
+        root.rename(tmp_path/'moved');root.mkdir()
+    elif unsafe=='owner_symlink':
+        target=tmp_path/'target';target.mkdir();owner.symlink_to(target,target_is_directory=True)
+    else:
+        owner.mkdir()
+        if unsafe=='leaf_symlink':(root/key).symlink_to(tmp_path/'absent')
+        elif unsafe=='hardlink':
+            target=tmp_path/'target';target.write_bytes(b'unsafe-link');os.link(target,root/key)
+        elif unsafe=='fifo':os.mkfifo(root/key)
+        elif unsafe=='directory':(root/key).mkdir()
+        else:
+            with (root/key).open('wb') as file:file.truncate(m.FILE_CAP+1)
+    with pytest.raises((ValueError,OSError)) as refused:
+        storage.check_metadata_path(key,allow_absent_owner=True)
+    if unsafe in ('owner_symlink','leaf_symlink'):
+        assert isinstance(refused.value,OSError)
+        assert refused.value.errno==(errno.ENOTDIR if unsafe=='owner_symlink' else errno.ELOOP)
+    else:
+        assert type(refused.value) is ValueError and str(refused.value)=='PRIVATE_STORAGE_UNAVAILABLE'
 
 
 def test_storage_rejects_static_root_links_unknown_and_double_copies(tmp_path):
