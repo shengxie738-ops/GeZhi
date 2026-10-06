@@ -40,8 +40,21 @@ const proposalBindings = {
  'cancel-material-proposal-replace':'teacherWorkCancelMaterialProposalReplace', 'retry-material-proposals-capabilities':'teacherWorkRetryMaterialProposalsCapabilities',
  'open-material-proposal-run':'teacherWorkOpenMaterialProposalRun', 'reload-material-proposal-history':'teacherWorkReloadMaterialProposalHistory'
 };
+// Task history adds these five reviewed bindings on the same authenticated Work
+// owner. Exclude only their exact strings; keep gate predicates and the prior bound.
+const taskHistoryBindings = {
+ 'reload-task-history':'teacherWorkReloadTaskHistory', 'load-older-tasks':'teacherWorkLoadOlderTasks',
+ 'request-task-switch':'teacherWorkRequestTaskSwitch', 'confirm-task-switch':'teacherWorkConfirmTaskSwitch',
+ 'cancel-task-switch':'teacherWorkCancelTaskSwitch'
+};
+const teacherWorkTag=gateRegion.match(/<teacher-work\b[\s\S]*?>/)[0];
+assert.equal(teacherWorkTag.match(/v-else-if="([^"]+)"/)[1],"isLoggedIn && authVerified && currentRole === 'teacher' && currentView === 't_work' && teachingLegacyRenderAllowed");
+for(const [event,handler] of Object.entries(taskHistoryBindings)) {
+ const binding='@'+event+'="'+handler+'"';
+ assert.equal(teacherWorkTag.split(binding).length-1,1,'reviewed history binding stays on authenticated Work owner: '+event);
+}
 let priorGateRegion=gateRegion;
-for(const [event,handler] of Object.entries({...packageBindings,...proposalBindings})) {
+for(const [event,handler] of Object.entries({...packageBindings,...proposalBindings,...taskHistoryBindings})) {
  const binding='@'+event+'="'+handler+'"';
  assert.equal(gateRegion.split(binding).length-1,1,'exactly one reviewed Work binding: '+event);
  priorGateRegion=priorGateRegion.replace(binding,'');
@@ -50,6 +63,8 @@ const packageEventNames=[...gateRegion.matchAll(/@([\w-]*(?:package|packages)[\w
 assert.deepEqual(packageEventNames,Object.keys(packageBindings),'no unexpected package bindings');
 const proposalEventNames=[...gateRegion.matchAll(/@([\w-]*material-proposal[\w-]*)="/g)].map(match=>match[1]);
 assert.deepEqual(proposalEventNames,Object.keys(proposalBindings),'no unexpected proposal bindings');
+const taskHistoryEventNames=[...gateRegion.matchAll(/@([\w-]*(?:task-history|older-tasks|task-switch)[\w-]*)="/g)].map(match=>match[1]);
+assert.deepEqual(taskHistoryEventNames,Object.keys(taskHistoryBindings),'no unexpected task history bindings');
 assert.ok(priorGateRegion.length<4500);
 const overlay=gateRegion.match(/<div v-if="([^"]+)"/)[1],shellGate=gateRegion.match(/<teaching-workbench-shell v-if="([^"]+)"/)[1],legacyGate=gateRegion.match(/<div v-else-if="([^"]+)"/)[1];
 const stage={configured:true,installed:true,available:true,reason:'read_ready',writes_available:false};
