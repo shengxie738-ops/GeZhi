@@ -1,0 +1,372 @@
+{
+  "schema": "gezhi-student-paper-desktop-followup/v1",
+  "recorded_at": "2026-10-06T12:21:50.581155+00:00",
+  "description": "Fresh complete desktop Node aggregate on the exact published student-paper source, using previously installed pinned dependencies in the separate dot recovery workspace. This additive record preserves the original Cloud attempt and its DNS failure.",
+  "tested_source": {
+    "repository": "shengxie738-ops/GeZhi",
+    "branch_observed": "102V12",
+    "commit": "21a8c0ce0ddaf40e73cc3a8590b72ff0370fa3b3",
+    "parent": "cb2bfbc9623f692d47dd8b73c87e7882ceb57c14",
+    "tree": "67c55a2e1db1e17211177c42f8158e0a75ada954",
+    "commit_url": "https://github.com/shengxie738-ops/GeZhi/commit/21a8c0ce0ddaf40e73cc3a8590b72ff0370fa3b3",
+    "export_kind": "Partial byte export; no local Git repository",
+    "publication_scope": "One documentation-only addition. Test results bind to this tested source commit; they do not claim that a later documentation commit was rerun as a new runtime version."
+  },
+  "aggregate": {
+    "command": "TZ=Asia/Tokyo node frontend/scripts/desktopTestRunner.mjs",
+    "started": "2026-10-06T12:17:22Z",
+    "finished": "2026-10-06T12:17:47Z",
+    "exit_code": 0,
+    "node": "v24.19.0",
+    "outer_timezone": "Asia/Tokyo",
+    "runner_enforced_timezone": "Asia/Shanghai",
+    "summary": {
+      "tests": 2076,
+      "pass": 2076,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "ok": true,
+      "totalFiles": 120,
+      "lanes": [
+        "official",
+        "shipped"
+      ]
+    },
+    "lanes": [
+      {
+        "id": "official",
+        "vueVersion": "3.5.39",
+        "files": 8,
+        "tests": 248,
+        "pass": 248,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "id": "shipped",
+        "vueVersion": "3.3.4",
+        "files": 112,
+        "tests": 1828,
+        "pass": 1828,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    ],
+    "coverage_disjoint": true,
+    "coverage_full": true,
+    "fresh_run_not_historical_2066": true
+  },
+  "coverage": {
+    "scope": "Every desktop Node test file discovered by the pinned desktopTestRunner.mjs; this is not build, browser, mobile, backend-native, or system-wide acceptance.",
+    "top_level_test_files": 120,
+    "test_and_fixture_files_exactly_matching_remote": 154,
+    "available_frontend_files_byte_verified_before_and_after": 436,
+    "no_extra_or_missing_test_files": true,
+    "source_and_dependency_bytes_unchanged_after_run": true
+  },
+  "log": {
+    "filename": "paper-checkpoint-desktop-aggregate.log",
+    "availability": "Local recovery-task filesystem only. Not uploaded, not included in this repository addition, and no public download URL exists.",
+    "size": 749756,
+    "sha256": "fe189cf41483311852368dcf569bf4063b706e267b9dc1b5292a5d64b2a642aa"
+  },
+  "source_integrity": {
+    "tracked_blobs": 1141,
+    "available_blobs": 1134,
+    "size_git_blob_sha_and_sha256_reverified_blobs": 1132,
+    "inherited_no_read_examples": [
+      {
+        "path": "backend/.env.example",
+        "size": 7641,
+        "git_blob_sha": "6b77e41ac2da0e53ddf1473b4415d9d14c068062",
+        "sha256": "6af810a1e66ceef9f5f62b222f06965f5cd3e64de88586d37b5cff57ed866ee7",
+        "verification": "Prior byte pin retained; current remote tree entry unchanged; content not reread"
+      },
+      {
+        "path": "ragflow/docker/.env.single-bucket-example",
+        "size": 3725,
+        "git_blob_sha": "96120b388a12e4efd29b0b4f74608631aa8f3a58",
+        "sha256": "b3bcc968c71868358eea7ca4d05ef2f3661ee23c55170262dd7b9887c4dd4573",
+        "verification": "Prior byte pin retained; current remote tree entry unchanged; content not reread"
+      }
+    ],
+    "missing_png_assets": [
+      {
+        "path": "frontend/course-banners/人工智能技术.png",
+        "size": 2683838,
+        "git_blob_sha": "d7cb75b9ea8bfe36e5d926052b255468013208c7"
+      },
+      {
+        "path": "frontend/course-banners/数据库系统原理.png",
+        "size": 2452579,
+        "git_blob_sha": "b787fca0a4d3e5172662faed28272f00676cfe50"
+      },
+      {
+        "path": "frontend/course-banners/数据结构.png",
+        "size": 2417214,
+        "git_blob_sha": "f877b564e1d9df6d593c3ec3b1a16f8f7ab12324"
+      },
+      {
+        "path": "frontend/course-banners/计算机程序设计.png",
+        "size": 1953343,
+        "git_blob_sha": "626ecd2039913e83fa1fdd3bb9023dac13443034"
+      },
+      {
+        "path": "frontend/course-banners/计算机组成原理.png",
+        "size": 2734848,
+        "git_blob_sha": "7506888f016f326476760a3797d5e2bc64b86828"
+      },
+      {
+        "path": "frontend/images/home-bg.png",
+        "size": 1949507,
+        "git_blob_sha": "36615499226dcf7e104373c5245402d3499a784c"
+      },
+      {
+        "path": "frontend/images/login-bg.png",
+        "size": 2136250,
+        "git_blob_sha": "2f284b83df7a051f2fcaedf8f88bb0b12cee5526"
+      }
+    ],
+    "pinned_test_inputs": [
+      {
+        "path": "frontend/package.json",
+        "size": 329,
+        "git_blob_sha": "42c9e0109524e6c9b26ac28c1f8d8850b84d9201",
+        "sha256": "4a1662bb56bec1654cfa36840178c451ebd81eb4451b5480c2dcb868ab1cf9dd"
+      },
+      {
+        "path": "frontend/package-lock.json",
+        "size": 10956,
+        "git_blob_sha": "0f0b19cabbe558d665aeabd939bdb00fc57aae01",
+        "sha256": "970037fc141010c84a78066f894f1589de7883794401328462db975fafe5c0ac"
+      },
+      {
+        "path": "frontend/scripts/desktopTestRunner.mjs",
+        "size": 6985,
+        "git_blob_sha": "60d66751628cf79b2383754a2762eaae268ae5d0",
+        "sha256": "03c9bb9a5c058c6a711dc524d59a45ec7c4f155ac640669b6ed996f1ad1d787c"
+      },
+      {
+        "path": "frontend/libs/vue.esm-browser.js",
+        "size": 445104,
+        "git_blob_sha": "37c9dd322dbca8a3f3a3888895b76a56d3d834a1",
+        "sha256": "ff0c8fcaa207637d20372a08af75cee5dda3d870168a01fa110f3af7eb4500fd"
+      },
+      {
+        "path": "frontend/tests/fixtures/desktopOfficialNodePreload.mjs",
+        "size": 950,
+        "git_blob_sha": "4f98ded4154e6596b423b8e469fc12dd06b8ebba",
+        "sha256": "1b3259dd96f272be7c549e02b19536e80be6d7a11f1fac742a7fb100a5ca3faf"
+      },
+      {
+        "path": "frontend/tests/fixtures/desktopShippedNodePreload.mjs",
+        "size": 735,
+        "git_blob_sha": "5a1d143e5d4974cf2cf616bae54f8ba3afddfd83",
+        "sha256": "a8fa76bc845050dd4c3dcbc2f4f940b5ba7d5cc865be89b76b1a16383d0dadb2"
+      },
+      {
+        "path": "backend/tests/fixtures/student_paper_full_app_acceptance.synthetic.json",
+        "size": 268589,
+        "git_blob_sha": "1defcfb7ec11b07b6bd9e5b3e4179c802e64a6f1",
+        "sha256": "c284190141ddeb4c144133ca0fb4f2a45bd1dc07414072a8f3c03f8592b9cff0"
+      }
+    ],
+    "baseline_manifest": {
+      "filename": "published-byte-baseline-21a8c0c.json",
+      "availability": "Local recovery-task evidence only; not uploaded with this addition",
+      "sha256": "d36c7442133558aa804c72b93d00000f9fba49cdaed483410c9e4f89db350188"
+    }
+  },
+  "dependencies": {
+    "node": "v24.19.0",
+    "package_manager_used_for_this_run": false,
+    "new_dependencies_installed": false,
+    "registry_downloads_attempted": false,
+    "alternate_registries_or_dns_workarounds_used": false,
+    "existing_install_reused_after_verification": true,
+    "direct_dependencies": {
+      "@babel/parser": "7.29.9",
+      "@vue/compiler-dom": "3.5.39",
+      "@vue/server-renderer": "3.5.39",
+      "vue": "3.5.39"
+    },
+    "installed_package_count": 23,
+    "installed_versions": [
+      {
+        "name": "@babel/helper-string-parser",
+        "version": "7.29.7"
+      },
+      {
+        "name": "@babel/helper-validator-identifier",
+        "version": "7.29.7"
+      },
+      {
+        "name": "@babel/parser",
+        "version": "7.29.9"
+      },
+      {
+        "name": "@babel/types",
+        "version": "7.29.8"
+      },
+      {
+        "name": "@jridgewell/sourcemap-codec",
+        "version": "1.6.0"
+      },
+      {
+        "name": "@vue/compiler-core",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/compiler-dom",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/compiler-sfc",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/compiler-ssr",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/reactivity",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/runtime-core",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/runtime-dom",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/server-renderer",
+        "version": "3.5.39"
+      },
+      {
+        "name": "@vue/shared",
+        "version": "3.5.39"
+      },
+      {
+        "name": "csstype",
+        "version": "3.2.3"
+      },
+      {
+        "name": "entities",
+        "version": "7.0.1"
+      },
+      {
+        "name": "estree-walker",
+        "version": "2.0.2"
+      },
+      {
+        "name": "magic-string",
+        "version": "0.30.21"
+      },
+      {
+        "name": "nanoid",
+        "version": "3.3.20"
+      },
+      {
+        "name": "picocolors",
+        "version": "1.1.1"
+      },
+      {
+        "name": "postcss",
+        "version": "8.5.29"
+      },
+      {
+        "name": "source-map-js",
+        "version": "1.2.2"
+      },
+      {
+        "name": "vue",
+        "version": "3.5.39"
+      }
+    ],
+    "lock_versions_resolved_urls_and_integrity_fields_match_installed_lock": true,
+    "physical_package_versions_and_dependency_declarations_match_lock": true,
+    "package_sha256": "4a1662bb56bec1654cfa36840178c451ebd81eb4451b5480c2dcb868ab1cf9dd",
+    "lock_sha256": "970037fc141010c84a78066f894f1589de7883794401328462db975fafe5c0ac",
+    "installed_lock_sha256": "b4d142241646c05b939b481aab45845afdf47d53c7cd5a67b2ba136e28e0b899",
+    "frozen_dependency_files": 601,
+    "physical_inventory_sha256": "acf7deddf517cca7bd50a8af9dce50f2dbc71f95dec928f7a343d049d628a99c",
+    "pre_post_unchanged": true,
+    "registry_tarball_integrity_independently_rechecked": false,
+    "integrity_limit": "Installed lock integrity metadata and physical package metadata were compared with the committed lock. Registry tarballs were not redownloaded or independently rehashed; existing dependency files were SHA256-fingerprinted for pre/post immutability."
+  },
+  "original_cloud_attempt": {
+    "records_preserved_byte_for_byte": [
+      {
+        "path": "docs/repairs/102V12-student-paper-reading-evidence.json",
+        "size": 161964,
+        "git_blob_sha": "e606fa09f54f4a18901a23c167a95eb1cff208d9",
+        "sha256": "1bc18bae63f18bfa6551db32b8b6061f10e3ba41c8b116de6a3a49d4cc4949dd"
+      },
+      {
+        "path": "docs/repairs/102V12-student-paper-reading.md",
+        "size": 8896,
+        "git_blob_sha": "81477b4edf653969c1688b1896a3a37aaa9c630d",
+        "sha256": "ec057ffdff843641f70b785f55623f5be98c4b854e4fa806b3892da649a4ae6c"
+      }
+    ],
+    "complete_aggregate_verified_in_original_record": false,
+    "original_blocker": {
+      "aggregate_exit_code": 1,
+      "reason": "ERR_MODULE_NOT_FOUND @babel/parser; official locked npm ci attempts failed DNS EAI_AGAIN (exit1)",
+      "node": "24.19.0",
+      "npm": "11.9.0",
+      "registry": "https://registry.npmjs.org",
+      "lock_unchanged": true,
+      "normal_network_permission_attempted": true,
+      "bypass_used": false
+    },
+    "note": "The original missing @babel/parser / official npm EAI_AGAIN failure remains an accurate record of that Cloud attempt. Its report and evidence JSON are unchanged; this separate successful run does not rewrite that failure."
+  },
+  "local_supporting_evidence": {
+    "availability": "Local recovery-task evidence only; not uploaded with this addition",
+    "files": [
+      {
+        "filename": "stage-cb2bfbc-hydration-receipt.json",
+        "bytes": 5281,
+        "sha256": "666f5940ae400b610b9b7be6e5d05ecf5b562ae0dd9c06f1bc09743d2c69a0be"
+      },
+      {
+        "filename": "stage-21a8c0c-hydration-receipt.json",
+        "bytes": 5838,
+        "sha256": "e5ca8fc0a36a9cf90f74b7af4cb06b5aa02d8122ee42baa4fced24b553c08445"
+      },
+      {
+        "filename": "paper-desktop-before-verification.json",
+        "bytes": 234819,
+        "sha256": "418d1e1ee7302345a9d1017bc0149b03c7aec39001c8f16d207a03b0b7cdec0c"
+      },
+      {
+        "filename": "paper-desktop-after-verification.json",
+        "bytes": 234868,
+        "sha256": "88b06c6e018f9cc7ee2914b26217e4d2c652dfecb2b6dd9f0792f1cebc3a57d6"
+      }
+    ]
+  },
+  "limits": {
+    "build_verified": false,
+    "browser_runtime_verified": false,
+    "mobile_or_tablet_verified": false,
+    "backend_native_rerun": false,
+    "real_external_ai_provider_verified": false,
+    "real_external_academic_services_verified": false,
+    "ci_verified": false,
+    "ci_endpoints_queried": false,
+    "production_deployed": false,
+    "seven_png_assets_still_missing": true,
+    "timezone_note": "The outer command requested TZ=Asia/Tokyo. The source-pinned runner overrides both child lanes to Asia/Shanghai; these results are not a Tokyo child-lane run.",
+    "scope_note": "Missing PNG assets remain explicit, so this partial source export and passing Node aggregate do not establish a complete build or visual/browser acceptance. No real-provider, external-service, CI, or deployment claim is made."
+  }
+}
