@@ -25,19 +25,28 @@
 的内存材料草稿，其他任务缓存保留。需求保存未知状态独立于展示错误，普通
 编辑不能解除；成功读取当前任务后保留更新的编辑并允许继续。新建已成功但
 等待期间出现其他操作/编辑时，保留当前任务并提示从列表打开已创建任务。
+未知创建独立保留序列化原 body 与 key；等待或未知期间禁止修改/关闭创建
+表单，需求仍可编辑和复制。通过“重试原创建请求”确认结果，读取旧任务、
+刷新权限、关闭 gate 或被拒绝的重试均不能解除此前未知状态。原请求确认后
+若旧任务已有更新的编辑，先保留旧任务，再提示明确选择已创建任务。
 发布的 proposal hook/component 字节未改。
 
 ## 验证与证据
 
 候选代码及测试共 22 文件，按路径排序的 SHA-256 JSON（排除自引用文档）
-摘要为 `3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347`。
+最终摘要为 `07148f04d61869e2e2880d9121c6a6be7fb23e3d9deb77042df1ce4382644741`。
+此前 `501f8d7` 的摘要为 `3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347`；
+该提交及其完整前端验证记录保留。本轮仅修复五个前端代码/测试文件，后端
+10 个候选文件及原 native 快照 380 文件的哈希均不变，没有重跑后端/native。
 完整清单及回执见相邻 evidence JSON。日志目录为
 `/tmp/gezhi-task-history-ttfgzlas`；历史证据和原五文件均原样保留。
 
 | 选择范围 | 结果 | 证据 |
 | --- | --- | --- |
-| 新增桌面 history/guard | 24 passed，exit 0，无 skip | `create-success-guard-green.log` |
-| 完整 teacherWork 前端相关文件 | 1130 passed，exit 0，无 skip | `frontend-frozen-final.log` |
+| 最终桌面 history/guard | 32 passed，exit 0，无 skip | `second-review-create-green.log` |
+| 最终必要前端五文件 | 117 passed，exit 0，无 skip | `second-review-related-final.log` |
+| 最终独立复验 history/guard | 32 passed，exit 0，无 skip | `/tmp/gezhi-history-third-review-20261006/history32.tap` |
+| 此前 `501f8d7` 完整 teacherWork 前端相关文件 | 1130 passed，exit 0，无 skip；本轮未重跑 | `frontend-frozen-final.log` |
 | Teacher Work + auth/SMS/CORS 普通后端 | 326 passed，exit 0；另报 30 subtests，不相加 | `ordinary-final/pytest.log` |
 | 新列表真实完整 app/auth/MySQL | 1 场景、39 HTTP exchanges，exit 0，无 skip | `/tmp/gezhi-tw-full-app-kcfys12x/run.json` |
 | 原完整 app/auth/MySQL 回归 | 10 场景、385 HTTP exchanges，exit 0，无 skip | `/tmp/gezhi-tw-full-app-enwhgitt/run.json` |
@@ -82,8 +91,28 @@ TZ=Asia/Shanghai node frontend/scripts/desktopTestRunner.mjs
 新建任务绕过 guard、普通编辑清除未知需求保存阻断。作者分别执行 RED→GREEN，
 还覆盖创建等待期间的新操作，最终相关套件全部通过。reviewer 的 modal inert
 遗漏被按实际键盘可交互影响提升为 Important，已用 finite renderer 断言修复。
-没有未处理的该次审阅发现；修复后由覆盖测试和相关套件验证，未二次委派审阅。
+没有未处理的该次审阅发现；当时由覆盖测试和相关套件验证，尚未进行第二轮。
 独立复现材料在 `/tmp/gezhi-history-review-20261006` 与相邻 node log。
+
+父线程随后要求独立第二轮：`501f8d7` 的 24 项通过，原三项修复有效，但
+发现一项 Important：未知创建仍依赖可清除的展示错误，编辑/关闭表单会
+丢失原 key。报告 `/tmp/gezhi-history-second-review-20261006/review.md`。
+新增 8 项回归先得到 32 项中 24 pass/8 fail，再最小修复至 32 pass。
+五文件相关验证第一次 116 pass/1 fail：旧测试要求修改表单立即 abort
+未确认 POST；按本阶段未知事务保留要求改为等待原结果，再明确新建，仍
+验证第二个 payload 使用新 key、原请求完成与实际任务选择。随后 117 pass。
+
+同一 reviewer 对最终 22 文件独立第三轮始末核对，并复跑 32 项：PASS，
+Critical/Important/Minor 均为 0，exit 0、无 skip。报告及结构化结论在
+`/tmp/gezhi-history-third-review-20261006`。结论绑定 `501f8d7` 加五份修复的
+确切源码哈希；本地追加提交的 code blobs 再与该冻结清单逐一核对。
+第三轮仅执行 history/guard，不冒称独立重跑 117 项、后端或 native。
+
+本轮必要五文件命令：
+
+```sh
+TZ=Asia/Shanghai node --import ./frontend/tests/fixtures/desktopShippedNodePreload.mjs --test --test-concurrency=1 --test-reporter=tap frontend/tests/teacherWorkTaskHistory.test.mjs frontend/tests/teacherWorkPrivateTasks.test.mjs frontend/tests/teacherWorkChat.test.mjs frontend/tests/teacherWorkAuthenticatedChat.test.mjs frontend/tests/teacherWorkMaterialsLifecycle.test.mjs
+```
 
 裁定：旧测试将导航视为自动中止写入；按批准的 guard 改为先断言正常导航
 不 abort，再显式模拟外部 scope 失效验证底层 late-response fencing。

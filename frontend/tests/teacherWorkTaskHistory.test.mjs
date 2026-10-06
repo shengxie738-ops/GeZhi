@@ -275,6 +275,88 @@ test('unknown working save survives normal edits and failed reads until authorit
     } finally { h.scope.stop(); }
 });
 
+for (const action of ['requirements', 'form', 'close', 'url-task', 'url-remove']) test(`unknown creation retains its original request after ${action}`, async () => {
+    const calls = [], h = await harness({ createTask: async (body, options) => {
+        calls.push({ body: JSON.parse(JSON.stringify(body)), options });
+        if (calls.length === 1) throw { reason: 'network_error' }; return snapshot(B);
+    } });
+    try {
+        await h.hook.readTask(A); h.hook.openCreateTask();
+        h.hook.updateCreateForm({ title: '原创建标题', topic: '主题', audience: '对象', resource_ids: ['source'] });
+        assert.equal(await h.hook.createTask(), false);
+        if (action === 'form') assert.equal(h.hook.updateCreateForm({ title: '不应替换原请求' }), false);
+        if (action === 'close') assert.equal(h.hook.closeCreateTask(), false);
+        if (['requirements', 'url-task', 'url-remove'].includes(action)) h.hook.updateInput('仍可复制的新需求');
+        if (action.startsWith('url-')) {
+            if (action === 'url-task') h.location.searchParams.set('teacher_work_task', B);
+            else h.location.searchParams.delete('teacher_work_task');
+            h.eventTarget.dispatchEvent({ type: 'popstate' }); await settle();
+            assert.equal(h.location.searchParams.get('teacher_work_task'), A);
+        } else assert.equal(await h.hook.requestTaskSwitch(B), false);
+        assert.equal(h.hook.state.taskSwitch.reason, 'operation');
+        assert.equal(await h.hook.confirmTaskSwitch(), false); assert.equal(h.hook.state.task_id, A);
+        assert.equal(h.hook.state.createOpen, true); assert.equal(h.hook.state.createForm.title, '原创建标题');
+        h.hook.cancelTaskSwitch();
+        assert.equal(await h.hook.reloadTask(), true); // Reading A cannot reconcile a POST which creates a different task.
+        assert.equal(await h.hook.requestTaskSwitch(B), false); assert.equal(h.hook.state.taskSwitch.reason, 'operation');
+        h.hook.cancelTaskSwitch(); assert.equal(await h.hook.createTask(), true);
+        assert.equal(calls.length, 2); assert.deepEqual(calls[1].body, calls[0].body);
+        assert.equal(calls[1].options.idempotencyKey, calls[0].options.idempotencyKey);
+        assert.equal(calls[0].options.signal.aborted, false);
+        assert.equal(h.hook.state.creationOutcomeUnknown, false);
+        if (['requirements', 'url-task', 'url-remove'].includes(action)) {
+            assert.equal(h.hook.state.task_id, A); assert.equal(h.hook.state.composerText, '仍可复制的新需求');
+            assert.equal(h.hook.state.taskSwitch.created, true); assert.equal(h.hook.state.taskSwitch.reason, 'dirty');
+        } else assert.equal(h.hook.state.task_id, B);
+    } finally { h.scope.stop(); }
+});
+
+test('pending creation cannot be aborted by editing or closing its form', async () => {
+    const pending = deferred(), calls = [], h = await harness({ createTask: (body, options) => {
+        calls.push({ body: JSON.parse(JSON.stringify(body)), options }); return pending.promise;
+    } });
+    try {
+        h.hook.openCreateTask(); h.hook.updateCreateForm({ title: '原请求', topic: '主题', audience: '对象', resource_ids: ['source'] });
+        const creating = h.hook.createTask();
+        assert.equal(h.hook.updateCreateForm({ resource_ids: ['another-source'] }), false);
+        assert.equal(h.hook.closeCreateTask(), false); assert.equal(calls[0].options.signal.aborted, false);
+        pending.reject({ reason: 'network_error' }); assert.equal(await creating, false);
+        assert.equal(h.hook.state.creationOutcomeUnknown, true);
+    } finally { h.scope.stop(); }
+});
+
+test('a denied replay or capability refresh cannot release an earlier unknown creation', async () => {
+    const calls = [], h = await harness({ createTask: async (body, options) => {
+        calls.push({ body: JSON.parse(JSON.stringify(body)), options });
+        throw { reason: calls.length === 1 ? 'network_error' : 'TEACHER_WORK_UNAVAILABLE' };
+    } });
+    try {
+        h.hook.openCreateTask(); h.hook.updateCreateForm({ title: '原请求', topic: '主题', audience: '对象', resource_ids: ['source'] });
+        await h.hook.createTask(); h.hook.updateInput('编辑不解决创建结果');
+        h.hook.state.privateTaskAvailability.create = false; assert.equal(await h.hook.createTask(), false); assert.equal(calls.length, 1);
+        assert.equal(await h.hook.retryCapabilities(), true); assert.equal(await h.hook.createTask(), false);
+        assert.deepEqual(calls[1].body, calls[0].body); assert.equal(calls[1].options.idempotencyKey, calls[0].options.idempotencyKey);
+        assert.equal(h.hook.closeCreateTask(), false); assert.equal(h.hook.state.creationOutcomeUnknown, true);
+        h.refs.authEpoch.value++; await settle();
+        assert.equal(h.hook.state.creationOutcomeUnknown, false); assert.equal(h.hook.state.createOpen, false);
+    } finally { h.scope.stop(); }
+});
+
+test('unknown creation shows an explicit original-request retry and locks only its creation fields', async () => {
+    const h = await harness({ createTask: async () => { throw { reason: 'network_error' }; } });
+    const { default: TeacherWork } = await import('../js/components/teacher-work/TeacherWork.js');
+    let view;
+    try {
+        h.hook.openCreateTask(); h.hook.updateCreateForm({ title: '原请求', topic: '主题', audience: '对象', resource_ids: ['source'] });
+        await h.hook.createTask(); h.hook.updateInput('更新需求'); view = await mount(TeacherWork, { state: h.hook.state });
+        assert.ok(textOf(view.root).includes('创建结果尚未确认'));
+        assert.equal(button(view.root, '重试原创建请求').props.disabled, false);
+        assert.equal(button(view.root, '取消').props.disabled, true);
+        for (const id of ['title', 'topic', 'audience', 'duration', 'slides'])
+            assert.equal(find(view.root, n => n.props.id === 'teacher-work-create-' + id).props.disabled, true);
+    } finally { view?.close(); h.scope.stop(); }
+});
+
 test('desktop rail exposes loading, empty, retry, current selection, older pages and guarded dialog events', async () => {
     const h = await harness(); const { default: TeacherWork } = await import('../js/components/teacher-work/TeacherWork.js');
     const view = await mount(TeacherWork, { state: h.hook.state });

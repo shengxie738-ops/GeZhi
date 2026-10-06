@@ -250,13 +250,17 @@ test('reloaded identical draft still allows an explicit save confirmation withou
     } finally { h.scope.stop(); }
 });
 
-test('modifying an in-flight creation aborts old result and uses a new key for new payload', async () => {
+test('creation fields wait for the original outcome before a new payload gets a new key', async () => {
     const old = deferred(), calls = [], h = await harness({ createTask(body, options) { calls.push({ body, options }); return calls.length === 1 ? old.promise : Promise.resolve(snapshot(taskB)); } });
     try {
-        h.hook.openCreateTask(); fill(h.hook); const before = h.hook.createTask(); h.hook.updateCreateForm({ topic: 'new topic' });
-        assert.equal(calls[0].options.signal.aborted, true); const next = await h.hook.createTask(); assert.equal(next, true);
+        h.hook.openCreateTask(); fill(h.hook); const before = h.hook.createTask();
+        assert.equal(h.hook.updateCreateForm({ topic: 'new topic' }), false);
+        assert.equal(calls[0].options.signal.aborted, false); assert.equal(await h.hook.createTask(), false); assert.equal(calls.length, 1);
+        old.resolve(snapshot(taskA)); assert.equal(await before, true); assert.equal(h.hook.state.task_id, taskA);
+        assert.equal(h.hook.openCreateTask(), true); fill(h.hook); assert.equal(h.hook.updateCreateForm({ topic: 'new topic' }), true);
+        const next = await h.hook.createTask(); assert.equal(next, true);
         assert.notEqual(calls[0].options.idempotencyKey, calls[1].options.idempotencyKey); assert.equal(calls[1].body.topic, 'new topic');
-        old.resolve(snapshot(taskA)); assert.equal(await before, false); assert.equal(h.hook.state.task_id, taskB);
+        assert.equal(h.hook.state.task_id, taskB);
     } finally { h.scope.stop(); }
 });
 

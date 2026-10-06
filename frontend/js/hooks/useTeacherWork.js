@@ -28,7 +28,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         scheduler: chatScheduler, pollLimit: chatPollLimit, adoptMaterialsProposal: materials.adoptMaterialsProposal });
     let disposed = false, flight = null, taskReadFlight = null, saveFlight = null, createFlight = null, resourceFlight = null,
         creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null,
-        historyFlight = null, historyEpoch = 0, switchIntent = null, switchTrigger = null, unknownWorking = null;
+        historyFlight = null, historyEpoch = 0, switchIntent = null, switchTrigger = null, unknownWorking = null, unknownCreation = null;
     const eligible = () => !disposed && captureRequest(state) !== null;
     const usable = target => target?.isConnected && (!target.getClientRects || target.getClientRects().length > 0);
     const query = selector => documentTarget?.querySelector?.(selector) || null;
@@ -141,7 +141,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         return true;
     }
     function closeCreateTask() {
-        if (!eligible()) return false;
+        if (!eligible() || createFlight || unknownCreation) return false;
         abortSlot('create'); createEpoch++; creationKey = null;
         state.createOpen = false; state.createStatus = 'idle'; state.operationError = null;
         const trigger = createTrigger; createTrigger = null;
@@ -150,7 +150,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         return true;
     }
     function updateCreateForm(changes) {
-        if (!eligible() || !changes || typeof changes !== 'object' || Array.isArray(changes)) return false;
+        if (!eligible() || createFlight || unknownCreation || !changes || typeof changes !== 'object' || Array.isArray(changes)) return false;
         let changed = false;
         for (const name of ['title', 'topic', 'audience', 'duration_minutes', 'target_slide_count', 'resource_ids']) {
             if (!Object.hasOwn(changes, name)) continue;
@@ -166,24 +166,32 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     async function createTask() {
         if (!eligible() || state.packageWriteBusy || !state.privateTaskAvailability.create || createFlight || typeof api.createTask !== 'function') return false;
-        if (switchBlocked(true) || state.task && switchDirty(true)) {
+        const replay = unknownCreation;
+        if (switchBlocked(true) || !replay && state.task && switchDirty(true)) {
             showTaskSwitch({ action: 'submit-create', id: null }, null, switchBlocked(true)); return false;
         }
         let body;
-        try { body = validatePrivateTaskCreate({ ...state.createForm, scope: 'private' }); }
+        try { body = replay ? JSON.parse(replay.body) : validatePrivateTaskCreate({ ...state.createForm, scope: 'private' }); }
         catch (caught) { state.createStatus = 'error'; failOperation('create', caught); return false; }
+        if (replay) creationKey = replay.key;
         if (!creationKey) {
             try { creationKey = newIdempotencyKey(); } catch { creationKey = null; }
             if (typeof creationKey !== 'string' || !creationKey) { failOperation('create', { reason: 'request_failed' }); return false; }
         }
         const request = { ...makeTaskRequest(), createEpoch, key: creationKey,
             materialEpoch: state.materials?.draftEpoch, chatText: state.chatText }; createFlight = request;
+        // Keep transport uncertainty separate from presentation errors and editable inputs.
+        // Store a serialized body so every explicit replay sends exactly the original POST.
+        const original = replay || Object.freeze({ body: JSON.stringify(body), key: request.key });
+        unknownCreation = original;
         state.createStatus = 'loading'; state.operationError = null;
         const fresh = () => createFlight === request && request.createEpoch === createEpoch && taskFresh(request);
         try {
             const data = validatePrivateTaskSnapshot(await api.createTask(body, { signal: request.controller.signal, idempotencyKey: request.key }));
             if (!fresh()) return false;
-            if (switchBlocked(true) || state.materials?.dirty && state.materials.draftEpoch !== request.materialEpoch || state.chatText !== request.chatText) {
+            unknownCreation = null; state.creationOutcomeUnknown = false;
+            if (switchBlocked(true) || replay && state.task && switchDirty(true) ||
+                state.materials?.dirty && state.materials.draftEpoch !== request.materialEpoch || state.chatText !== request.chatText) {
                 // Creation is confirmed, but navigation must not drop a newer
                 // operation/draft that appeared while the POST was pending.
                 state.createOpen = false; state.createStatus = 'idle'; creationKey = null; createEpoch++; createTrigger = null;
@@ -202,8 +210,15 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             void loadResources(); return true;
         } catch (caught) {
             if (!fresh()) return false;
+            if (!replay && !['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(caught?.reason))
+                unknownCreation = null;
             state.createStatus = 'error'; failOperation('create', caught); return false;
-        } finally { if (createFlight === request) createFlight = null; }
+        } finally {
+            if (createFlight === request) {
+                createFlight = null; state.creationOutcomeUnknown = unknownCreation !== null;
+                if (state.creationOutcomeUnknown) state.createStatus = 'error';
+            }
+        }
     }
 
     const switchBlocked = (ownCreateRetry = false) => Boolean(unknownWorking || saveFlight || !ownCreateRetry && createFlight || state.taskWriteBusy || state.packageWriteBusy || state.materialProposalBusy ||
@@ -214,8 +229,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         state.materialProposals?.run && (!state.materialProposals.run.stage || ['PENDING', 'OUTLINE_RUNNING'].includes(state.materialProposals.run.stage)) ||
         state.packages?.downloadBusy || state.packages?.canReplay || state.packages?.status === 'uncertain' ||
         ['PENDING', 'CONTENT_VALIDATED', 'FILES_RUNNING', 'PACKAGE_READY'].includes(state.packages?.detail?.run?.stage) ||
-        !ownCreateRetry && state.createStatus === 'loading' || !ownCreateRetry && creationKey && state.createStatus === 'error' &&
-            ['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(state.operationError?.reason) ||
+        !ownCreateRetry && (unknownCreation || state.createStatus === 'loading') ||
         state.operationError?.operation === 'save' && ['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(state.operationError.reason));
     const switchDirty = (ignoreCreateForm = false) => Object.keys(teacherWorkingChanges(state)).length > 0 || state.materials?.dirty || state.chatText !== '' ||
         !state.task && state.requirementsEdited || !ignoreCreateForm && state.createOpen && JSON.stringify(state.createForm) !==
@@ -422,7 +436,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         if (!synchronizeTeacherWork(state, current)) return;
         if (previousActor && state.actor !== previousActor) replaceLocator(null);
         abortRead(); abortTasks(); abortHistory(); historyEpoch++; switchIntent = null; switchTrigger = null; unknownWorking = null;
-        creationKey = null; createEpoch++; invalidateFocus(); updateViewport();
+        creationKey = null; unknownCreation = null; createEpoch++; invalidateFocus(); updateViewport();
         if (!eligible()) return;
         const preferencesFound = readTeacherWorkPreferences(state, storage);
         if (!preferencesFound && width() < 1180) state.ui.taskRailCollapsed = true;
@@ -480,7 +494,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     const updateInput = text => updateTeacherInput(state, text);
     if (getCurrentScope()) onScopeDispose(() => {
-        disposed = true; abortRead(); abortTasks(); abortHistory(); historyEpoch++; switchIntent = null; unknownWorking = null; creationKey = null; createEpoch++; invalidateFocus();
+        disposed = true; abortRead(); abortTasks(); abortHistory(); historyEpoch++; switchIntent = null; unknownWorking = null; unknownCreation = null; creationKey = null; createEpoch++; invalidateFocus();
         synchronizeTeacherWork(state, { actor: null, role: null, authEpoch: state.authEpoch, authVerified: false, active: false });
         eventTarget?.removeEventListener?.('resize', updateViewport);
         eventTarget?.removeEventListener?.('popstate', locatorChanged);

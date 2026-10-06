@@ -24,7 +24,7 @@ export function createTeacherWorkState() {
     return { actor: null, role: null, authEpoch: 0, authVerified: false, active: false,
         task_id: null, input_revision: null, working_revision: null, view_epoch: 0, run_id: null,
         task: null, taskReadStatus: 'idle', taskConflict: false, edit_epoch: 0, requirementsEdited: false,
-        taskHistory: emptyTaskHistory(), taskSwitch: emptyTaskSwitch(), workingOutcomeUnknown: false,
+        taskHistory: emptyTaskHistory(), taskSwitch: emptyTaskSwitch(), workingOutcomeUnknown: false, creationOutcomeUnknown: false,
         createOpen: false, createForm: defaultCreateForm(), createStatus: 'idle',
         draftResourceIds: [], draftTargetSlideCount: 8, resourceCatalog: [], resourcesStatus: 'idle', resourceError: null,
         privateTaskAvailability: closedPrivateTasks(), privateChatAvailability: closedPrivateChat(), ...emptyTeacherChat(),
@@ -47,7 +47,7 @@ export function clearTeacherTaskSelection(state) {
 export function invalidateTeacherWork(state) {
     clearTeacherTaskSelection(state);
     state.taskHistory = emptyTaskHistory(); state.taskSwitch = emptyTaskSwitch();
-    state.workingOutcomeUnknown = false;
+    state.workingOutcomeUnknown = false; state.creationOutcomeUnknown = false;
     state.capabilities = { status: 'idle', data: null, reason: null };
     state.operationAvailability = closedOperations(); state.privateTaskAvailability = closedPrivateTasks(); state.privateChatAvailability = closedPrivateChat();
     state.createOpen = false; state.createForm = defaultCreateForm(); state.createStatus = 'idle';

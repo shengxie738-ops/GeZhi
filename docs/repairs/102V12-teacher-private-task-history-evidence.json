@@ -20,18 +20,18 @@
     "backend/tests/test_teacher_work_wiring.py": "79cbeeb3f976e9649c1264e171bdf32fbd1a9d8f5d70b2e66e71df019dd5eb6b",
     "frontend/index.html": "450311212b691882a816b8637571e8432b1678c408aaab74c1bfd32353941747",
     "frontend/js/api/teacherWork.js": "d0e5f39bc733803257f76d8e80b1aa99bfd927e692309d45b2cba72e9a35bf9e",
-    "frontend/js/components/teacher-work/TeacherWork.js": "4f3aea964cf0abd0673b1c5e3e0491dcc16187017cf5e8f5486ddc1d70c6f932",
-    "frontend/js/controllers/teacherWorkState.js": "d38f9774e0904e891eb621bd7a0e6af2135fabaafb920280bde13344b68d76ca",
-    "frontend/js/hooks/useTeacherWork.js": "0f4d368bdeba6e4ce916f3a707f8f311066ff2c21171f486abad412752a2ba38",
+    "frontend/js/components/teacher-work/TeacherWork.js": "e9294fd4f0de925d5f10191dabef2e3fdc3b4cd427a03cbadbb6dd5d6635f131",
+    "frontend/js/controllers/teacherWorkState.js": "8e970972b01e8afd996167e47d1d941e76eeec8f6a3f258bc9c924f63fd4166c",
+    "frontend/js/hooks/useTeacherWork.js": "63983adb6b87b75d990d2d1fdbb7a6b76254c9c8485757f2a709463521e4c9a0",
     "frontend/js/hooks/useTeacherWorkMaterials.js": "b7c293befbdb01f007e596d7740a44429aca39e27ebc54904c23242e31a2c5e7",
     "frontend/js/main.js": "ade6e68f3b381a74a9d215d160e107d9aec821bb56a103737bdcf1fc3149b908",
     "frontend/tests/teacherWorkAuthenticatedChat.test.mjs": "3cd0b318922f4ee4e7bbd0eda19b6b740565bb8da59289b865eaef199d270521",
     "frontend/tests/teacherWorkChat.test.mjs": "32c118dcb8c1a8e4509ade7a931b4c93fdfd70886539c0c4356849d57d1f1021",
     "frontend/tests/teacherWorkMaterialsLifecycle.test.mjs": "299cf50ecb0f13d91ec62d7fa0d70584fdc6318413e8f0df49ba9f0b88abfb34",
-    "frontend/tests/teacherWorkPrivateTasks.test.mjs": "530b8c30f4276603f2d7d66869f1e8b96e00285ccb96af3d5c9c11c6d9decf51",
-    "frontend/tests/teacherWorkTaskHistory.test.mjs": "c8faef87dc9821125995acc2aef6083a761528d6aa1faf118ee4084754b947fb"
+    "frontend/tests/teacherWorkPrivateTasks.test.mjs": "476ab0b10d7de24ed633b80a910a262e5d1197be24fceb825e6976e78ad739d9",
+    "frontend/tests/teacherWorkTaskHistory.test.mjs": "8cebc314a39c3af2f7ceaa9ad4caff14cebe8e04167139fc5728cf15864b7695"
   },
-  "source_manifest_sha256": "3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347",
+  "source_manifest_sha256": "07148f04d61869e2e2880d9121c6a6be7fb23e3d9deb77042df1ce4382644741",
   "source_hash_scope": "22 explicit code/test files; documents excluded to avoid self-reference",
   "preservation": {
     "original_workspace_pin": {
@@ -2316,7 +2316,9 @@
       "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-frozen-final.log",
       "byte_size": 316655,
       "sha256": "8e5e33205ebe03fd5f4ee1d801a5b6ff5489f6afd2c1159d255ac04af1094bb4"
-    }
+    },
+    "source_manifest_sha256": "3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347",
+    "scope_note": "Historical full teacherWork run at 501f8d780aa80fbea45ad4a0b800c1fa69019b7d; not rerun for the five-file unknown-create repair."
   },
   "complete_desktop": {
     "command": "TZ=Asia/Shanghai node frontend/scripts/desktopTestRunner.mjs",
@@ -2416,6 +2418,26 @@
       "path": "/tmp/gezhi-task-history-ttfgzlas/create-success-guard-green.log",
       "byte_size": 3132,
       "sha256": "10fb58180739009bc0e7ee4a4c01603a57b73449ef25185cff0e9ae2f3f5740e"
+    },
+    "second-review-create-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-create-red.log",
+      "byte_size": 13660,
+      "sha256": "a148d1fb049323bc446f1125deddad7cf1253c3d14004ef18087f5b2f9ba7c2e"
+    },
+    "second-review-create-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-create-green.log",
+      "byte_size": 8076,
+      "sha256": "c4d27a3b36866181cb0a3c2fc5dfb5fc4b5e1742ea399706bbcc97466387ae56"
+    },
+    "second-review-related-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-related-green.log",
+      "byte_size": 33126,
+      "sha256": "729e363af8d74ab2b2c7f47cd4f8e82ce2b896d0b85c7ae50a0e1a94d1806046"
+    },
+    "second-review-related-final.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-related-final.log",
+      "byte_size": 32434,
+      "sha256": "8bb60d2637025db508d3ffa4a4d31aa753ebbd2bcdc76d3a31c0f10e90b91ac8"
     }
   },
   "limits": [
@@ -2424,5 +2446,178 @@
     "Full app provider fixtures are synthetic at HTTP transport only; list calls provider zero times",
     "Overlapping phases/subsets/repeats must not be added",
     "Source contains existing username identity-incarnation contract; no account migration in this stage"
-  ]
+  ],
+  "frontend_followup": {
+    "source_manifest_sha256": "07148f04d61869e2e2880d9121c6a6be7fb23e3d9deb77042df1ce4382644741",
+    "cwd": "/workspace/GeZhi-task-history",
+    "command": "TZ=Asia/Shanghai node --import ./frontend/tests/fixtures/desktopShippedNodePreload.mjs --test --test-concurrency=1 --test-reporter=tap frontend/tests/teacherWorkTaskHistory.test.mjs frontend/tests/teacherWorkPrivateTasks.test.mjs frontend/tests/teacherWorkChat.test.mjs frontend/tests/teacherWorkAuthenticatedChat.test.mjs frontend/tests/teacherWorkMaterialsLifecycle.test.mjs",
+    "exit_code": 0,
+    "summary": {
+      "tests": 117,
+      "pass": 117,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-related-final.log",
+      "byte_size": 32434,
+      "sha256": "8bb60d2637025db508d3ffa4a4d31aa753ebbd2bcdc76d3a31c0f10e90b91ac8"
+    },
+    "history_summary": {
+      "tests": 32,
+      "pass": 32,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "history_log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-create-green.log",
+      "byte_size": 8076,
+      "sha256": "c4d27a3b36866181cb0a3c2fc5dfb5fc4b5e1742ea399706bbcc97466387ae56"
+    }
+  },
+  "independent_second_review": {
+    "review": "FAIL",
+    "test_result": "PASS",
+    "commit": "501f8d780aa80fbea45ad4a0b800c1fa69019b7d",
+    "canonical_manifest_sha256": "3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347",
+    "critical": 0,
+    "important": 1,
+    "minor": 0,
+    "tests": 24,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "exit_code": 0,
+    "pins_unchanged": true,
+    "report": "/tmp/gezhi-history-second-review-20261006/review.md",
+    "log": "/tmp/gezhi-history-second-review-20261006/history24.tap",
+    "reviewer": "/root/review_teacher_task_history",
+    "artifacts": [
+      {
+        "path": "/tmp/gezhi-history-second-review-20261006/review.md",
+        "byte_size": 4409,
+        "sha256": "7eefbc8d29ee1cd9c3366fc9be7fc3f565ae806bc527605b7068c4c281edd57f"
+      },
+      {
+        "path": "/tmp/gezhi-history-second-review-20261006/review.json",
+        "byte_size": 493,
+        "sha256": "4677ba54587447a92226dd74b227868c25a71dacf8e7f4c711133db73f58c5dc"
+      },
+      {
+        "path": "/tmp/gezhi-history-second-review-20261006/start-pins.json",
+        "byte_size": 2872,
+        "sha256": "242677c816d8079cb920f80138f120f0c85f3dd932fc5a69e593bbe20e401638"
+      },
+      {
+        "path": "/tmp/gezhi-history-second-review-20261006/end-pins.json",
+        "byte_size": 2872,
+        "sha256": "242677c816d8079cb920f80138f120f0c85f3dd932fc5a69e593bbe20e401638"
+      },
+      {
+        "path": "/tmp/gezhi-history-second-review-20261006/history24.tap",
+        "byte_size": 6432,
+        "sha256": "6c32e579a248a9ceb094e4e459fa1099bcbdb3fa36074fede12de4afffc29a03"
+      }
+    ]
+  },
+  "independent_third_review": {
+    "review": "PASS",
+    "test_result": "PASS",
+    "head": "501f8d780aa80fbea45ad4a0b800c1fa69019b7d",
+    "includes_uncommitted_five_file_repairs": true,
+    "canonical_manifest_sha256": "07148f04d61869e2e2880d9121c6a6be7fb23e3d9deb77042df1ce4382644741",
+    "critical": 0,
+    "important": 0,
+    "minor": 0,
+    "tests": 32,
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "exit_code": 0,
+    "pins_unchanged": true,
+    "backend_10_unchanged": true,
+    "report": "/tmp/gezhi-history-third-review-20261006/review.md",
+    "log": "/tmp/gezhi-history-third-review-20261006/history32.tap",
+    "reviewer": "/root/review_teacher_task_history",
+    "artifacts": [
+      {
+        "path": "/tmp/gezhi-history-third-review-20261006/review.md",
+        "byte_size": 4928,
+        "sha256": "3e55e9900e5b157223028b80eed7f71c06c488c2e53914d545034c308b3a5fe6"
+      },
+      {
+        "path": "/tmp/gezhi-history-third-review-20261006/review.json",
+        "byte_size": 571,
+        "sha256": "81c975f6a4adf3b9ac935975b33b480819bd584cf5f9e8292d89d8ffb62784f0"
+      },
+      {
+        "path": "/tmp/gezhi-history-third-review-20261006/start-pins.json",
+        "byte_size": 2908,
+        "sha256": "4200c5303068afddec4ed3ac2d173ef20ca9ab84ebe7518fe942e23ec0780091"
+      },
+      {
+        "path": "/tmp/gezhi-history-third-review-20261006/end-pins.json",
+        "byte_size": 2908,
+        "sha256": "4200c5303068afddec4ed3ac2d173ef20ca9ab84ebe7518fe942e23ec0780091"
+      },
+      {
+        "path": "/tmp/gezhi-history-third-review-20261006/history32.tap",
+        "byte_size": 8077,
+        "sha256": "66813589c318f3eb2756071954550341cc3ae4046231589200aa640743b71385"
+      }
+    ]
+  },
+  "unknown_creation_followup": {
+    "parent_commit": "501f8d780aa80fbea45ad4a0b800c1fa69019b7d",
+    "frozen_code_sha256": "07148f04d61869e2e2880d9121c6a6be7fb23e3d9deb77042df1ce4382644741",
+    "changed_code_test_files": [
+      "frontend/js/components/teacher-work/TeacherWork.js",
+      "frontend/js/controllers/teacherWorkState.js",
+      "frontend/js/hooks/useTeacherWork.js",
+      "frontend/tests/teacherWorkPrivateTasks.test.mjs",
+      "frontend/tests/teacherWorkTaskHistory.test.mjs"
+    ],
+    "all_380_native_backend_files_unchanged": true,
+    "backend_native_or_long_suite_rerun": false,
+    "red": {
+      "summary": {
+        "tests": 32,
+        "pass": 24,
+        "fail": 8,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "artifact": {
+        "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-create-red.log",
+        "byte_size": 13660,
+        "sha256": "a148d1fb049323bc446f1125deddad7cf1253c3d14004ef18087f5b2f9ba7c2e"
+      }
+    },
+    "old_expected_abort_failure": {
+      "summary": {
+        "tests": 117,
+        "pass": 116,
+        "fail": 1,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "artifact": {
+        "path": "/tmp/gezhi-task-history-ttfgzlas/second-review-related-green.log",
+        "byte_size": 33126,
+        "sha256": "729e363af8d74ab2b2c7f47cd4f8e82ce2b896d0b85c7ae50a0e1a94d1806046"
+      }
+    },
+    "ruling": "Unconfirmed create POST must keep the original body/key; fields and close wait for confirmation. The old auto-abort/new-key test is replaced by original completion followed by an explicit new body/key; no test skips or deletion.",
+    "pins": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/third-review-code-pin.json",
+      "byte_size": 552,
+      "sha256": "a720e993442abf91494852cff9d3f332471115da115cd1e3e82a4f30f7c4f594"
+    }
+  }
 }

@@ -247,24 +247,25 @@ export default {
                     <section v-if="state.createOpen" id="teacher-work-create" class="teacher-work-create"
                         aria-labelledby="teacher-work-create-heading" :aria-busy="state.createStatus === 'loading'">
                         <div class="teacher-work-section-heading"><h2 id="teacher-work-create-heading">新建私人备课任务</h2>
-                            <button type="button" class="teacher-work-button teacher-work-button--quiet" @click="$emit('close-create-task')">取消</button></div>
+                            <button type="button" class="teacher-work-button teacher-work-button--quiet"
+                                :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown" @click="$emit('close-create-task')">取消</button></div>
                         <p class="teacher-work-muted">填写任务信息，并选择至少一份已有资料。当前教学需求会作为未保存需求保留，创建后需手动保存</p>
                         <div class="teacher-work-create-fields">
                             <label for="teacher-work-create-title">任务标题
-                                <input id="teacher-work-create-title" type="text" :value="createForm.title" maxlength="200"
+                                <input id="teacher-work-create-title" type="text" :value="createForm.title" maxlength="200" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                     @input="$emit('update-create-form', { title: $event.target.value })"></label>
                             <label for="teacher-work-create-topic">教学主题
-                                <input id="teacher-work-create-topic" type="text" :value="createForm.topic" maxlength="200"
+                                <input id="teacher-work-create-topic" type="text" :value="createForm.topic" maxlength="200" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                     @input="$emit('update-create-form', { topic: $event.target.value })"></label>
                             <label for="teacher-work-create-audience">教学对象
-                                <input id="teacher-work-create-audience" type="text" :value="createForm.audience" maxlength="200"
+                                <input id="teacher-work-create-audience" type="text" :value="createForm.audience" maxlength="200" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                     @input="$emit('update-create-form', { audience: $event.target.value })"></label>
                             <div class="teacher-work-numeric-fields">
                                 <label for="teacher-work-create-duration">课时（分钟）
-                                    <input id="teacher-work-create-duration" type="number" min="1" max="600" step="1" :value="createForm.duration_minutes"
+                                    <input id="teacher-work-create-duration" type="number" min="1" max="600" step="1" :value="createForm.duration_minutes" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                         @input="$emit('update-create-form', { duration_minutes: Number($event.target.value) })"></label>
                                 <label for="teacher-work-create-slides">目标页数（6–12）
-                                    <input id="teacher-work-create-slides" type="number" min="6" max="12" step="1" :value="createForm.target_slide_count"
+                                    <input id="teacher-work-create-slides" type="number" min="6" max="12" step="1" :value="createForm.target_slide_count" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                         @input="$emit('update-create-form', { target_slide_count: Number($event.target.value) })"></label>
                             </div>
                         </div>
@@ -274,7 +275,7 @@ export default {
                             <p v-else-if="state.resourcesStatus === 'error'" class="teacher-work-input-error" role="alert">{{ teacherWorkReasonText(state.resourceError) }}</p>
                             <p v-else-if="!resources.length" class="teacher-work-muted">暂无可选择的已有资料</p>
                             <label v-for="resource in resources" :key="resource.id" class="teacher-work-resource-option">
-                                <input type="checkbox" :checked="createForm.resource_ids.includes(resource.id)"
+                                <input type="checkbox" :checked="createForm.resource_ids.includes(resource.id)" :disabled="state.createStatus === 'loading' || state.creationOutcomeUnknown"
                                     @change="$emit('toggle-resource', resource.id, true)">
                                 <span>{{ resource.name }}<small v-if="resource.course">{{ resource.course }}</small></span>
                             </label>
@@ -283,8 +284,10 @@ export default {
                         </fieldset>
                         <p v-if="state.operationError && state.operationError.operation === 'create'" class="teacher-work-input-error" role="alert">
                             {{ teacherWorkReasonText(state.operationError.reason) }}</p>
+                        <p v-if="state.creationOutcomeUnknown" class="teacher-work-input-error" role="status">
+                            创建结果尚未确认，请重试原创建请求。确认前保留原任务信息和当前需求。</p>
                         <button type="button" class="teacher-work-button teacher-work-button--primary"
-                            :disabled="!canCreateTask" @click="canCreateTask && $emit('create-task')">创建私人任务</button>
+                            :disabled="!canCreateTask" @click="canCreateTask && $emit('create-task')">{{ state.creationOutcomeUnknown ? '重试原创建请求' : '创建私人任务' }}</button>
                     </section>
                     <section v-if="selectedTask && !state.createOpen" class="teacher-work-selected-task" aria-labelledby="teacher-work-current-heading">
                         <h2 id="teacher-work-current-heading">{{ selectedTask.title }}</h2>
