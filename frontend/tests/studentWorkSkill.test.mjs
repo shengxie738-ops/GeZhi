@@ -6,6 +6,7 @@ import * as Vue from '../libs/vue.esm-browser.js';
 import * as pluginsRegistry from '../js/config/academicPlugins.js';
 import { buildChatPayload } from '../js/utils/chatModes.js';
 import { API_BASE_URL } from '../js/config/env.js';
+import { capabilityResponse, isCapabilityRequest } from './support/studentWorkCapabilitiesFixture.mjs';
 
 // Shipped Vue, production hooks and transport, synthetic fetch only. This file
 // never starts a server, imports main.js, opens a browser or calls a provider.
@@ -49,11 +50,12 @@ const success = () => ({
     history_receipt: { user_message_id: 801, assistant_message_id: 802 }
 });
 
-function setup({ withChat = false } = {}) {
+async function setup({ withChat = false } = {}) {
     const saved = Object.fromEntries(['localStorage', 'window', 'document', 'fetch', 'CustomEvent'].map(key => [key, globalThis[key]]));
     const savedWarn = console.warn, savedError = console.error;
     const storage = new Map([['token', 'skill-test-alice']]);
-    const calls = [], toasts = [], storageListeners = new Map(), unexpectedRequests = [];
+    const calls = [], capabilityCalls = [], toasts = [], storageListeners = new Map(), unexpectedRequests = [];
+    let capabilityHandler = () => capabilityResponse();
     let chatHandler = async call => call.path === '/chat/stream'
         ? streamResponse([{ type: 'token', content: 'source-grounded review' }, { type: 'complete', ...success() }])
         : jsonResponse(success());
@@ -72,6 +74,7 @@ function setup({ withChat = false } = {}) {
     console.warn = () => {};
     console.error = () => {};
     globalThis.fetch = async (rawUrl, options = {}) => {
+        if (isCapabilityRequest(rawUrl)) { capabilityCalls.push(options); assert.ok(capabilityCalls.length < 10); return capabilityHandler(); }
         const url = new URL(String(rawUrl));
         const base = new URL(API_BASE_URL);
         const path = url.pathname.slice(base.pathname.length);
@@ -93,8 +96,10 @@ function setup({ withChat = false } = {}) {
     const scope = Vue.effectScope(), user = Vue.ref({ username: 'Alice' }), input = Vue.ref('');
     const state = scope.run(() => withChat ? useChat(user, (...args) => toasts.push(args)) : null);
     const plugins = scope.run(() => usePlugins(user, (...args) => toasts.push(args), state?.inputText || input));
+    await settle();
     return {
-        scope, user, input, state, plugins, storage, calls, toasts,
+        scope, user, input, state, plugins, storage, calls, capabilityCalls, toasts,
+        respondCapabilities(handler) { capabilityHandler = handler; },
         chatCalls: () => calls.filter(call => ['/chat/stream', '/chat'].includes(call.path)),
         respondWith(handler) { chatHandler = handler; },
         connectSelection() {
@@ -120,8 +125,29 @@ test('student Work skill: only Academic Reviewer declares the executable academi
     assert.equal(reviewer().canSearchLive, false);
 });
 
+test('selected Reviewer discovery failure blocks real send without dropping input or choosing plain chat', async () => {
+    const h = await setup({ withChat: true });
+    try {
+        h.connectSelection();
+        h.state.agentMode.value = 'paper';
+        h.plugins.insertPluginToInput(reviewer());
+        h.state.inputText.value = 'Keep the supplied abstract';
+        h.respondCapabilities(() => Promise.reject(new Error('synthetic catalog outage')));
+        assert.equal(await h.plugins.refreshCapabilities({ force: true }), false);
+        assert.equal(await h.state.sendMessage(), false);
+        assert.equal(h.state.inputText.value, 'Keep the supplied abstract');
+        assert.deepEqual(h.plugins.activeInputPlugins.value.map(p => p.id), ['plugin_peer_review']);
+        assert.equal(h.chatCalls().length, 0);
+        assert.ok(h.toasts.some(([message]) => /能力清单.*重试/.test(message)));
+        h.plugins.removeActiveInputPlugin(reviewer().id);
+        await h.state.sendMessage();
+        assert.equal(h.chatCalls().length, 1);
+        assert.equal(Object.hasOwn(h.chatCalls()[0].payload, 'skill_ids'), false);
+    } finally { await h.close(); }
+});
+
 test('student Work skill: installed defaults do not select any chat skill', async () => {
-    const h = setup();
+    const h = await setup();
     try {
         assert.ok(h.plugins.installedPluginIds.value.includes(reviewer().id));
         assert.ok(h.plugins.selectedChatSkillIds, 'Plugin state must expose explicit chat-skill selection');
@@ -131,7 +157,7 @@ test('student Work skill: installed defaults do not select any chat skill', asyn
 });
 
 test('student Work skill: mounting reviewer selects once; ordinary labels and forged metadata never add skills', async () => {
-    const h = setup();
+    const h = await setup();
     try {
         h.plugins.insertPluginToInput(reviewer());
         h.plugins.insertPluginToInput(reviewer());
@@ -140,14 +166,14 @@ test('student Work skill: mounting reviewer selects once; ordinary labels and fo
         assert.deepEqual(h.plugins.selectedChatSkillIds.value, ['academic-review']);
         assert.equal(h.plugins.activeInputPlugins.value.filter(plugin => plugin.id === reviewer().id).length, 1);
         assert.ok(h.toasts.some(([message]) => /已选用.*Skill/.test(message)));
-        assert.ok(h.toasts.some(([message]) => /未启用执行能力/.test(message)));
+        assert.ok(h.toasts.some(([message]) => /未连接执行/.test(message)));
         assert.equal(h.calls.length, 0);
     } finally { await h.close(); }
 });
 
 for (const action of ['remove', 'uninstall', 'account', 'unmount']) {
     test(`student Work skill: ${action} clears explicit reviewer selection`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             h.plugins.insertPluginToInput(reviewer());
             if (action === 'remove') h.plugins.removeActiveInputPlugin(reviewer().id);
@@ -182,7 +208,7 @@ for (const skillIds of [['unknown-skill'], ['academic-review', 'academic-review'
 
 for (const overrides of [{ agentMode: 'tutor' }, { agentMode: 'rag' }, { forceRAG: true }, { repositoryId: 'repo-1' }, { courseDatasetIds: ['course-1'] }]) {
     test(`student Work skill: incompatible ${JSON.stringify(overrides)} is visibly rejected before chat fetch`, async () => {
-        const h = setup({ withChat: true });
+        const h = await setup({ withChat: true });
         try {
             await settle();
             h.connectSelection();
@@ -204,7 +230,7 @@ for (const overrides of [{ agentMode: 'tutor' }, { agentMode: 'rag' }, { forceRA
 }
 
 test('student Work skill: unselected installed reviewer keeps ordinary chat request free of skill IDs', async () => {
-    const h = setup({ withChat: true });
+    const h = await setup({ withChat: true });
     try {
         await settle(); h.connectSelection(); h.state.agentMode.value = 'chat';
         await h.state.sendMessage('ordinary request');
@@ -215,7 +241,7 @@ test('student Work skill: unselected installed reviewer keeps ordinary chat requ
 
 for (const mode of ['chat', 'paper']) {
     test(`student Work skill: ${mode} preserves submitted choice after delayed stream failure`, async () => {
-        const h = setup({ withChat: true }), pending = deferred();
+        const h = await setup({ withChat: true }), pending = deferred();
         try {
             await settle(); h.connectSelection(); h.plugins.insertPluginToInput(reviewer());
             h.state.agentMode.value = mode; h.state.paperActiveTab.value = 'dialog';
@@ -245,7 +271,7 @@ for (const mode of ['chat', 'paper']) {
 for (const transport of ['stream', 'nonstream']) {
     for (const error of ['model_error', 'model_unavailable', 'empty_response']) {
         test(`student Work skill: ${transport} ${error} preserves terminal status, explicit UI error and no saved assistant`, async () => {
-            const h = setup({ withChat: true });
+            const h = await setup({ withChat: true });
             try {
                 await settle(); h.connectSelection(); h.plugins.insertPluginToInput(reviewer()); h.state.agentMode.value = 'chat';
                 const status = error === 'empty_response' ? 'empty' : 'failed';
@@ -275,7 +301,7 @@ for (const transport of ['stream', 'nonstream']) {
 }
 
 test('student Work skill: authoritative context invalidation cannot be revived by a local model error', async () => {
-    const h = setup({ withChat: true });
+    const h = await setup({ withChat: true });
     try {
         await settle(); h.connectSelection(); h.plugins.insertPluginToInput(reviewer()); h.state.agentMode.value = 'chat';
         h.respondWith(() => streamResponse([
@@ -289,7 +315,7 @@ test('student Work skill: authoritative context invalidation cannot be revived b
 
 for (const eventType of ['model_unavailable', 'error']) {
     test(`student Work skill: unselected ${eventType} followed by authoritative saved reset remains a saved legacy reply`, async () => {
-        const h = setup({ withChat: true });
+        const h = await setup({ withChat: true });
         try {
             await settle(); h.connectSelection();
             h.state.agentMode.value = eventType === 'error' ? 'rag' : 'chat';
@@ -325,7 +351,7 @@ test('student Work skill: main wires explicit selection and template exposes bou
     const start = html.indexOf('<button v-else-if="selectedPluginDetail.executionKind');
     const end = html.indexOf('</button>', start);
     assert.ok(start >= 0 && end > start, 'Reviewer detail must expose a real explicit selection action');
-    const h = setup();
+    const h = await setup();
     try {
         h.plugins.openPluginDetail(reviewer());
         // Compile the real branch as an isolated conditional; a standalone

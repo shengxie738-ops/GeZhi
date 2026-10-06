@@ -1,6 +1,7 @@
 /**
  * academicPlugins.js - 开源学术论文检索插件与学术 Skills 注册表
  */
+import { capabilityForPlugin, registeredPluginId, isRegisteredPaperSource } from '../utils/studentWorkCapabilities.js';
 
 export const PLUGIN_CATEGORIES = [
     { id: 'all', name: '全部插件', icon: 'ph-squares-four' },
@@ -238,18 +239,20 @@ export function getDefaultInstalledPluginIds() {
 
 // Installation is inventory only. Chat execution requires an explicitly
 // mounted, registered capability that is still in this account's inventory.
-export function resolveChatSkillIds(activeInputPlugins = [], installedPlugins = []) {
-    const installedIds = new Set(installedPlugins.map(plugin => typeof plugin === 'string' ? plugin : plugin?.id));
-    return [...new Set(activeInputPlugins.map(plugin => getPluginById(plugin?.id))
-        .filter(plugin => installedIds.has(plugin?.id) && plugin?.executionKind === 'chat_skill')
-        .map(plugin => plugin.chatSkillId))];
+export function resolveChatSkillIds(activeInputPlugins = [], installedPlugins = [], facts = null) {
+    const installedIds = new Set(installedPlugins.map(registeredPluginId));
+    return [...new Set(activeInputPlugins.map(plugin => capabilityForPlugin(facts, plugin))
+        .filter(capability => installedIds.has(capability?.plugin_id) && capability?.implementation === 'prompt-only' && capability.implemented)
+        .map(capability => capability.skill_id))];
 }
 
-export function getPluginExecutionLabel(plugin) {
-    const registered = getPluginById(plugin?.id);
-    if (registered?.canSearchLive) return '真实论文检索来源';
-    if (registered?.executionKind === 'chat_skill') return '对话 Skill · AI 对话 / 论文研读';
-    return '仅标签 · 此工作台未启用执行能力';
+export function getPluginExecutionLabel(plugin, facts = null) {
+    const capability = capabilityForPlugin(facts, plugin);
+    if (capability?.implemented && capability.implementation === 'backend-proxy') return '用于论文检索 · 服务端代理';
+    if (capability?.implemented && capability.implementation === 'client-direct') return '用于论文检索 · 客户端直连';
+    if (capability?.implemented && capability.implementation === 'prompt-only') return '文本审阅 Skill · AI 对话 / 论文研读';
+    if (capability?.implementation === 'metadata-only') return '目录资料 · 未连接执行';
+    return '能力清单暂不可用 · 请重试';
 }
 
 /**
@@ -257,16 +260,19 @@ export function getPluginExecutionLabel(plugin) {
  * 优先级: 显式传入 plugin > 输入框挂载插件 > 已安装插件
  * 绝不隐式回退到默认来源
  */
-export function resolvePaperSourceKeys(plugin, activeInputPlugins = [], installedPlugins = []) {
-    if (plugin?.canSearchLive && plugin.searchSourceKey) {
-        return [plugin.searchSourceKey];
+export function resolvePaperSourceKeys(plugin, activeInputPlugins = [], installedPlugins = [], facts = null) {
+    const source = value => {
+        const capability = capabilityForPlugin(facts, value);
+        return capability?.implemented && ['backend-proxy', 'client-direct'].includes(capability.implementation) ? capability.source_key : '';
+    };
+    if (plugin !== null && plugin !== undefined) return source(plugin) ? [source(plugin)] : [];
+    if ((activeInputPlugins || []).some(item => !registeredPluginId(item))) return [];
+    const selected = (activeInputPlugins || []).filter(isRegisteredPaperSource);
+    if (selected.length) {
+        const mounted = selected.map(source);
+        return mounted.every(Boolean) ? [...new Set(mounted)] : [];
     }
-    const mounted = (activeInputPlugins || []).filter(item => item?.canSearchLive && item?.searchSourceKey);
-    if (mounted.length > 0) {
-        return [...new Set(mounted.map(item => item.searchSourceKey))];
-    }
-    const installed = (installedPlugins || []).filter(item => item?.canSearchLive && item?.searchSourceKey);
-    return [...new Set(installed.map(item => item.searchSourceKey))];
+    return [...new Set((installedPlugins || []).map(source).filter(Boolean))];
 }
 
 /**

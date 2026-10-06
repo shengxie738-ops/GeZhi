@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "scope": "student-work",
+  "items": [
+    {
+      "plugin_id": "plugin_arxiv",
+      "implementation": "backend-proxy",
+      "implemented": true,
+      "configuration_status": "not_required",
+      "live_verified": false,
+      "source_key": "arxiv",
+      "adapter_version": 1,
+      "allowed_modes": [
+        "paper_search"
+      ]
+    },
+    {
+      "plugin_id": "plugin_openalex",
+      "implementation": "backend-proxy",
+      "implemented": true,
+      "configuration_status": "not_required",
+      "live_verified": false,
+      "source_key": "openalex",
+      "adapter_version": 1,
+      "allowed_modes": [
+        "paper_search"
+      ]
+    },
+    {
+      "plugin_id": "plugin_crossref",
+      "implementation": "backend-proxy",
+      "implemented": true,
+      "configuration_status": "not_required",
+      "live_verified": false,
+      "source_key": "crossref",
+      "adapter_version": 1,
+      "allowed_modes": [
+        "paper_search"
+      ]
+    },
+    {
+      "plugin_id": "plugin_europepmc",
+      "implementation": "client-direct",
+      "implemented": true,
+      "configuration_status": "not_required",
+      "live_verified": false,
+      "source_key": "europepmc",
+      "adapter_version": 1,
+      "allowed_modes": [
+        "paper_search"
+      ]
+    },
+    {
+      "plugin_id": "plugin_semanticscholar",
+      "implementation": "metadata-only",
+      "implemented": false,
+      "configuration_status": "not_applicable",
+      "live_verified": false
+    },
+    {
+      "plugin_id": "plugin_zotero",
+      "implementation": "metadata-only",
+      "implemented": false,
+      "configuration_status": "not_applicable",
+      "live_verified": false
+    },
+    {
+      "plugin_id": "plugin_peer_review",
+      "implementation": "prompt-only",
+      "implemented": true,
+      "configuration_status": "checked_on_execution",
+      "live_verified": false,
+      "skill_id": "academic-review",
+      "policy_version": 1,
+      "allowed_modes": [
+        "chat",
+        "paper"
+      ],
+      "requirements": [
+        "owned_model"
+      ]
+    },
+    {
+      "plugin_id": "plugin_python_sandbox",
+      "implementation": "metadata-only",
+      "implemented": false,
+      "configuration_status": "not_applicable",
+      "live_verified": false
+    },
+    {
+      "plugin_id": "plugin_chart_renderer",
+      "implementation": "metadata-only",
+      "implemented": false,
+      "configuration_status": "not_applicable",
+      "live_verified": false
+    }
+  ],
+  "revision": "34503ce94f3436925b0100a7bdd4ce80ee7fbad464ee32b3689f65816799ff60"
+}

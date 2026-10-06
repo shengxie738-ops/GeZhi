@@ -8,10 +8,14 @@ import {
     PLUGIN_CATEGORIES,
     getPluginById,
     getDefaultInstalledPluginIds,
-    resolvePaperSourceKeys,
+    resolvePaperSourceKeys as resolveRegisteredPaperSourceKeys,
     readInstalledPluginIdsSafe
 } from '../js/config/academicPlugins.js';
 import { formatBibtex, normalizePaperItem } from '../js/api/academicSearch.js';
+import { parseStudentWorkCapabilities } from '../js/utils/studentWorkCapabilities.js';
+import { capabilityFixture } from './support/studentWorkCapabilitiesFixture.mjs';
+const facts = parseStudentWorkCapabilities(capabilityFixture());
+const resolvePaperSourceKeys = (plugin, mounted = [], installed = []) => resolveRegisteredPaperSourceKeys(plugin, mounted, installed, facts);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,10 +137,10 @@ test('academicPlugins: resolvePaperSourceKeys strictly avoids implicit fallback 
         ['arxiv']
     );
 
-    // 2. Explicit non-live plugin passed -> fall through to mounted/installed
+    // 2. Explicit metadata selection must not silently substitute other sources
     assert.deepEqual(
         resolvePaperSourceKeys(zotero, [arxiv, openalex], [crossref]),
-        ['arxiv', 'openalex']
+        []
     );
 
     // 3. No plugin passed, mounted live plugins exist -> return mounted sources

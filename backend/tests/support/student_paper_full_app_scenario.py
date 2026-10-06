@@ -160,6 +160,42 @@ class Scenario(PaperTransport):
         assert len(self.calls) - before <= 1
         return result
 
+    async def capabilities(self):
+        fixture = json.loads((Path(__file__).resolve().parents[1] / "fixtures/student_work_capabilities.json").read_text())
+        path = "/api/student/work/capabilities"
+        for owner in (ALICE, BOB, TEACHER):
+            response = await self.call("GET", path, owner=owner)
+            assert response.status_code == 200, response.text
+            assert response.json() == fixture
+            assert response.headers["cache-control"] == "private, no-store"
+        assert not self.calls and not self.sources and not self.rows()
+        assert (await self.call("GET", path, auth=False)).status_code == 401
+        for token in ("synthetic-invalid", create_access_token(ALICE, "student", expires_in=-1),
+                      create_access_token("deleted-account", "student")):
+            assert (await self.call("GET", path, token=token)).status_code == 401
+        # A signed role claim cannot substitute for the current canonical account.
+        assert (await self.call("GET", path, token=create_access_token(ALICE, "teacher"))).json() == fixture
+        with database.engine.begin() as connection:
+            connection.execute(UserAccount.__table__.delete().where(UserAccount.username == BOB))
+        assert (await self.call("GET", path, owner=BOB)).status_code == 401
+        assert not self.calls and not self.sources and not self.rows()
+        skill = next(e for e in fixture["items"] if e["implementation"] == "prompt-only")
+        for route in ("/api/chat", "/api/chat/stream"):
+            for changes in (dict(skill_ids=["python"]), dict(skill_ids=[skill["skill_id"]]*2),
+                            dict(skill_ids=[skill["skill_id"]], agent_mode="tutor"),
+                            dict(skill_ids=[skill["skill_id"]], force_rag=True),
+                            dict(skill_ids=[skill["skill_id"]], repository_id="forged")):
+                before = len(self.rows()), len(self.calls)
+                body = dict(message="Rejected before write", agent_mode="paper", conversation_id="invalid-capability")
+                response = await self.call("POST", route, body={**body, **changes})
+                assert response.status_code == 422
+                assert (len(self.rows()), len(self.calls)) == before
+            result = await self.dialog(route, "capability-review", skill_ids=[skill["skill_id"]])
+            assert result["history_saved"] and result["model_completion_status"] == "complete"
+            assert "academic-review" in self.calls[-1]["body"]["messages"][0]["content"]
+        self.observations.append(dict(kind="capabilities", canonical_auth=True, catalog_provider_calls=0,
+                                      invalid_before_write=True, rows=self.rows()))
+
     async def lifecycle(self):
         searched = await self.call("GET", "/api/academic/crossref/search", params=dict(query="https://doi.org/" + DOI))
         assert searched.status_code == 200

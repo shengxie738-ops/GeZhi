@@ -3465,7 +3465,7 @@
                                                 :disabled="thinkingAgent !== null || isSearchingPapers">
                                             <button type="submit" :disabled="!inputText.trim() || thinkingAgent !== null || isSearchingPapers">查询论文</button>
                                             <div class="work-query-sources">
-                                                <span>已安装检索来源：{{ installedPlugins.filter(p => p.canSearchLive).map(p => p.name).join(' · ') || '尚未安装' }}</span>
+                                                <span>已添加的检索来源：{{ installedPlugins.filter(p => p.canSearchLive).map(p => p.name).join(' · ') || '尚未添加' }}</span>
                                                 <details class="work-query-source-picker">
                                                     <summary>选择检索来源</summary>
                                                     <div class="work-query-source-options" role="group" aria-label="已安装检索来源">
@@ -3475,7 +3475,7 @@
                                                             {{ plugin.name }}
                                                             <span v-if="activeInputPlugins.some(tag => tag.id === plugin.id)">已选</span>
                                                         </button>
-                                                        <p v-if="!installedPlugins.some(p => p.canSearchLive)">尚未安装可检索来源</p>
+                                                        <p v-if="!installedPlugins.some(p => p.canSearchLive)">尚未添加可检索来源</p>
                                                     </div>
                                                 </details>
                                                 <button type="button" @click="openPluginMarket">管理来源与插件</button>
@@ -5294,6 +5294,11 @@
                         </div>
                     </div>
 
+                    <div class="px-6 py-3 text-xs text-slate-600 flex items-center justify-between gap-3" aria-live="polite">
+                        <span>{{ capabilityStatus === 'loading' ? '正在确认能力清单…' : (capabilityError || '添加与挂载仅保存选择偏好；执行能力以服务端清单为准。') }}</span>
+                        <button type="button" @click="refreshCapabilities({ force: true })" :disabled="capabilityStatus === 'loading'"
+                            class="text-violet-700 font-bold disabled:opacity-50">刷新能力清单</button>
+                    </div>
                     <!-- 分类 Tab 栏 -->
                     <div class="px-6 py-2 bg-slate-100/60 border-b border-slate-100 flex items-center gap-2 overflow-x-auto">
                         <button v-for="cat in PLUGIN_CATEGORIES" :key="cat.id"
@@ -5387,7 +5392,7 @@
                                     <button v-if="plugin.canSearchLive" type="button" @click="openPaperSearchDrawer(plugin)"
                                         class="text-xs font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100/90 border border-violet-100/80 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer">
                                         <i class="ph ph-lightning"></i>
-                                        <span>在线检索试用</span>
+                                        <span>论文检索</span>
                                     </button>
                                 </div>
                             </div>
@@ -5417,7 +5422,7 @@
                                 <div class="flex items-center gap-2">
                                     <h3 class="text-lg font-bold text-slate-900">{{ selectedPluginDetail.name }}</h3>
                                     <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
-                                        {{ selectedPluginDetail.version }}
+                                        目录资料 {{ selectedPluginDetail.version }}
                                     </span>
                                 </div>
                                 <p class="text-xs text-slate-500 mt-0.5">{{ selectedPluginDetail.tagline }}</p>
@@ -5452,6 +5457,9 @@
                             <p class="text-sm text-slate-700 leading-relaxed bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100">
                                 {{ selectedPluginDetail.detailDescription }}
                             </p>
+                            <p class="text-xs text-violet-700 mt-2">{{ getPluginExecutionLabel(selectedPluginDetail) }}</p>
+                            <p v-if="selectedPluginDetail.implementation === 'metadata-only'" class="text-xs text-slate-600 mt-2">以下为目录资料，当前未连接执行；添加标签不会安装或运行这些工具。</p>
+                            <p v-if="selectedPluginDetail.capabilityVersion" class="text-xs text-slate-600 mt-2">GeZhi 实现版本 {{ selectedPluginDetail.capabilityVersion }} · {{ selectedPluginDetail.liveVerified ? '服务端记录已完成外部验收' : '外部服务尚未完成真实验收' }}</p>
                         </div>
 
                         <!-- 功能特性列表 -->
@@ -5488,14 +5496,14 @@
                             @click="openPaperSearchFromDetail()"
                             class="px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
                             <i class="ph ph-lightning text-sm"></i>
-                            <span>在线检索试用</span>
+                            <span>论文检索</span>
                         </button>
                         <button v-else-if="selectedPluginDetail.executionKind === 'chat_skill'" type="button"
                             @click="selectChatSkillFromDetail()"
                             class="px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-800 rounded-xl text-xs font-bold">
                             选用研读 Skill（发送时执行）
                         </button>
-                        <p v-else class="text-xs text-slate-500">此工作台未启用执行能力，仅可添加标签</p>
+                        <p v-else class="text-xs text-slate-500">{{ getPluginExecutionLabel(selectedPluginDetail) }}；仅可添加标签</p>
 
                         <div class="flex items-center gap-2">
                             <button type="button" @click="closePluginDetail"

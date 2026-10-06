@@ -17,9 +17,9 @@ import xml.etree.ElementTree as ET
 from run_teacher_work_full_app import BACKEND, REPOSITORY, isolated_environment, source_hashes
 
 
-SCENARIOS = ("lifecycle", "failures", "lifetime", "ack")
+SCENARIOS = ("lifecycle", "failures", "lifetime", "ack", "capabilities")
 STUDENT_TESTS = (
-    "test_student_paper_reading.py", "test_student_work_skills.py", "test_student_work_skills_asgi.py",
+    "test_student_paper_reading.py", "test_student_work_skills.py", "test_student_work_skills_asgi.py", "test_student_work_capabilities.py",
     "test_student_work_skill_completion.py", "test_agent_paper_runtime.py", "test_agent_workflow_routing.py",
     "test_work_context_repair.py", "test_chat_history.py", "test_academic_search_repairs.py",
     "test_academic_boundaries.py", "test_academic_parser_bounds_source.py", "test_auth_guards.py",
@@ -40,7 +40,8 @@ def hashes():
         for path in sorted(directory.rglob("*")):
             if path.is_file() and path.suffix in suffixes:
                 result[str(path.relative_to(REPOSITORY))] = sha256(path.read_bytes()).hexdigest()
-    for name in ("frontend/package.json", "frontend/package-lock.json", "frontend/index.html", "frontend/libs/vue.esm-browser.js"):
+    for name in ("frontend/package.json", "frontend/package-lock.json", "frontend/index.html", "frontend/libs/vue.esm-browser.js",
+                 "backend/tests/fixtures/student_work_capabilities.json"):
         result[name] = sha256((REPOSITORY / name).read_bytes()).hexdigest()
     return result
 

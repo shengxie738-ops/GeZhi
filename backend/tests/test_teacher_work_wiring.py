@@ -249,7 +249,14 @@ def test_t3_router_registration_has_no_startup_or_student_mutation():
     assert "repository.get_private_snapshot" in _calls(factory) and "binding.finish_private_snapshot" in _calls(factory)
     raw, api = _bytes(API), _tree(API)
     assert sha256(raw[:2607]).hexdigest() == "16b532420e27e110136e6c9b96825248ac38bd760484bc085b410046f409c7a0"
-    assert len(api.body) == len(ast.parse(raw[:2607]).body) + 2
+    # The sealed legacy prefix and teacher registration stay intact. Student
+    # capability discovery appends only its separate import and read-only router.
+    sealed_count = len(ast.parse(raw[:2607]).body) + 2
+    assert len(api.body) == sealed_count + 2
+    assert [ast.unparse(node) for node in api.body[sealed_count:]] == [
+        "from app.api.endpoints import student_work",
+        "api_router.include_router(student_work.router, prefix='', tags=['student-work'])",
+    ]
     imports = [item for item in api.body if isinstance(item, ast.ImportFrom) and item.module == "app.api.endpoints" and any(alias.name == "teacher_work" for alias in item.names)]
     assert len(imports) == 1
     includes = [item for item in ast.walk(api) if isinstance(item, ast.Call) and _name(item.func) == "api_router.include_router" and item.args and _name(item.args[0]) == "teacher_work.router"]

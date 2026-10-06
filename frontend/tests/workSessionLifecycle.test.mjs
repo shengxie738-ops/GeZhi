@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { withCapabilities } from './support/studentWorkCapabilitiesFixture.mjs';
 import assert from 'node:assert/strict';
 import { effectScope, ref, nextTick } from 'vue';
 import { useChat } from '../js/hooks/useChat.js';
@@ -16,7 +17,7 @@ function setup(handler = async()=>response({status:'success',data:[]})) {
     globalThis.localStorage = {getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
     globalThis.window = {localStorage,location:{hostname:'localhost'},dispatchEvent(){},addEventListener(){},confirm:()=>true};
     globalThis.document = {querySelector:()=>null};
-    globalThis.fetch = handler;
+    globalThis.fetch = withCapabilities(handler);
     clearAcademicCache();
 }
 function makeHook(hook, username='Alice') {
@@ -78,7 +79,7 @@ test('late save receipt after account switch cannot touch next user storage or v
 });
 
 for(const action of ['closePaperSearchDrawer','closePluginMarket','account','noSources','emptyQuery']) test(`paper request is invalidated by ${action}`, async()=>{
-    setup(); const {state,user,scope}=makeHook(usePlugins); state.installedPluginIds.value=[]; state.activeInputPlugins.value=[{id:'mock',canSearchLive:true,searchSourceKey:'crossref'}];
+    setup(); storage.set('token','synthetic-source-owner'); const {state,user,scope}=makeHook(usePlugins); await settle(); state.installedPluginIds.value=[]; state.activeInputPlugins.value=[{id:'plugin_crossref'}];
     const pending=deferred(); ACADEMIC_PROVIDERS.crossref.search=()=>pending.promise;
     const searching=state.executePaperSearch('private topic');
     if(action==='account') user.value={username:'Bob'};

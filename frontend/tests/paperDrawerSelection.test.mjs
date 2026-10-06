@@ -5,6 +5,7 @@ import test from 'node:test';
 import * as Vue from '../libs/vue.esm-browser.js';
 import { getPluginById } from '../js/config/academicPlugins.js';
 import { API_BASE_URL } from '../js/config/env.js';
+import { capabilityResponse, isCapabilityRequest } from './support/studentWorkCapabilitiesFixture.mjs';
 import { clearAcademicCache } from '../js/api/academic/aggregate.js';
 
 // Use the frontend's shipped Vue runtime, without installing packages or
@@ -68,7 +69,7 @@ function deferred() {
     return { promise: new Promise(done => { resolve = done; }), resolve: value => resolve(value) };
 }
 
-function setup() {
+async function setup() {
     const saved = {
         localStorage: globalThis.localStorage,
         window: globalThis.window,
@@ -86,6 +87,7 @@ function setup() {
     // This transport never falls through to native fetch. Abort is intentionally
     // ignored by delayed responses to exercise the production stale-result fence.
     globalThis.fetch = async (url, options = {}) => {
+        if (isCapabilityRequest(url)) return capabilityResponse();
         const request = { ...sourceRequest(url), signal: options.signal };
         calls.push(request);
         assert.ok(calls.length <= 12, 'Synthetic transport request budget exceeded');
@@ -95,6 +97,7 @@ function setup() {
     const scope = Vue.effectScope();
     const user = Vue.ref({ username: 'Alice' });
     const state = scope.run(() => usePlugins(user, () => {}, Vue.ref('')));
+    await settle();
     return {
         state, user, storage, calls,
         respondWith(fn) { responseFor = fn; },
@@ -127,7 +130,7 @@ function installedDetailTrialButton(state) {
 
 for (const source of SOURCES) {
     test(`paper drawer: installed detail action preserves ${source} and closes detail before explicit search`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             const plugin = getPluginById(`plugin_${source}`);
             h.state.openPluginDetail(plugin);
@@ -144,7 +147,7 @@ for (const source of SOURCES) {
     });
 
     test(`paper drawer: opening ${source} starts idle and clears the previous result surface without transport`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             const plugin = getPluginById(`plugin_${source}`);
             h.state.restorePaperSearch({
@@ -174,7 +177,7 @@ for (const source of SOURCES) {
     });
 
     test(`paper drawer: explicit ${source} submit executes the retained real adapter and displays its paper`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             h.state.openPaperSearchDrawer(getPluginById(`plugin_${source}`));
             await settle();
@@ -196,7 +199,7 @@ for (const source of SOURCES) {
     });
 
     test(`paper drawer: empty ${source} submit stays idle without any provider request`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             h.state.openPaperSearchDrawer(getPluginById(`plugin_${source}`));
             await settle();
@@ -217,7 +220,7 @@ for (const source of SOURCES) {
 
 for (const source of ['crossref', 'europepmc']) {
     test(`paper drawer: reopening during delayed ${source} search aborts it and fences its late results`, async () => {
-        const h = setup();
+        const h = await setup();
         const waiting = deferred();
         let search;
         try {
@@ -227,6 +230,7 @@ for (const source of ['crossref', 'europepmc']) {
             clearAcademicCache();
             h.respondWith(() => waiting.promise);
             search = h.state.executePaperSearch(QUERY);
+            await settle();
             assert.equal(h.calls.length, 1);
             const oldSignal = h.calls[0].signal;
             h.state.openPaperSearchDrawer(getPluginById('plugin_arxiv'));
@@ -251,7 +255,7 @@ for (const source of ['crossref', 'europepmc']) {
     });
 
     test(`paper drawer: account switch during delayed ${source} search clears selection and rejects the old response`, async () => {
-        const h = setup();
+        const h = await setup();
         const waiting = deferred();
         let search;
         try {
@@ -261,6 +265,7 @@ for (const source of ['crossref', 'europepmc']) {
             clearAcademicCache();
             h.respondWith(() => waiting.promise);
             search = h.state.executePaperSearch(QUERY);
+            await settle();
             assert.equal(h.calls.length, 1);
             const oldSignal = h.calls[0].signal;
             h.storage.set('token', 'drawer-test-bob');
@@ -291,7 +296,7 @@ for (const [label, selection] of [
     ['unregistered', { id: 'plugin_unknown', canSearchLive: true, searchSourceKey: 'crossref' }]
 ]) {
     test(`paper drawer: rejects unavailable ${label} selection without substituting installed sources`, async () => {
-        const h = setup();
+        const h = await setup();
         try {
             h.state.openPaperSearchDrawer(getPluginById('plugin_crossref'));
             await settle();

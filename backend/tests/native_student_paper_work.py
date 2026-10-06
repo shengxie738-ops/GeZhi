@@ -10,7 +10,7 @@ from tests.native_teacher_work_full_app import full_app_server, full_app_db
 from tests.run_teacher_work_full_app import isolated_environment, run_application_process
 
 
-SCENARIOS = ("lifecycle", "failures", "lifetime", "ack")
+SCENARIOS = ("lifecycle", "failures", "lifetime", "ack", "capabilities")
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)

@@ -1,14 +1,14 @@
 /**
  * usePlugins.js - 插件市场与论文检索控制器 Hook
  */
-import { ref, computed, watch, onScopeDispose, getCurrentScope } from 'vue';
+import { ref, shallowRef, customRef, computed, watch, onScopeDispose, getCurrentScope } from 'vue';
 import {
     ACADEMIC_PLUGINS,
     PLUGIN_CATEGORIES,
     getPluginById,
     getDefaultInstalledPluginIds,
     resolveChatSkillIds,
-    getPluginExecutionLabel,
+    getPluginExecutionLabel as describePluginExecution,
     resolvePaperSourceKeys,
     readInstalledPluginIdsSafe
 } from '../config/academicPlugins.js';
@@ -19,6 +19,9 @@ import {
     copyCitation,
     downloadCitation
 } from '../api/academicSearch.js';
+import { clearAcademicCache } from '../api/academic/aggregate.js';
+import { fetchStudentWorkCapabilities } from '../api/studentWorkCapabilities.js';
+import { parseStudentWorkCapabilities, capabilityForPlugin, registeredPluginId, isRegisteredPaperSource } from '../utils/studentWorkCapabilities.js';
 import { interpretPaperSearchResponse } from '../controllers/workspaceSendRouter.js';
 
 const SOURCE_LABELS = {
@@ -41,7 +44,11 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     const showPluginMarketModal = ref(false);
     const selectedCategory = ref('all');
     const marketSearchKeyword = ref('');
-    const selectedPluginDetail = ref(null);
+    const selectedPluginDetailRaw = ref(null);
+    const selectedPluginDetail = computed({
+        get: () => selectedPluginDetailRaw.value ? decoratePlugin(selectedPluginDetailRaw.value) : null,
+        set: value => { selectedPluginDetailRaw.value = value; }
+    });
 
     // 论文检索状态与控制器
     const activeSearchPlugin = ref(null);
@@ -68,15 +75,23 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     let currentPaperSearchController = null;
     let sessionGeneration = 0;
     let searchGeneration = 0;
+    let pendingSearchGeneration = 0;
+    const capabilityFacts = shallowRef(null);
+    const capabilityStatus = ref('idle');
+    const capabilityError = ref('');
+    const readToken = () => typeof localStorage === 'undefined' ? '' : localStorage.getItem('token') || '';
+    let capabilityOwner = getSessionId(), capabilityToken = readToken(), capabilitySequence = 0;
+    let capabilityExpiry = 0, capabilityController = null, capabilityPending = null, disposed = false;
     const emptySearchSummary = () => ({ totalFetched: 0, totalRejected: 0, totalBeforeMerge: 0, totalAfterMerge: 0, snapshotCount: 0, snapshotComplete: true, effectiveQuery: '', queryTranslated: false });
-    const cancelPaperSearch = ({ reset = false } = {}) => {
+    const cancelPaperSearch = ({ reset = false, invalidatePending = true, preserveQuery = false } = {}) => {
         searchGeneration += 1;
+        if (invalidatePending) pendingSearchGeneration += 1;
         currentPaperSearchController?.abort();
         currentPaperSearchController = null;
         isSearchingPapers.value = false;
         if (paperSearchStatus.value === 'searching') paperSearchStatus.value = 'cancelled';
         if (reset) {
-            paperSearchQuery.value = '';
+            if (!preserveQuery) paperSearchQuery.value = '';
             paperSearchResults.value = [];
             paperSearchStatus.value = 'idle';
             paperSourceStatuses.value = [];
@@ -85,7 +100,89 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             selectedPaper.value = null;
         }
     };
+    const synchronizeCapabilities = () => {
+        const owner = getSessionId(), token = readToken();
+        if (owner === capabilityOwner && token === capabilityToken) return;
+        capabilityOwner = owner;
+        capabilityToken = token;
+        capabilitySequence += 1;
+        sessionGeneration += 1;
+        capabilityController?.abort();
+        capabilityController = null;
+        capabilityPending = null;
+        capabilityFacts.value = null;
+        capabilityExpiry = 0;
+        capabilityStatus.value = 'idle';
+        capabilityError.value = '';
+        activeInputPlugins.value = [];
+        activeSearchPlugin.value = null;
+        cancelPaperSearch({ reset: true });
+        clearAcademicCache();
+    };
+    const freshCapabilities = () => {
+        synchronizeCapabilities();
+        return !disposed && getSessionId() !== 'guest' && readToken() && Date.now() < capabilityExpiry ? capabilityFacts.value : null;
+    };
+    const refreshCapabilities = ({ force = false } = {}) => {
+        synchronizeCapabilities();
+        if (disposed || getSessionId() === 'guest' || !readToken()) return Promise.resolve(false);
+        if (capabilityPending && !force) return capabilityPending;
+        if (!force && freshCapabilities()) return Promise.resolve(true);
+        capabilityController?.abort();
+        const controller = new AbortController(), sequence = ++capabilitySequence;
+        capabilityController = controller;
+        const owner = capabilityOwner, token = capabilityToken;
+        const current = () => !disposed && sequence === capabilitySequence && owner === getSessionId() && token === readToken();
+        capabilityStatus.value = 'loading';
+        capabilityError.value = '';
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const operation = (async () => {
+            try {
+                const raw = await fetchStudentWorkCapabilities({ signal: controller.signal, token });
+                if (!current()) return false;
+                const facts = parseStudentWorkCapabilities(raw);
+                if (!facts) throw new Error('能力清单格式或版本不受支持，请重试或明确取消所选 Skill');
+                if (capabilityFacts.value?.revision !== facts.revision) {
+                    if (capabilityFacts.value) cancelPaperSearch({ reset: true, invalidatePending: false, preserveQuery: true });
+                    clearAcademicCache();
+                }
+                capabilityFacts.value = facts;
+                capabilityExpiry = Date.now() + 60000;
+                capabilityStatus.value = 'ready';
+                return true;
+            } catch (_error) {
+                if (!current()) return false;
+                capabilityFacts.value = null;
+                capabilityExpiry = 0;
+                capabilityStatus.value = 'error';
+                capabilityError.value = '能力清单暂不可用，请重试或明确取消所选 Skill';
+                cancelPaperSearch({ reset: true, invalidatePending: false, preserveQuery: true });
+                clearAcademicCache();
+                return false;
+            } finally {
+                clearTimeout(timer);
+                if (current()) {
+                    capabilityController = null;
+                    capabilityPending = null;
+                }
+            }
+        })();
+        capabilityPending = operation;
+        return operation;
+    };
+    const capabilityStorageChanged = event => {
+        if (event?.key !== null && event?.key !== 'token') return;
+        synchronizeCapabilities();
+        void refreshCapabilities();
+    };
+    if (typeof window !== 'undefined') window.addEventListener?.('storage', capabilityStorageChanged);
     if (getCurrentScope()) onScopeDispose(() => {
+        disposed = true;
+        capabilitySequence += 1;
+        capabilityController?.abort();
+        if (typeof window !== 'undefined') window.removeEventListener?.('storage', capabilityStorageChanged);
+        capabilityFacts.value = null;
+        clearAcademicCache();
         cancelPaperSearch();
         activeInputPlugins.value = [];
     });
@@ -116,7 +213,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         }
     }, { deep: true, flush: 'sync' });
 
-    watch(() => currentUser?.value?.username, () => {
+    watch(() => [currentUser?.value, currentUser?.value?.username], () => {
         sessionGeneration += 1;
         cancelPaperSearch({ reset: true });
         activeInputPlugins.value = [];
@@ -127,28 +224,52 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         marketSearchKeyword.value = '';
         selectedCategory.value = 'all';
         installedPluginIds.value = readInstalledIds();
+        synchronizeCapabilities();
+        void refreshCapabilities();
     }, { flush: 'sync' });
 
     const installedPlugins = computed(() => {
         return installedPluginIds.value
             .map(id => getPluginById(id))
-            .filter(Boolean);
+            .filter(Boolean).map(decoratePlugin);
     });
 
-    const selectedPaperSourceKeys = computed(() => {
-        return resolvePaperSourceKeys(activeSearchPlugin.value, activeInputPlugins.value, installedPlugins.value);
-    });
-    const selectedChatSkillIds = computed(() => resolveChatSkillIds(activeInputPlugins.value, installedPlugins.value));
+    const selectedPaperSourceKeys = customRef(track => ({
+        get() { track(); return resolvePaperSourceKeys(activeSearchPlugin.value, activeInputPlugins.value, installedPlugins.value, freshCapabilities()); }, set() {}
+    }));
+    const selectedChatSkillIds = customRef(track => ({
+        get() {
+            track();
+            const facts = freshCapabilities();
+            const intent = activeInputPlugins.value.some(plugin => registeredPluginId(plugin) === 'plugin_peer_review'
+                && installedPluginIds.value.includes('plugin_peer_review'));
+            const ids = resolveChatSkillIds(activeInputPlugins.value, installedPluginIds.value, facts);
+            if (intent && !ids.length) throw new Error('能力清单暂不可用或所选 Skill 不可用，请重试或明确取消所选 Skill');
+            return ids;
+        }, set() {}
+    }));
+    function decoratePlugin(plugin) {
+        const capability = capabilityForPlugin(freshCapabilities(), plugin);
+        const canSearchLive = Boolean(capability?.implemented && ['backend-proxy', 'client-direct'].includes(capability.implementation));
+        return { ...plugin, canSearchLive, searchSourceKey: canSearchLive ? capability.source_key : '',
+            executionKind: capability?.implementation === 'prompt-only' ? 'chat_skill' : '',
+            chatSkillId: capability?.implementation === 'prompt-only' ? capability.skill_id : '',
+            implementation: capability?.implementation || 'unavailable',
+            capabilityVersion: capability?.policy_version || capability?.adapter_version || null,
+            liveVerified: capability?.live_verified === true };
+    }
+    const getPluginExecutionLabel = plugin => describePluginExecution(plugin, freshCapabilities());
 
     const isPluginInstalled = (pluginId) => {
         return installedPluginIds.value.includes(pluginId);
     };
 
     const installPlugin = (pluginId) => {
+        if (!registeredPluginId(pluginId)) return false;
         if (!installedPluginIds.value.includes(pluginId)) {
             installedPluginIds.value.push(pluginId);
             const plugin = getPluginById(pluginId);
-            if (showToast) showToast(`已成功添加插件「${plugin?.name || pluginId}」`, 'success');
+            if (showToast) showToast(`已添加「${plugin?.name || pluginId}」偏好；执行能力以服务端清单为准`, 'success');
         }
     };
 
@@ -177,11 +298,12 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
                 p.detailDescription.toLowerCase().includes(kw) ||
                 p.features.some(f => f.toLowerCase().includes(kw));
             return matchesCategory && matchesKeyword;
-        });
+        }).map(decoratePlugin);
     });
 
     const openPluginMarket = () => {
         showPluginMarketModal.value = true;
+        void refreshCapabilities();
     };
 
     const closePluginMarket = () => {
@@ -192,7 +314,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const openPluginDetail = (plugin) => {
-        selectedPluginDetail.value = plugin;
+        selectedPluginDetail.value = getPluginById(registeredPluginId(plugin)) || null;
     };
 
     const closePluginDetail = () => {
@@ -200,8 +322,15 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const openPaperSearchDrawer = (plugin) => {
-        const registered = getPluginById(plugin?.id);
-        if (!registered?.canSearchLive || !registered.searchSourceKey) return false;
+        const registered = getPluginById(registeredPluginId(plugin));
+        if (!registered) return false;
+        const facts = freshCapabilities();
+        if (!facts && isRegisteredPaperSource(registered)) {
+            if (showToast) showToast('能力清单已失效或暂不可用，正在重新确认，请确认后重试', 'info');
+            void refreshCapabilities();
+            return false;
+        }
+        if (!resolvePaperSourceKeys(registered, [], [], facts).length) return false;
         cancelPaperSearch({ reset: true });
         activeSearchPlugin.value = registered;
         return true;
@@ -236,10 +365,21 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             if (showToast) showToast('请输入检索关键词', 'error');
             return false;
         }
+        const ownerBeforeDiscovery = getSessionId(), sessionBeforeDiscovery = sessionGeneration;
+        const searchBeforeDiscovery = pendingSearchGeneration;
         paperSearchQuery.value = query;
+        if (!await refreshCapabilities()) {
+            if (!disposed && ownerBeforeDiscovery === getSessionId() && sessionBeforeDiscovery === sessionGeneration && searchBeforeDiscovery === pendingSearchGeneration) {
+                paperSearchError.value = '能力清单暂不可用，请重试';
+                paperSearchStatus.value = 'error';
+            }
+            return false;
+        }
+        if (ownerBeforeDiscovery !== getSessionId() || sessionBeforeDiscovery !== sessionGeneration
+            || searchBeforeDiscovery !== pendingSearchGeneration || disposed) return false;
 
         const targetPlugin = pluginOverride || activeSearchPlugin.value;
-        const sourceKeys = resolvePaperSourceKeys(targetPlugin, activeInputPlugins.value, installedPlugins.value);
+        const sourceKeys = resolvePaperSourceKeys(targetPlugin, activeInputPlugins.value, installedPlugins.value, freshCapabilities());
 
         if (!sourceKeys || sourceKeys.length === 0) {
             paperSearchError.value = '请先添加至少一个可实时检索的论文来源';
@@ -390,7 +530,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
     };
 
     const insertPluginToInput = (plugin) => {
-        const registered = getPluginById(plugin?.id);
+        const registered = getPluginById(registeredPluginId(plugin));
         if (!registered) return false;
         if (!isPluginInstalled(registered.id)) {
             installPlugin(registered.id);
@@ -399,15 +539,16 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
             activeInputPlugins.value.push(registered);
         }
         showAddMenu.value = false;
-        if (showToast) showToast(registered.canSearchLive ? `已选用 @${registered.name} 检索来源`
-            : registered.executionKind === 'chat_skill' ? `已选用 @${registered.name} Skill（仅用于 AI 对话或论文研读，发送时执行）`
-                : `已添加 @${registered.name} 标签（此工作台未启用执行能力）`, 'info');
+        const capability = capabilityForPlugin(freshCapabilities(), registered);
+        if (showToast) showToast(capability?.source_key ? `已选用 @${registered.name}（用于论文检索）`
+            : registered.id === 'plugin_peer_review' ? `已选用 @${registered.name} Skill；发送前确认能力清单，仅用于 AI 对话或论文研读`
+                : `已添加 @${registered.name} 标签（目录资料，未连接执行）`, 'info');
         return true;
     };
 
     const selectChatSkillFromDetail = () => {
         const plugin = selectedPluginDetail.value;
-        if (getPluginById(plugin?.id)?.executionKind !== 'chat_skill') return false;
+        if (registeredPluginId(plugin) !== 'plugin_peer_review') return false;
         if (!insertPluginToInput(plugin)) return false;
         closePluginDetail();
         closePluginMarket();
@@ -427,6 +568,7 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         marketSearchKeyword.value = '';
     };
 
+    void refreshCapabilities();
     return {
         ACADEMIC_PLUGINS,
         PLUGIN_CATEGORIES,
@@ -447,6 +589,9 @@ export function usePlugins(currentUser, showToast, inputTextRef) {
         selectedPaper,
         selectedPaperSourceKeys,
         selectedChatSkillIds,
+        capabilityStatus,
+        capabilityError,
+        refreshCapabilities,
         getPluginExecutionLabel,
         showAddMenu,
         activeInputPlugins,

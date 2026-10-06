@@ -2,6 +2,8 @@
 
 
 ACADEMIC_REVIEW_SKILL_ID = "academic-review"
+ACADEMIC_REVIEW_POLICY_VERSION = 1
+ACADEMIC_REVIEW_ALLOWED_MODES = ("chat", "paper")
 
 
 def classify_student_skill_completion(response_metadata) -> str:
@@ -31,7 +33,7 @@ def resolve_student_work_skill(
         return None
     if len(skill_ids) != 1 or skill_ids[0] != ACADEMIC_REVIEW_SKILL_ID:
         raise ValueError("only one academic-review skill may be selected")
-    if agent_mode not in {"chat", "paper"}:
+    if agent_mode not in ACADEMIC_REVIEW_ALLOWED_MODES:
         raise ValueError("academic-review is available only in ordinary AI chat or paper reading")
     if force_rag or repository_id or is_diagnosis:
         raise ValueError("academic-review cannot be combined with knowledge retrieval or code diagnosis")
