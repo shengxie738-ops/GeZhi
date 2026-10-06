@@ -292,7 +292,7 @@ def observe_teacher_work_mysql(connection) -> MysqlSchemaReport:
         TEACHER_WORK_CONTRACT_HASH, TEACHER_WORK_SCHEMA_VERSION, UNIQUE_CONSTRAINTS, inspect_teacher_work_schema)
 
 
-def observe_teacher_work_mysql_contract(connection, contract, contract_hash, version_number, unique_constraints, inspect_contract) -> MysqlSchemaReport:
+def observe_teacher_work_mysql_contract(connection, contract, contract_hash, version_number, unique_constraints, inspect_contract, *, component=TEACHER_WORK_COMPONENT) -> MysqlSchemaReport:
     """Read only schema-scoped catalogs and the verified target ledger shape."""
     dialect = getattr(getattr(connection, "dialect", None), "name", "unknown")
     expected = contract["tables"]
@@ -336,13 +336,13 @@ def observe_teacher_work_mysql_contract(connection, contract, contract_hash, ver
         ledger_present, ledger_valid = False, False
         ledger_name = TeacherWorkSchemaVersion.__tablename__
         if ledger_name in observation["tables"] and not any(i.kind == "resolved_table" for i in issues):
-            rows = list(connection.execute(text("SELECT component, version, contract_hash, completed_at FROM teacher_work_schema_versions WHERE component=:component LIMIT 2"), {"component": TEACHER_WORK_COMPONENT}).mappings().all())
+            rows = list(connection.execute(text("SELECT component, version, contract_hash, completed_at FROM teacher_work_schema_versions WHERE component=:component LIMIT 2"), {"component": component}).mappings().all())
             ledger_present = bool(rows)
             if len(rows) == 1:
                 receipt = rows[0]
                 version, digest = receipt.get("version"), receipt.get("contract_hash")
                 observation.update(version=version, contract_hash=digest)
-                ledger_valid = (receipt.get("component") == TEACHER_WORK_COMPONENT and type(version) is int and version == version_number and type(digest) is str and digest == contract_hash and type(receipt.get("completed_at")) is datetime)
+                ledger_valid = (receipt.get("component") == component and type(version) is int and version == version_number and type(digest) is str and digest == contract_hash and type(receipt.get("completed_at")) is datetime)
         return MysqlSchemaReport(dialect, missing, tuple(issues), observation, ledger_present, ledger_valid, inspect_contract(observation).ready)
     except Exception:
         # No raw driver text, identifiers, credentials or partial certification.
