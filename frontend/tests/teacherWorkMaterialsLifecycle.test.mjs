@@ -134,10 +134,14 @@ test('source drift normalization and unavailable legacy materials never falsely 
 });
 
 test('materials double-click and auth task view races reject stale results and retain same-session task draft', async () => {
+    const { clearTeacherTaskSelection } = await import('../js/controllers/teacherWorkState.js');
     for (const change of ['task', 'actor', 'epoch', 'view', 'dispose']) {
         const pending = deferred(), calls = []; const h = await harness({ saveMaterials: (...args) => { calls.push(args); return pending.promise; } });
         try { fill(h.hook); const sending = h.hook.saveMaterials(); assert.equal(await h.hook.saveMaterials(), false); assert.equal(calls.length, 1);
-            if (change === 'task') await h.hook.readTask(taskB);
+            if (change === 'task') {
+                assert.equal(await h.hook.readTask(taskB), false); assert.equal(calls[0][2].signal.aborted, false);
+                clearTeacherTaskSelection(h.hook.state); await h.hook.readTask(taskB);
+            }
             if (change === 'actor') h.refs.actor.value = 'teacher-b';
             if (change === 'epoch') h.refs.authEpoch.value++;
             if (change === 'view') h.refs.currentView.value = 't_lesson_prep';
@@ -271,6 +275,7 @@ test('parent revision change aborts a materials read and immediately leaves expl
 });
 
 test('read and approval completions are fenced across actor role auth task view and disposal boundaries', async () => {
+    const { clearTeacherTaskSelection } = await import('../js/controllers/teacherWorkState.js');
     for (const operation of ['read', 'approve']) for (const change of ['actor', 'role', 'epoch', 'task', 'view', 'dispose']) {
         const pending = deferred(), calls = []; let armed = false;
         const h = await harness({ getTask: async id => task(id, 2), getMaterials: async (...args) => {
@@ -282,7 +287,12 @@ test('read and approval completions are fenced across actor role auth task view 
             if (change === 'actor') h.refs.actor.value = 'teacher-b';
             if (change === 'role') h.refs.role.value = 'student';
             if (change === 'epoch') h.refs.authEpoch.value++;
-            if (change === 'task') await h.hook.readTask(taskB);
+            if (change === 'task') {
+                if (operation === 'approve') {
+                    assert.equal(await h.hook.readTask(taskB), false); assert.equal(calls[0].at(-1).signal.aborted, false);
+                }
+                clearTeacherTaskSelection(h.hook.state); await h.hook.readTask(taskB);
+            }
             if (change === 'view') h.refs.currentView.value = 't_lesson_prep';
             if (change === 'dispose') h.scope.stop();
             assert.equal(calls[0].at(-1).signal.aborted, true, operation + '/' + change);

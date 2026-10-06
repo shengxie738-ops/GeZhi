@@ -332,6 +332,34 @@ class PrivateWorkingSnapshot(FrozenDTO):
         return self
 
 
+class PrivateTaskSummary(FrozenDTO):
+    """Navigation metadata only; contains no operation or authorization facts."""
+    task_id: UUID
+    title: ShortText
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+
+
+class PrivateTaskList(FrozenDTO):
+    items: tuple[PrivateTaskSummary, ...] = Field(max_length=50)
+    has_more: bool
+    next_before: UUID | None
+
+    @model_validator(mode="after")
+    def stable_page(self):
+        keys = [(item.created_at, item.task_id.int) for item in self.items]
+        if any(left <= right for left, right in zip(keys, keys[1:])):
+            raise ValueError("strict descending immutable keyset required")
+        if len({item.task_id for item in self.items}) != len(self.items):
+            raise ValueError("distinct task IDs required")
+        if self.has_more:
+            if not self.items or self.next_before != self.items[-1].task_id:
+                raise ValueError("last served item must anchor the next page")
+        elif self.next_before is not None:
+            raise ValueError("finished page has no cursor")
+        return self
+
+
 class PrivateTaskSnapshot(FrozenDTO):
     """Full internal authorization anchor, plus an explicit public projection."""
     task: WorkTaskDTO

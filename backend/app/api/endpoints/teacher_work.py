@@ -91,6 +91,36 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         except Exception:
             return _response(503, "TEACHER_WORK_UNAVAILABLE")
 
+    @router.get("/tasks")
+    def list_tasks(request: Request, authorization: str | None = Header(default=None)):
+        try:
+            values = request.query_params
+            if any(name not in ("limit", "before") for name in values) or any(
+                    len(values.getlist(name)) != 1 for name in values):
+                raise ValueError("one bounded query value required")
+            raw_limit = values.get("limit", "20")
+            if not raw_limit.isascii() or not raw_limit.isdecimal():
+                raise ValueError("integer limit required")
+            limit = int(raw_limit)
+            if not 1 <= limit <= 50:
+                raise ValueError("bounded page required")
+            raw_before = values.get("before")
+            before = UUID(raw_before) if raw_before is not None else None
+            if before is not None and str(before) != raw_before:
+                raise ValueError("canonical cursor required")
+        except (ValueError, TypeError):
+            return _response(422, "INVALID_PRIVATE_TASK_LIST")
+        try:
+            with request_owner_factory(authorization, mode="read", operation="private_read") as session:
+                binding = dependencies_factory(session, authorization=authorization, mode="read",
+                    operation="private_read", clock=_clock, new_uuid=uuid4)
+                result = binding.finish_private_task_list(limit=limit, before=before)
+                return _response(200, "ok", result.model_dump(mode="json"))
+        except (WorkAuthorizationError, WorkRepositoryError) as error:
+            return _response(error.status_code, error.code)
+        except Exception:
+            return _response(503, "TEACHER_WORK_UNAVAILABLE")
+
     @router.post("/tasks")
     async def create_task(request: Request, authorization: str | None = Header(default=None),
                           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):

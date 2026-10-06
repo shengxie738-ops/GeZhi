@@ -49,6 +49,66 @@ def require_private_schema(transport):
         raise WorkAuthorizationError("TEACHER_WORK_SCHEMA_UNAVAILABLE", 503) from None
 
 
+def read_private_task_list(session, subject, *, limit, before):
+    """Bounded, read-only owner namespace checks and immutable keyset projection.
+
+    Caller holds the current account lock and owns the physical private read
+    transaction. Never initialize an owner lease or load task/draft payloads.
+    """
+    from datetime import timezone
+    from uuid import UUID
+    from sqlalchemy import select, and_, or_, func
+    from app.models.teacher_work import OwnerRunLease, WorkTask
+    from app.schemas.teacher_work import PrivateTaskList, PrivateTaskSummary
+    from app.services.teacher_work.authorization import WorkAuthorizationError
+    if type(limit) is not int or not 1 <= limit <= 50 or before is not None and type(before) is not UUID:
+        raise WorkAuthorizationError("INVALID_PRIVATE_TASK_LIST", 422)
+    with session.no_autoflush:
+        leases = session.execute(select(OwnerRunLease.owner, OwnerRunLease.owner_storage_id)
+            .where(OwnerRunLease.owner == subject).with_for_update().limit(2)).all()
+        exact_owner = and_(WorkTask.owner_subject == subject,
+            func.binary(WorkTask.owner_subject) == func.binary(subject))
+        if not leases:
+            if session.execute(select(WorkTask.task_id).where(exact_owner).limit(1)).first():
+                raise WorkAuthorizationError("OWNER_NAMESPACE_MISMATCH", 503)
+            if before is not None:
+                raise WorkAuthorizationError("NOT_FOUND", 404)
+            return PrivateTaskList(items=(), has_more=False, next_before=None)
+        if len(leases) != 1 or leases[0].owner != subject:
+            raise WorkAuthorizationError("OWNER_NAMESPACE_MISMATCH", 503)
+        namespace = leases[0].owner_storage_id
+        try:
+            if type(namespace) is not str or str(UUID(namespace)) != namespace:
+                raise ValueError("canonical namespace required")
+        except (ValueError, TypeError):
+            raise WorkAuthorizationError("OWNER_NAMESPACE_MISMATCH", 503) from None
+        if session.execute(select(WorkTask.task_id).where(exact_owner,
+                func.binary(WorkTask.owner_storage_id) != func.binary(namespace)).limit(1)).first():
+            raise WorkAuthorizationError("OWNER_NAMESPACE_MISMATCH", 503)
+        scope = (exact_owner, func.binary(WorkTask.owner_storage_id) == func.binary(namespace),
+                 WorkTask.institution_id.is_(None), WorkTask.offering_id.is_(None))
+        statement = select(WorkTask.task_id, WorkTask.title, WorkTask.created_at, WorkTask.updated_at).where(*scope)
+        if before is not None:
+            anchor = session.execute(select(WorkTask.created_at, WorkTask.task_id)
+                .where(*scope, WorkTask.task_id == str(before)).limit(1)).first()
+            if anchor is None:
+                raise WorkAuthorizationError("NOT_FOUND", 404)
+            statement = statement.where(or_(WorkTask.created_at < anchor.created_at,
+                and_(WorkTask.created_at == anchor.created_at, WorkTask.task_id < anchor.task_id)))
+        rows = session.execute(statement.order_by(WorkTask.created_at.desc(), WorkTask.task_id.desc()).limit(limit + 1)).all()
+        items = []
+        for row in rows[:limit]:
+            task_id = UUID(row.task_id)
+            if str(task_id) != row.task_id:
+                raise WorkAuthorizationError("TEACHER_WORK_UNAVAILABLE", 503)
+            items.append(PrivateTaskSummary(task_id=task_id, title=row.title,
+                created_at=row.created_at.replace(tzinfo=timezone.utc),
+                updated_at=row.updated_at.replace(tzinfo=timezone.utc)))
+        has_more = len(rows) > limit
+        return PrivateTaskList(items=tuple(items), has_more=has_more,
+            next_before=items[-1].task_id if has_more else None)
+
+
 def prepare_legacy_save(session, subject, draft_id):
     """No namespace creation; all checks precede the original payload write.
 

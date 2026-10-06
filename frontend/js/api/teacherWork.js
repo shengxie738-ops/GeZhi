@@ -136,6 +136,22 @@ export function validatePrivateTaskSnapshot(data) {
         needs_normalization_fields: [...data.working.needs_normalization_fields] } };
 }
 
+export function validatePrivateTaskList(data) {
+    if (!exact(data, ['items', 'has_more', 'next_before']) || !Array.isArray(data.items) || data.items.length > 50 ||
+        typeof data.has_more !== 'boolean' || data.next_before !== null && (!isTeacherWorkTaskId(data.next_before) || data.next_before !== data.next_before.toLowerCase()) ||
+        (data.has_more ? !data.items.length || data.next_before !== data.items.at(-1)?.task_id : data.next_before !== null)) throw error('invalid_response');
+    const ids = new Set(); let previous = null;
+    const items = data.items.map(item => {
+        if (!exact(item, ['task_id', 'title', 'created_at', 'updated_at']) || !isTeacherWorkTaskId(item.task_id) ||
+            item.task_id !== item.task_id.toLowerCase() || !text(item.title, 200, true) || !utcInstant(item.created_at) ||
+            !utcInstant(item.updated_at) || ids.has(item.task_id)) throw error('invalid_response');
+        const order = utcOrder(item.created_at);
+        if (previous && (previous.order < order || previous.order === order && previous.id <= item.task_id)) throw error('invalid_response');
+        previous = { order, id: item.task_id }; ids.add(item.task_id); return { ...item };
+    });
+    return { items, has_more: data.has_more, next_before: data.next_before };
+}
+
 export function validatePrivateTaskCreate(body) {
     const required = ['title', 'topic', 'audience', 'resource_ids', 'scope'];
     const optional = ['duration_minutes', 'target_slide_count', 'offering_id'];
@@ -283,6 +299,17 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
                 materialsDecoder(taskId, 'approve', validated), materialsBodyMaximumBytes, true, false, materialsBodyMaximumBytes, true);
         },
         listResources: (options = {}) => send('/teacher/lesson-prep/resources', 'GET', undefined, options, catalog, 2 * 1024 * 1024),
+        async listTasks(options = {}) {
+            if (!object(options) || Object.keys(options).some(name => !['limit', 'before', 'signal'].includes(name)) ||
+                !integer(options.limit === undefined ? 20 : options.limit, 1, 50) ||
+                Object.hasOwn(options, 'before') && (!isTeacherWorkTaskId(options.before) || options.before !== options.before.toLowerCase())) throw error('invalid_input');
+            const limit = options.limit === undefined ? 20 : options.limit;
+            const query = new URLSearchParams({ limit: String(limit), ...(Object.hasOwn(options, 'before') ? { before: options.before } : {}) });
+            return send(`/teacher/work/tasks?${query}`, 'GET', undefined, options.signal === undefined ? {} : { signal: options.signal }, data => {
+                const page = validatePrivateTaskList(data);
+                if (page.items.length > limit) throw error('invalid_response'); return page;
+            });
+        },
         async createTask(body, options = {}) { return send('/teacher/work/tasks', 'POST', validatePrivateTaskCreate(body), options, validatePrivateTaskSnapshot, 65536, true); },
         async getTask(taskId, options = {}) {
             if (!isTeacherWorkTaskId(taskId)) throw error('invalid_input');

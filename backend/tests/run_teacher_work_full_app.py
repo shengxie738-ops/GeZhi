@@ -69,13 +69,13 @@ def run_application_process(command, owned, cwd, environment, *, timeout=120):
     return receipt
 
 
-def main():
+def main(*, scenarios=SCENARIOS, test_file="native_teacher_work_full_app.py"):
     root = Path(tempfile.mkdtemp(prefix="gezhi-tw-full-app-"))
     cwd = root / "blank-cwd"
     cwd.mkdir(mode=0o700)
     environment = isolated_environment(root)
     command = [sys.executable, "-B", "-m", "pytest", "-q", "-s", "-x",
-               "-p", "no:cacheprovider", str(BACKEND / "tests/native_teacher_work_full_app.py"),
+               "-p", "no:cacheprovider", str(BACKEND / "tests" / test_file),
                "--junitxml=" + str(root / "pytest.xml")]
     manifest = {
         "git_base": subprocess.check_output(["git", "rev-parse", "HEAD"],
@@ -105,12 +105,13 @@ def main():
         receipts = sorted(root.glob("*/scenario.json"))
         cleanups = sorted(root.glob("*-database-cleanup.json"))
         mysql_cleanup = root / "mysql-cleanup.json"
-        cleanup_confirmed = (len(cleanups) == len(SCENARIOS) and mysql_cleanup.is_file()
+        cleanup_confirmed = (len(cleanups) == len(scenarios) and mysql_cleanup.is_file()
             and all(json.loads(p.read_text())["dropped"] is True for p in cleanups)
             and all(json.loads(mysql_cleanup.read_text()).get(field) is True for field in (
                 "stopped", "removed_with_volumes", "baseline_preserved", "container_absence_verified", "volume_absence_verified")))
-        valid = (totals == dict(tests=len(SCENARIOS), failures=0, errors=0, skipped=0)
-                 and len(receipts) == len(SCENARIOS) and manifest["source_unchanged"] and cleanup_confirmed)
+        valid = (totals == dict(tests=len(scenarios), failures=0, errors=0, skipped=0)
+                 and len(receipts) == len(scenarios) and manifest["source_unchanged"] and cleanup_confirmed
+                 and {json.loads(p.read_text())["scenario"] for p in receipts} == set(scenarios))
         manifest["scenario_receipts"] = [str(p) for p in receipts]
         manifest["cleanup_confirmed"] = cleanup_confirmed
     (root / "run.json").write_text(json.dumps(manifest, indent=2) + "\n")

@@ -1,5 +1,5 @@
 import { reactive, watch, nextTick, getCurrentScope, onScopeDispose } from 'vue';
-import { teacherWorkApi, isTeacherWorkTaskId, validatePrivateTaskCreate, validatePrivateTaskSnapshot } from '../api/teacherWork.js';
+import { teacherWorkApi, isTeacherWorkTaskId, validatePrivateTaskCreate, validatePrivateTaskSnapshot, validatePrivateTaskList } from '../api/teacherWork.js';
 import { createTeacherWorkState, synchronizeTeacherWork, captureRequest, acceptResponse, applyCapabilityResult,
     updateTeacherInput, clearTeacherTaskSelection, applyTeacherTaskSnapshot, teacherWorkingChanges,
     patchTeacherWorkPreferences, readTeacherWorkPreferences, writeTeacherWorkPreferences } from '../controllers/teacherWorkState.js';
@@ -27,7 +27,8 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     const materialProposals = useTeacherWorkMaterialProposals(state, { api, newIdempotencyKey,
         scheduler: chatScheduler, pollLimit: chatPollLimit, adoptMaterialsProposal: materials.adoptMaterialsProposal });
     let disposed = false, flight = null, taskReadFlight = null, saveFlight = null, createFlight = null, resourceFlight = null,
-        creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null;
+        creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null,
+        historyFlight = null, historyEpoch = 0, switchIntent = null, switchTrigger = null, unknownWorking = null;
     const eligible = () => !disposed && captureRequest(state) !== null;
     const usable = target => target?.isConnected && (!target.getClientRects || target.getClientRects().length > 0);
     const query = selector => documentTarget?.querySelector?.(selector) || null;
@@ -49,6 +50,37 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         if (name === 'resources' && previous && state.resourcesStatus === 'loading') state.resourcesStatus = 'idle';
     };
     const abortTasks = () => { for (const name of ['read', 'save', 'create', 'resources']) abortSlot(name); };
+    const abortHistory = () => { const previous = historyFlight; historyFlight = null; previous?.controller.abort(); };
+    const historyScope = () => eligible() ? JSON.stringify([state.actor, state.role, state.authEpoch, historyEpoch]) : null;
+    async function loadTaskHistory(older = false) {
+        if (!eligible() || !state.privateTaskAvailability.read || typeof api.listTasks !== 'function' ||
+            older && (historyFlight || !state.taskHistory.has_more)) return false;
+        abortHistory();
+        const request = { controller: new AbortController(), scope: historyScope(), before: older ? state.taskHistory.next_before : null };
+        historyFlight = request; state.taskHistory.status = 'loading'; state.taskHistory.error = null;
+        const fresh = () => historyFlight === request && !request.controller.signal.aborted && historyScope() === request.scope && state.privateTaskAvailability.read;
+        try {
+            const page = validatePrivateTaskList(await api.listTasks({ limit: 20,
+                ...(request.before ? { before: request.before } : {}), signal: request.controller.signal }));
+            if (!fresh()) return false;
+            const combined = older ? [...state.taskHistory.items, ...page.items] : page.items;
+            // Validate ordering/duplicates across the page boundary as well.
+            if (older && state.taskHistory.items.at(-1)?.task_id !== request.before) throw { reason: 'invalid_response' };
+            if (new Set(combined.map(item => item.task_id)).size !== combined.length) throw { reason: 'invalid_response' };
+            for (let start = 0; start < combined.length; start += 49) {
+                validatePrivateTaskList({ items: combined.slice(start, start + 50), has_more: false, next_before: null });
+            }
+            state.taskHistory.items = combined; state.taskHistory.has_more = page.has_more;
+            state.taskHistory.next_before = page.next_before; state.taskHistory.status = 'ready'; return true;
+        } catch (caught) {
+            if (!fresh()) return false;
+            state.taskHistory.status = 'error'; state.taskHistory.error = ['network_error', 'invalid_response', 'auth_required',
+                'teacher_required', 'task_not_found', 'TEACHER_WORK_UNAVAILABLE'].includes(caught?.reason) ? caught.reason : 'request_failed';
+            return false;
+        } finally { if (historyFlight === request) historyFlight = null; }
+    }
+    const reloadTaskHistory = () => loadTaskHistory();
+    const loadOlderTasks = () => loadTaskHistory(true);
     const taskLocator = () => {
         try {
             const query = new URLSearchParams(location?.search || ''), ids = query.getAll('teacher_work_task');
@@ -93,6 +125,12 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
 
     function openCreateTask(event) {
         if (!eligible() || !state.privateTaskAvailability.create) return false;
+        if (switchBlocked() || !state.createOpen && state.task && switchDirty()) {
+            showTaskSwitch({ action: 'open-create', id: null }, event); return false;
+        }
+        return performOpenCreateTask(event);
+    }
+    function performOpenCreateTask(event) {
         if (state.createOpen) { void focusAfter(() => query('#teacher-work-create-title'), ++focusEpoch, () => state.createOpen); return true; }
         abortTasks(); abortRead(); createTrigger = triggerFrom(event);
         state.createOpen = true; state.createStatus = 'idle';
@@ -128,6 +166,9 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     async function createTask() {
         if (!eligible() || state.packageWriteBusy || !state.privateTaskAvailability.create || createFlight || typeof api.createTask !== 'function') return false;
+        if (switchBlocked(true) || state.task && switchDirty(true)) {
+            showTaskSwitch({ action: 'submit-create', id: null }, null, switchBlocked(true)); return false;
+        }
         let body;
         try { body = validatePrivateTaskCreate({ ...state.createForm, scope: 'private' }); }
         catch (caught) { state.createStatus = 'error'; failOperation('create', caught); return false; }
@@ -135,12 +176,20 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             try { creationKey = newIdempotencyKey(); } catch { creationKey = null; }
             if (typeof creationKey !== 'string' || !creationKey) { failOperation('create', { reason: 'request_failed' }); return false; }
         }
-        const request = { ...makeTaskRequest(), createEpoch, key: creationKey }; createFlight = request;
+        const request = { ...makeTaskRequest(), createEpoch, key: creationKey,
+            materialEpoch: state.materials?.draftEpoch, chatText: state.chatText }; createFlight = request;
         state.createStatus = 'loading'; state.operationError = null;
         const fresh = () => createFlight === request && request.createEpoch === createEpoch && taskFresh(request);
         try {
             const data = validatePrivateTaskSnapshot(await api.createTask(body, { signal: request.controller.signal, idempotencyKey: request.key }));
             if (!fresh()) return false;
+            if (switchBlocked(true) || state.materials?.dirty && state.materials.draftEpoch !== request.materialEpoch || state.chatText !== request.chatText) {
+                // Creation is confirmed, but navigation must not drop a newer
+                // operation/draft that appeared while the POST was pending.
+                state.createOpen = false; state.createStatus = 'idle'; creationKey = null; createEpoch++; createTrigger = null;
+                showTaskSwitch({ action: 'task', id: data.task_id }, null, switchBlocked(true));
+                state.taskSwitch.created = true; void reloadTaskHistory(); return true;
+            }
             abortSlot('read'); abortSlot('save'); abortSlot('resources');
             const requirementsDraft = state.composerText, requirementsEdited = state.edit_epoch !== request.editEpoch;
             if (!applyTeacherTaskSnapshot(state, request.token, data)) return false;
@@ -157,7 +206,69 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         } finally { if (createFlight === request) createFlight = null; }
     }
 
-    async function readTask(id, { preserveEdits = false, minimumRevisions = null } = {}) {
+    const switchBlocked = (ownCreateRetry = false) => Boolean(unknownWorking || saveFlight || !ownCreateRetry && createFlight || state.taskWriteBusy || state.packageWriteBusy || state.materialProposalBusy ||
+        ['sending', 'cancelling', 'checking', 'uncertain'].includes(state.chatStatus) || state.chatRetryAvailable ||
+        state.chatRun && (!state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(state.chatRun.stage)) ||
+        ['saving', 'approving', 'uncertain'].includes(state.materials?.status) || state.materials?.retryAvailable ||
+        ['generating', 'cancelling', 'checking', 'uncertain'].includes(state.materialProposals?.status) || state.materialProposals?.retryAvailable ||
+        state.materialProposals?.run && (!state.materialProposals.run.stage || ['PENDING', 'OUTLINE_RUNNING'].includes(state.materialProposals.run.stage)) ||
+        state.packages?.downloadBusy || state.packages?.canReplay || state.packages?.status === 'uncertain' ||
+        ['PENDING', 'CONTENT_VALIDATED', 'FILES_RUNNING', 'PACKAGE_READY'].includes(state.packages?.detail?.run?.stage) ||
+        !ownCreateRetry && state.createStatus === 'loading' || !ownCreateRetry && creationKey && state.createStatus === 'error' &&
+            ['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(state.operationError?.reason) ||
+        state.operationError?.operation === 'save' && ['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(state.operationError.reason));
+    const switchDirty = (ignoreCreateForm = false) => Object.keys(teacherWorkingChanges(state)).length > 0 || state.materials?.dirty || state.chatText !== '' ||
+        !state.task && state.requirementsEdited || !ignoreCreateForm && state.createOpen && JSON.stringify(state.createForm) !==
+            JSON.stringify({ title: '', topic: '', audience: '', duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
+    const switchStamp = () => JSON.stringify([historyScope(), state.view_epoch, state.task_id, state.input_revision, state.working_revision,
+        state.edit_epoch, state.materials?.draftEpoch, state.chatText, state.createOpen, state.createForm]);
+    function showTaskSwitch(intent, event, blocked = switchBlocked()) {
+        switchIntent = { ...intent, stamp: switchStamp() }; switchTrigger = triggerFrom(event);
+        state.presentation.catalogOpen = null; state.ui.drawerOpen = false;
+        state.taskSwitch = { open: true, target: intent.id, action: intent.action || 'task', reason: blocked ? 'operation' : 'dirty' };
+        replaceLocator(state.task_id);
+        void focusAfter(() => query('[data-teacher-work-switch-heading]'), ++focusEpoch, () => state.taskSwitch.open);
+    }
+    function cancelTaskSwitch() {
+        switchIntent = null; state.taskSwitch = { open: false, target: null, reason: null }; replaceLocator(state.task_id);
+        const trigger = switchTrigger; switchTrigger = null;
+        void focusAfter(() => usable(trigger) ? trigger : query('[data-teacher-work-composer]'), ++focusEpoch); return true;
+    }
+    async function requestTaskSwitch(id, event) {
+        if (!eligible() || !state.privateTaskAvailability.read || id !== null && !isTeacherWorkTaskId(id)) return false;
+        if (id === state.task_id) return true;
+        if (switchBlocked() || switchDirty()) {
+            showTaskSwitch({ action: 'task', id }, event);
+            return false;
+        }
+        switchIntent = null; state.taskSwitch = { open: false, target: null, reason: null };
+        if (id === null) { abortTasks(); clearTeacherTaskSelection(state); replaceLocator(null); return true; }
+        return performReadTask(id);
+    }
+    async function confirmTaskSwitch() {
+        const intent = switchIntent;
+        if (!intent || !eligible() || !(intent.action === 'task' ? state.privateTaskAvailability.read : state.privateTaskAvailability.create)) return false;
+        if (switchBlocked()) { state.taskSwitch.reason = 'operation'; return false; }
+        if (intent.stamp !== switchStamp()) {
+            switchIntent = { ...intent, stamp: switchStamp() }; state.taskSwitch.reason = 'changed'; return false;
+        }
+        if (state.materials?.dirty && !materials.discardCurrentMaterialsDraft({ task_id: state.task_id, draftEpoch: state.materials.draftEpoch })) return false;
+        switchIntent = null; switchTrigger = null; state.taskSwitch = { open: false, target: null, reason: null };
+        if (intent.action === 'open-create' || intent.action === 'submit-create') {
+            // Explicit abandonment resets only the current task's unsaved inputs.
+            state.composerText = state.task?.working.requirements || ''; state.requirementsEdited = false;
+            state.draftResourceIds = [...(state.task?.working.resource_ids || [])];
+            state.draftTargetSlideCount = state.task?.target_slide_count || 8;
+            state.composerStatus = state.task ? 'saved' : 'unsaved'; state.edit_epoch++; chat.updateChatText('');
+            return intent.action === 'open-create' ? performOpenCreateTask() : createTask();
+        }
+        if (intent.id === null) { abortTasks(); clearTeacherTaskSelection(state); state.createOpen = false; replaceLocator(null); return true; }
+        return performReadTask(intent.id);
+    }
+    async function readTask(id, options = {}) {
+        return id === state.task_id ? performReadTask(id, options) : requestTaskSwitch(id);
+    }
+    async function performReadTask(id, { preserveEdits = false, minimumRevisions = null } = {}) {
         if (!eligible() || !state.privateTaskAvailability.read || !isTeacherWorkTaskId(id) || typeof api.getTask !== 'function') return false;
         const switching = state.task_id !== id;
         if (switching) {
@@ -174,6 +285,12 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             if (taskReadFlight !== request || !taskFresh(request)) return false;
             if (data.task_id !== id || minimumRevisions && (data.input_revision < minimumRevisions.input_revision ||
                 data.working_revision < minimumRevisions.working_revision)) throw { reason: 'invalid_response' };
+            if (unknownWorking && unknownWorking.actor === request.token.actor && unknownWorking.authEpoch === request.token.authEpoch &&
+                unknownWorking.task_id === id && data.working_revision >= unknownWorking.body.expected_revision) {
+                // A successful authoritative read resolves current saved facts;
+                // local newer edits stay copyable and are never auto-saved.
+                unknownWorking = null; state.workingOutcomeUnknown = false;
+            }
             abortSlot('resources');
             const accepted = applyTeacherTaskSnapshot(state, request.token, data, {
                 preserveEdits: hadTask && (retain || state.edit_epoch !== request.editEpoch),
@@ -188,7 +305,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     const reloadTask = () => readTask(state.task_id, { preserveEdits: state.task !== null && (state.taskConflict || state.composerStatus !== 'saved') });
     async function saveWorking() {
-        if (!eligible() || state.packageWriteBusy || state.materialProposalBusy || state.createOpen || !state.privateTaskAvailability.update || !state.task || state.taskReadStatus !== 'ready' ||
+        if (!eligible() || unknownWorking || state.packageWriteBusy || state.materialProposalBusy || state.createOpen || !state.privateTaskAvailability.update || !state.task || state.taskReadStatus !== 'ready' ||
             state.taskConflict || saveFlight || typeof api.updateWorking !== 'function') return false;
         const changes = teacherWorkingChanges(state);
         if (!Object.keys(changes).length) {
@@ -197,9 +314,10 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             changes.requirements = state.composerText;
         }
         const request = makeTaskRequest(); saveFlight = request; state.taskWriteBusy = true; state.composerStatus = 'saving'; state.operationError = null;
+        const body = { expected_revision: request.workingRevision, changes: JSON.parse(JSON.stringify(changes)) };
+        const frozenBody = JSON.stringify(body);
         try {
-            const data = validatePrivateTaskSnapshot(await api.updateWorking(state.task_id, {
-                expected_revision: request.workingRevision, changes }, { signal: request.controller.signal }));
+            const data = validatePrivateTaskSnapshot(await api.updateWorking(state.task_id, body, { signal: request.controller.signal }));
             if (saveFlight !== request || !taskFresh(request)) return false;
             if (data.task_id !== request.token.task_id || data.working_revision <= request.workingRevision ||
                 data.input_revision < request.token.input_revision || Object.entries(changes).some(([name, value]) =>
@@ -210,6 +328,11 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         } catch (caught) {
             if (saveFlight !== request || !taskFresh(request)) return false;
             state.composerStatus = 'unsaved'; state.taskConflict = caught?.status === 409 || caught?.reason === 'revision_conflict';
+            if (['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE'].includes(caught?.reason)) {
+                unknownWorking = { actor: request.token.actor, authEpoch: request.token.authEpoch,
+                    task_id: request.token.task_id, body: JSON.parse(frozenBody) };
+                state.workingOutcomeUnknown = true;
+            }
             failOperation('save', caught); return false;
         } finally { if (saveFlight === request) { saveFlight = null; state.taskWriteBusy = false; } }
     }
@@ -232,8 +355,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     const locatorChanged = () => {
         if (!eligible() || !state.privateTaskAvailability.read) return;
         const id = taskLocator();
-        if (id && id !== state.task_id) void readTask(id);
-        else if (!id && state.task_id) { abortTasks(); clearTeacherTaskSelection(state); }
+        if (id !== state.task_id) void requestTaskSwitch(id);
     };
 
     async function retryCapabilities() {
@@ -256,6 +378,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
             if (!fresh()) return false;
             const accepted = applyCapabilityResult(state, captureRequest(state), { status: 'ready', data, reason: null });
             if (accepted) {
+                if (state.privateTaskAvailability.read) void reloadTaskHistory();
                 const id = taskLocator();
                 if (state.privateTaskAvailability.read && id && id !== state.task_id) void readTask(id);
                 else if (Object.values(state.privateTaskAvailability).some(Boolean)) void loadResources();
@@ -290,11 +413,16 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     };
     const context = () => ({ actor: auth.actor?.value, role: auth.role?.value, authEpoch: auth.authEpoch?.value,
         authVerified: auth.authVerified?.value, active: auth.currentView?.value === 't_work' && auth.renderAllowed?.value !== false });
+    watch(() => state.privateTaskAvailability.read, allowed => {
+        if (allowed) return;
+        abortHistory(); state.taskHistory = { items: [], status: 'idle', error: null, has_more: false, next_before: null };
+    }, { flush: 'sync' });
     watch(context, current => {
         const previousActor = state.actor;
         if (!synchronizeTeacherWork(state, current)) return;
         if (previousActor && state.actor !== previousActor) replaceLocator(null);
-        abortRead(); abortTasks(); creationKey = null; createEpoch++; invalidateFocus(); updateViewport();
+        abortRead(); abortTasks(); abortHistory(); historyEpoch++; switchIntent = null; switchTrigger = null; unknownWorking = null;
+        creationKey = null; createEpoch++; invalidateFocus(); updateViewport();
         if (!eligible()) return;
         const preferencesFound = readTeacherWorkPreferences(state, storage);
         if (!preferencesFound && width() < 1180) state.ui.taskRailCollapsed = true;
@@ -352,12 +480,13 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
     }
     const updateInput = text => updateTeacherInput(state, text);
     if (getCurrentScope()) onScopeDispose(() => {
-        disposed = true; abortRead(); abortTasks(); creationKey = null; createEpoch++; invalidateFocus();
+        disposed = true; abortRead(); abortTasks(); abortHistory(); historyEpoch++; switchIntent = null; unknownWorking = null; creationKey = null; createEpoch++; invalidateFocus();
         synchronizeTeacherWork(state, { actor: null, role: null, authEpoch: state.authEpoch, authVerified: false, active: false });
         eventTarget?.removeEventListener?.('resize', updateViewport);
         eventTarget?.removeEventListener?.('popstate', locatorChanged);
     });
     return { state, ...chat, ...materials, ...packages, ...materialProposals, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
         setArtifactTab, openCatalog, closeCatalog, updateInput, openCreateTask, closeCreateTask, updateCreateForm, createTask,
-        readTask, reloadTask, saveWorking, toggleResource, updateTargetSlides, loadResources };
+        readTask, reloadTask, saveWorking, toggleResource, updateTargetSlides, loadResources,
+        reloadTaskHistory, loadOlderTasks, requestTaskSwitch, confirmTaskSwitch, cancelTaskSwitch };
 }

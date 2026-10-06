@@ -157,13 +157,16 @@ test('late read cannot overwrite newer editing, task selection, account, departe
     }
 });
 
-test('late create and save success are discarded after account or task switch', async () => {
+test('late create and save success are discarded after external account or task invalidation', async () => {
+    const { clearTeacherTaskSelection } = await import('../js/controllers/teacherWorkState.js');
     for (const operation of ['create', 'save']) {
         const pending = deferred(), calls = [], h = await harness({ [operation === 'create' ? 'createTask' : 'updateWorking'](...args) { calls.push(args); return pending.promise; } });
         try {
             let result;
             if (operation === 'create') { fill(h.hook); result = h.hook.createTask(); h.refs.actor.value = 'teacher-b'; }
-            else { await h.hook.readTask(taskA); h.hook.updateInput('old'); result = h.hook.saveWorking(); await h.hook.readTask(taskB); }
+            else { await h.hook.readTask(taskA); h.hook.updateInput('old'); result = h.hook.saveWorking();
+                assert.equal(await h.hook.readTask(taskB), false); assert.equal(calls[0].at(-1).signal.aborted, false);
+                clearTeacherTaskSelection(h.hook.state); h.hook.state.task_id = taskB; await h.hook.readTask(taskB); }
             pending.resolve(snapshot(taskA, 2, 'stale')); assert.equal(await result, false);
             assert.notEqual(h.hook.state.composerText, 'stale'); assert.equal(calls[0].at(-1).signal.aborted, true);
         } finally { h.scope.stop(); }
@@ -215,7 +218,7 @@ test('four-zone UI exposes only real private create/read/edit-save, keeps confli
     } finally { h.scope.stop(); }
 });
 
-test('save failure retains all changed fields and retry posts latest explicit draft', async () => {
+test('unknown save retains all changed fields and explicit reconciliation precedes saving the latest draft', async () => {
     const calls = [], h = await harness({ listResources: async () => [
         { id: 'courseware-one', name: 'one', course: 'course', extension: '.pdf' },
         { id: 'courseware-two', name: 'two', course: 'course', extension: '.pptx' }],
@@ -227,6 +230,8 @@ test('save failure retains all changed fields and retry posts latest explicit dr
         assert.equal(await h.hook.saveWorking(), false); assert.equal(h.hook.state.composerText, 'edited');
         assert.deepEqual(h.hook.state.draftResourceIds, ['courseware-one', 'courseware-two']); assert.equal(h.hook.state.draftTargetSlideCount, 10);
         assert.equal(h.hook.state.composerStatus, 'unsaved');
+        assert.equal(await h.hook.saveWorking(), false); assert.equal(calls.length, 1);
+        assert.equal(await h.hook.reloadTask(), true);
         assert.equal(await h.hook.saveWorking(), true);
         assert.deepEqual(calls[1].body, { expected_revision: 1, changes: { requirements: 'edited', resource_ids: ['courseware-one', 'courseware-two'], target_slide_count: 10 } });
         assert.equal(h.hook.state.composerStatus, 'saved');
@@ -274,13 +279,15 @@ test('resource read is aborted on account change and cannot restore prior catalo
     } finally { h.scope.stop(); }
 });
 
-test('opening and cancelling a create form preserves the current task draft, locator, and pending-save copy', async () => {
+test('cancelling new-task guard preserves the current draft and locator; explicit abandonment opens the form', async () => {
     const h = await harness();
     try {
         await h.hook.readTask(taskA); h.hook.updateInput('保留当前草稿'); const url = h.location.href;
-        assert.equal(h.hook.openCreateTask(), true); assert.equal(h.hook.state.task_id, taskA); assert.equal(h.hook.state.composerText, '保留当前草稿');
+        assert.equal(h.hook.openCreateTask(), false); assert.equal(h.hook.state.task_id, taskA); assert.equal(h.hook.state.composerText, '保留当前草稿');
+        h.hook.cancelTaskSwitch(); assert.equal(h.hook.state.composerText, '保留当前草稿'); assert.equal(h.location.href, url);
+        assert.equal(h.hook.openCreateTask(), false); assert.equal(await h.hook.confirmTaskSwitch(), true);
         h.hook.updateCreateForm({ title: '填写到一半' }); h.hook.openCreateTask(); assert.equal(h.hook.state.createForm.title, '填写到一半');
-        h.hook.closeCreateTask(); assert.equal(h.hook.state.composerText, '保留当前草稿'); assert.equal(h.hook.state.composerStatus, 'unsaved');
+        h.hook.closeCreateTask(); assert.equal(h.hook.state.composerText, ''); assert.equal(h.hook.state.composerStatus, 'saved');
         assert.equal(h.hook.state.taskReadStatus, 'ready'); assert.equal(h.location.href, url);
     } finally { h.scope.stop(); }
 });
@@ -338,13 +345,15 @@ test('global capability recheck remains usable when a pending save commits a new
     } finally { h.scope.stop(); }
 });
 
-test('Back navigation cancels a pending create and keeps its form retryable without late selection', async () => {
+test('Back navigation preserves a pending create and its frozen key for explicit unknown-result retry', async () => {
     const pending = deferred(), calls = [], h = await harness({ createTask(body, options) { calls.push({ body, options }); return calls.length === 1 ? pending.promise : Promise.resolve(snapshot(taskB)); } });
     try {
         await h.hook.readTask(taskA); h.hook.openCreateTask(); fill(h.hook); const creating = h.hook.createTask();
         h.location.searchParams.delete('teacher_work_task'); h.eventTarget.dispatchEvent({ type: 'popstate' });
-        assert.equal(calls[0].options.signal.aborted, true); assert.notEqual(h.hook.state.createStatus, 'loading');
-        pending.resolve(snapshot(taskA)); assert.equal(await creating, false); assert.equal(h.hook.state.task_id, null);
+        assert.equal(calls[0].options.signal.aborted, false); assert.equal(h.hook.state.createStatus, 'loading');
+        assert.equal(h.hook.state.taskSwitch.reason, 'operation'); assert.equal(h.hook.state.task_id, taskA);
+        pending.reject({ reason: 'network_error' }); assert.equal(await creating, false); assert.equal(h.hook.state.task_id, taskA);
+        assert.equal(await h.hook.confirmTaskSwitch(), false); h.hook.cancelTaskSwitch();
         assert.equal(await h.hook.createTask(), true); assert.equal(h.hook.state.task_id, taskB);
         assert.equal(calls[1].options.idempotencyKey, calls[0].options.idempotencyKey);
     } finally { h.scope.stop(); }
@@ -396,9 +405,10 @@ test('a create form cannot save or change the previous task resources behind the
     const h = await harness();
     try {
         await h.hook.readTask(taskA); h.hook.updateInput('older draft'); await settle(); h.hook.openCreateTask();
+        assert.equal(h.hook.state.composerText, 'older draft'); assert.equal(await h.hook.confirmTaskSwitch(), true);
         assert.equal(await h.hook.saveWorking(), false); assert.equal(h.hook.updateTargetSlides(10), false);
         assert.equal(h.hook.toggleResource('courseware-one'), false); assert.deepEqual(h.hook.state.draftResourceIds, ['courseware-one']);
-        h.hook.closeCreateTask(); assert.equal(h.hook.state.composerText, 'older draft');
+        h.hook.closeCreateTask(); assert.equal(h.hook.state.composerText, '');
     } finally { h.scope.stop(); }
 });
 

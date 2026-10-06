@@ -492,6 +492,31 @@ class _WorkRequestBindings:
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
         return self._finish(value.task, mode, value=value)
 
+    def finish_private_task_list(self, *, limit=20, before=None):
+        from app.services.current_identity import load_current_account
+        from app.services.teacher_work.private_tasks import require_private_schema, read_private_task_list
+        if self._finished or self.mode != "read" or self.operation != "private_read":
+            self._cleanup()
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        self._finished = True
+        try:
+            self.transport._healthy()
+            _require_live_admission(self.mode, self.operation)
+            account = load_current_account(self.session, self.subject, lock=True)
+            require_current_teacher_facts(self.subject, CurrentAccountFacts(account.username, account.role))
+            require_private_schema(self.transport)
+            result = read_private_task_list(self.session, self.subject, limit=limit, before=before)
+            self.transport._healthy()
+            _require_live_admission(self.mode, self.operation)
+            if self.transport.has_pending_writes():
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            self.transport.rollback()
+            self.transport.close()
+            return result
+        except Exception:
+            self._cleanup()
+            raise
+
     def finish_private_capabilities(self):
         from app.schemas.teacher_work import WorkCapabilities, PrivateTaskCapabilities
         from app.services.current_identity import load_current_account

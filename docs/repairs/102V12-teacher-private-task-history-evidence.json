@@ -1,0 +1,2428 @@
+{
+  "schema_version": 1,
+  "description": "Teacher private task history; isolated Cloud local-commit stage",
+  "git_base": "3bc5f0bf768bffe8e1df0628cb9992cf83215748",
+  "worktree": "/workspace/GeZhi-task-history",
+  "branch": "teacher-private-task-history",
+  "published": false,
+  "external_provider_verified": false,
+  "ci_verified": false,
+  "source_sha256": {
+    "backend/app/api/endpoints/teacher_work.py": "7b7557e797d11b4f343e27ba2af5fe632f0afe7b6034621a40a8cb164b16f481",
+    "backend/app/schemas/teacher_work.py": "986661e6989088f99bc1a8884068b3ec076e7fda38346d6dc2ac2dade403869b",
+    "backend/app/services/teacher_work/bootstrap.py": "a1b2f2eaf4a9ad1862c7fdbf713efbded4a467733225c64493cbd64aa655ca9a",
+    "backend/app/services/teacher_work/private_tasks.py": "e23d23d68ac2928c87099e39cad64fffb1d6967c868b5bf1f1830e900624719f",
+    "backend/tests/native_teacher_work_task_history.py": "b8154bb28108acd3f61d077a524373939067944d679b1bdf9f3778484340fb56",
+    "backend/tests/run_teacher_work_full_app.py": "e407581b0641d758ae60ebcb1574635ae9525c9cd0ed5123af9b2a66d6ef32f0",
+    "backend/tests/run_teacher_work_task_history.py": "4280fe4512776d07067450a69c21b07897e07518d813467dedc6f33bfc63137f",
+    "backend/tests/support/teacher_work_full_app_scenario.py": "72f3e16f582639c5817dc06f2f14adc572cbd1db9043a6371d6dc6db3a41a40e",
+    "backend/tests/test_teacher_work_private_task_list.py": "830701c9ec4ce50346cebcc07c33d019964be86c5083813ceb084896ed18b67f",
+    "backend/tests/test_teacher_work_wiring.py": "79cbeeb3f976e9649c1264e171bdf32fbd1a9d8f5d70b2e66e71df019dd5eb6b",
+    "frontend/index.html": "450311212b691882a816b8637571e8432b1678c408aaab74c1bfd32353941747",
+    "frontend/js/api/teacherWork.js": "d0e5f39bc733803257f76d8e80b1aa99bfd927e692309d45b2cba72e9a35bf9e",
+    "frontend/js/components/teacher-work/TeacherWork.js": "4f3aea964cf0abd0673b1c5e3e0491dcc16187017cf5e8f5486ddc1d70c6f932",
+    "frontend/js/controllers/teacherWorkState.js": "d38f9774e0904e891eb621bd7a0e6af2135fabaafb920280bde13344b68d76ca",
+    "frontend/js/hooks/useTeacherWork.js": "0f4d368bdeba6e4ce916f3a707f8f311066ff2c21171f486abad412752a2ba38",
+    "frontend/js/hooks/useTeacherWorkMaterials.js": "b7c293befbdb01f007e596d7740a44429aca39e27ebc54904c23242e31a2c5e7",
+    "frontend/js/main.js": "ade6e68f3b381a74a9d215d160e107d9aec821bb56a103737bdcf1fc3149b908",
+    "frontend/tests/teacherWorkAuthenticatedChat.test.mjs": "3cd0b318922f4ee4e7bbd0eda19b6b740565bb8da59289b865eaef199d270521",
+    "frontend/tests/teacherWorkChat.test.mjs": "32c118dcb8c1a8e4509ade7a931b4c93fdfd70886539c0c4356849d57d1f1021",
+    "frontend/tests/teacherWorkMaterialsLifecycle.test.mjs": "299cf50ecb0f13d91ec62d7fa0d70584fdc6318413e8f0df49ba9f0b88abfb34",
+    "frontend/tests/teacherWorkPrivateTasks.test.mjs": "530b8c30f4276603f2d7d66869f1e8b96e00285ccb96af3d5c9c11c6d9decf51",
+    "frontend/tests/teacherWorkTaskHistory.test.mjs": "c8faef87dc9821125995acc2aef6083a761528d6aa1faf118ee4084754b947fb"
+  },
+  "source_manifest_sha256": "3a4427ed9b984396be6bca5fe59d52d8a1d956c504e8b685b1a257ad4fd28347",
+  "source_hash_scope": "22 explicit code/test files; documents excluded to avoid self-reference",
+  "preservation": {
+    "original_workspace_pin": {
+      "head": "5a568de98255fe4db4f6e8d4e85a7a8ec6adc1e9",
+      "branch": "102V12",
+      "status": " M frontend/js/components/teacher-work/TeacherWorkMaterialProposals.js\n M frontend/js/hooks/useTeacherWorkMaterialProposals.js\n M frontend/tests/teacherWorkMaterialProposalsComponent.test.mjs\n M frontend/tests/teacherWorkMaterialProposalsLifecycle.test.mjs\n M frontend/tests/teacherWorkMaterialProposalsNativeLifecycle.test.mjs\n",
+      "diff_sha256": "5435bffd25ec2eb542c3a58165e7efbed100e0cf7858561651baedb638b21a94",
+      "files": {
+        "frontend/js/components/teacher-work/TeacherWorkMaterialProposals.js": "27f85daf15fe8daadb47543e3b2b2903a9099f299e01693cacd7923f5a670eb7",
+        "frontend/js/hooks/useTeacherWorkMaterialProposals.js": "5200fae8896318c1b357518a5fffc0b81a0fd519da4f9d3a31a2ee9db644d237",
+        "frontend/tests/teacherWorkMaterialProposalsComponent.test.mjs": "48b206b3abb0641689e2f6145f106103b94e0dfcc4e6e31565507f1f87e4b777",
+        "frontend/tests/teacherWorkMaterialProposalsLifecycle.test.mjs": "f09cdd773ecfc2ec6eab917b01522fc53a880facbf9293d1f6365a429d5228c1",
+        "frontend/tests/teacherWorkMaterialProposalsNativeLifecycle.test.mjs": "3aee05588b4fa46c5eb894795eadfcd9fa601b43e76dda959a48b3b9dacbc4e6"
+      }
+    },
+    "unchanged": true,
+    "protected_proposal_blobs": {
+      "frontend/js/hooks/useTeacherWorkMaterialProposals.js": "33d77acb6f8f770f1af2bbe6760fd02b4620626c88092b44c66d79c42c821862",
+      "frontend/js/components/teacher-work/TeacherWorkMaterialProposals.js": "27f85daf15fe8daadb47543e3b2b2903a9099f299e01693cacd7923f5a670eb7"
+    },
+    "legacy_fixture_sha256": "4f70b0e0fc4e5294e935346c2f1738a03031cbc2e474f1ea5be8e440e70efb7b"
+  },
+  "history_full_app": {
+    "root": "/tmp/gezhi-tw-full-app-kcfys12x",
+    "command": [
+      "/tmp/gezhi-full-app-venv/bin/python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-s",
+      "-x",
+      "-p",
+      "no:cacheprovider",
+      "/workspace/GeZhi-task-history/backend/tests/native_teacher_work_task_history.py",
+      "--junitxml=/tmp/gezhi-tw-full-app-kcfys12x/pytest.xml"
+    ],
+    "cwd": "/tmp/gezhi-tw-full-app-kcfys12x/blank-cwd",
+    "exit_code": 0,
+    "junit": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_files": 380,
+    "source_sha256": "c9533909bcf66a0b43cc1ae2aa4d749206a9a2bf2158d87f7580ee7cd1f56af1",
+    "source_unchanged": true,
+    "dependencies_sha256": "77f2fc403b86e4c836fe8cd4acb4a8a89350f5c27a46bbbc3b5638f4d90ee293",
+    "http_exchanges": 39,
+    "scenario_counts": {
+      "task_history": 39
+    },
+    "dependency_overrides": {
+      "task_history": 0
+    },
+    "mysql_cleanup": {
+      "container": "gezhi-tw-native-8deee37922fb47d685efe68752cc109a",
+      "container_id": "e1d0f2d89ee29ee8c01173369b6431b315f74dcee1de4aa80f77bcaf0e0280e9",
+      "stopped": true,
+      "exit_code": 0,
+      "creation_not_observed": false,
+      "removed_with_volumes": true,
+      "baseline_preserved": true,
+      "native_evidence": "/tmp/gezhi-tw-native-b_hx8_jy",
+      "volume_names": [
+        "dbb420ef82cdf38405bc19740d3100ac3752f81e990d296173bb3ee20d9f5cbb"
+      ],
+      "container_absence_verified": true,
+      "volume_absence_verified": true
+    },
+    "database_cleanup": [
+      {
+        "identity": {
+          "schema_name": "tw_native_4fef673692cd401d9625b71b5fdff6ba",
+          "server_uuid": "0ec973fe-c196-11f1-93df-a764fece0fdc",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "/tmp/gezhi-tw-full-app-kcfys12x/run.json",
+        "byte_size": 46907,
+        "sha256": "48ccac6f4538b25166dbc21f4f30dc64704175ba55d0fbd042ccd69a9adf3367"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-kcfys12x/pytest.log",
+        "byte_size": 108,
+        "sha256": "a8cfea43a3f6ec13b03186c5646156b1b7ebf56e2e5ae39268bbec0610f3c9ff"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-kcfys12x/pytest.xml",
+        "byte_size": 367,
+        "sha256": "b55806153bfa2304eea26e6717f3215f26ea01ab3f35e932e13eee4759cad1ad"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-kcfys12x/task_history/scenario.json",
+        "byte_size": 97232,
+        "sha256": "d8f2696a42d6adb3ae071b16c1fd39c7eb009ecf7911f03ff28e6d0146640b4e"
+      }
+    ]
+  },
+  "original_full_app_regression": {
+    "root": "/tmp/gezhi-tw-full-app-enwhgitt",
+    "command": [
+      "/tmp/gezhi-full-app-venv/bin/python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-s",
+      "-x",
+      "-p",
+      "no:cacheprovider",
+      "/workspace/GeZhi-task-history/backend/tests/native_teacher_work_full_app.py",
+      "--junitxml=/tmp/gezhi-tw-full-app-enwhgitt/pytest.xml"
+    ],
+    "cwd": "/tmp/gezhi-tw-full-app-enwhgitt/blank-cwd",
+    "exit_code": 0,
+    "junit": {
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_files": 380,
+    "source_sha256": "c9533909bcf66a0b43cc1ae2aa4d749206a9a2bf2158d87f7580ee7cd1f56af1",
+    "source_unchanged": true,
+    "dependencies_sha256": "77f2fc403b86e4c836fe8cd4acb4a8a89350f5c27a46bbbc3b5638f4d90ee293",
+    "http_exchanges": 385,
+    "scenario_counts": {
+      "isolation": 6,
+      "ack_after": 23,
+      "ack_before": 22,
+      "gate_exports": 33,
+      "gate_materials": 33,
+      "gate_proposals": 32,
+      "gate_chat": 32,
+      "gate_tasks": 32,
+      "identity": 142,
+      "lifecycle": 30
+    },
+    "dependency_overrides": {
+      "isolation": 0,
+      "ack_after": 0,
+      "ack_before": 0,
+      "gate_exports": 0,
+      "gate_materials": 0,
+      "gate_proposals": 0,
+      "gate_chat": 0,
+      "gate_tasks": 0,
+      "identity": 0,
+      "lifecycle": 0
+    },
+    "mysql_cleanup": {
+      "container": "gezhi-tw-native-b0695c49410142f9b5d105d35dc7f387",
+      "container_id": "7f3947fa8f2bef8d7b1abd31a91e9c056e116ca762115d42766ffb4419ce05e6",
+      "stopped": true,
+      "exit_code": 0,
+      "creation_not_observed": false,
+      "removed_with_volumes": true,
+      "baseline_preserved": true,
+      "native_evidence": "/tmp/gezhi-tw-native-az0fh17k",
+      "volume_names": [
+        "93ca3bd24ac391b08106d34be15d2d0b491b05c41ec7b25dad941d8a1638fa13"
+      ],
+      "container_absence_verified": true,
+      "volume_absence_verified": true
+    },
+    "database_cleanup": [
+      {
+        "identity": {
+          "schema_name": "tw_native_bcf12ac6c21547818819bb198a3b323e",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_22c87cba54a84fda8ac75ff4bbc315cc",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_4bda176c3a4843c1bf66cbdd8724c079",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_59e2873a749c422e955b3ab4d18785d2",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_6a34e3d106bb423daf71180ff2ff784a",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_9900aa15d319487fbc8ada92f549f900",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_a3cb9f9811c14eb38bd985aff8e5c128",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_b7a58eb7bd9241789620407bf5994d83",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_db907f9851964b2cb3e28b89d3ff7dfe",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_91aa37335b6548a59d14be643c0d315f",
+          "server_uuid": "44e174ff-c195-11f1-8e36-64557c71bf6a",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "dropped": true
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/run.json",
+        "byte_size": 47482,
+        "sha256": "e178417aa6ad00792406c56cf2d2c2e65b00f4cc0058d4b1c05327989deabe87"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/pytest.log",
+        "byte_size": 473,
+        "sha256": "9d543aee140ad8fcdc9260cd4c3414ee433ad1ad3131c52ffb1d38003aeb4ac1"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/pytest.xml",
+        "byte_size": 1344,
+        "sha256": "ed0a2f226f397101deb8c329b4c9b750fe1576d1557e8958538a6203c6e93988"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/ack_after/scenario.json",
+        "byte_size": 64077,
+        "sha256": "b4152577ce31f449d0658b09e05ec5a82182483092473d63b425d86e7aa551a5"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/ack_before/scenario.json",
+        "byte_size": 48074,
+        "sha256": "3e4ccce6dac60ae5c39786cb7fcf18eb76841f8fbcdad845b83753dd6a23a5fa"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/gate_chat/scenario.json",
+        "byte_size": 139104,
+        "sha256": "b1c82812a4626855cab80a3395085f389d3ce61e7612723d7ebf5047c4b76d01"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/gate_exports/scenario.json",
+        "byte_size": 139860,
+        "sha256": "c52c613bcd924549ef8dbea293d94a774e437fa41801ba5c4fbdf01ca0dbc45b"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/gate_materials/scenario.json",
+        "byte_size": 141616,
+        "sha256": "07bea73488227fd2736255c7c22da91d77699030843cf487a33f66eb968c3159"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/gate_proposals/scenario.json",
+        "byte_size": 139252,
+        "sha256": "33a0443611e9e72ebce064b019c9a21b80a2c066c4e0c8ec5a89381632d6fcf5"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/gate_tasks/scenario.json",
+        "byte_size": 139132,
+        "sha256": "882c50653de3d6af3ee4b091616dfcb203a26d49f0c4cbc8d39f999fb16fccbb"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/identity/scenario.json",
+        "byte_size": 216112,
+        "sha256": "489261b8c1d9115c74b29411798b738e39e294885832453897344a87b706131f"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/isolation/scenario.json",
+        "byte_size": 8977,
+        "sha256": "fc6fd669039f0248ab419bd20c914fba5e79606570443e11b27242e41a07cd48"
+      },
+      {
+        "path": "/tmp/gezhi-tw-full-app-enwhgitt/lifecycle/scenario.json",
+        "byte_size": 136472,
+        "sha256": "326785538fed64b7f2b93de7a5243b950e7051cd5e8314fc2b78abd725591bdf"
+      }
+    ]
+  },
+  "history_actual_receipt": {
+    "scenario": "task_history",
+    "completed": true,
+    "external_provider_verified": false,
+    "dependency_overrides": 0,
+    "http_exchanges": [
+      {
+        "method": "POST",
+        "path": "/api/teacher/login",
+        "status": 401,
+        "actor": "anonymous",
+        "idempotency_key": null,
+        "body_encoding": "normalized JSON; login token and request password omitted",
+        "body": {
+          "success": false,
+          "message": "username or password is incorrect"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/login",
+        "status": 200,
+        "actor": "anonymous",
+        "idempotency_key": null,
+        "body_encoding": "normalized JSON; login token and request password omitted",
+        "body": {
+          "success": true,
+          "message": "login success",
+          "data": {
+            "user": {
+              "username": "full-app-teacher",
+              "role": "teacher",
+              "realName": "",
+              "phone": "",
+              "avatarUrl": "",
+              "studentId": "",
+              "teacherId": "",
+              "className": "",
+              "real_name": "",
+              "avatar_url": "",
+              "student_id": "",
+              "teacher_id": "",
+              "class_name": "",
+              "gitea": {
+                "username": "tea_full-app-teacher",
+                "email": "teacher_full-app-teacher@gezhi.local",
+                "syncStatus": "pending",
+                "tokenLastFour": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/login",
+        "status": 200,
+        "actor": "anonymous",
+        "idempotency_key": null,
+        "body_encoding": "normalized JSON; login token and request password omitted",
+        "body": {
+          "success": true,
+          "message": "login success",
+          "data": {
+            "user": {
+              "username": "full-app-other",
+              "role": "teacher",
+              "realName": "",
+              "phone": "",
+              "avatarUrl": "",
+              "studentId": "",
+              "teacherId": "",
+              "className": "",
+              "real_name": "",
+              "avatar_url": "",
+              "student_id": "",
+              "teacher_id": "",
+              "class_name": "",
+              "gitea": {
+                "username": "tea_full-app-other",
+                "email": "teacher_full-app-other@gezhi.local",
+                "syncStatus": "pending",
+                "tokenLastFour": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/student/login",
+        "status": 200,
+        "actor": "anonymous",
+        "idempotency_key": null,
+        "body_encoding": "normalized JSON; login token and request password omitted",
+        "body": {
+          "success": true,
+          "message": "login success",
+          "data": {
+            "user": {
+              "username": "full-app-student",
+              "role": "student",
+              "realName": "",
+              "phone": "",
+              "avatarUrl": "",
+              "studentId": "",
+              "teacherId": "",
+              "className": "",
+              "real_name": "",
+              "avatar_url": "",
+              "student_id": "",
+              "teacher_id": "",
+              "class_name": "",
+              "gitea": {
+                "username": "stu_full-app-student",
+                "email": "full-app-student@gezhi.local",
+                "syncStatus": "pending",
+                "tokenLastFour": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/auth/me",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"success\":true,\"message\":\"success\",\"data\":{\"username\":\"full-app-teacher\",\"role\":\"teacher\",\"realName\":\"\",\"phone\":\"\",\"avatarUrl\":\"\",\"studentId\":\"\",\"teacherId\":\"\",\"className\":\"\",\"real_name\":\"\",\"avatar_url\":\"\",\"student_id\":\"\",\"teacher_id\":\"\",\"class_name\":\"\",\"gitea\":{\"username\":\"tea_full-app-teacher\",\"email\":\"teacher_full-app-teacher@gezhi.local\",\"syncStatus\":\"pending\",\"tokenLastFour\":\"\"}}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "success": true,
+          "message": "success",
+          "data": {
+            "username": "full-app-teacher",
+            "role": "teacher",
+            "realName": "",
+            "phone": "",
+            "avatarUrl": "",
+            "studentId": "",
+            "teacherId": "",
+            "className": "",
+            "real_name": "",
+            "avatar_url": "",
+            "student_id": "",
+            "teacher_id": "",
+            "class_name": "",
+            "gitea": {
+              "username": "tea_full-app-teacher",
+              "email": "teacher_full-app-teacher@gezhi.local",
+              "syncStatus": "pending",
+              "tokenLastFour": ""
+            }
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[],\"has_more\":false,\"next_before\":null}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [],
+            "has_more": false,
+            "next_before": null
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/work/tasks",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": "history-owner",
+        "request_utf8": "{\"title\":\"合成历史入口\",\"topic\":\"合成主题\",\"audience\":\"合成对象\",\"scope\":\"private\",\"resource_ids\":[\"courseware-030d7a7896b436eb7ae818b4\"]}",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"topic\":\"合成主题\",\"audience\":\"合成对象\",\"duration_minutes\":45,\"target_slide_count\":8,\"input_revision\":1,\"working_revision\":1,\"created_at\":\"2026-10-06T14:56:19.753570Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\",\"scope\":\"private\",\"working\":{\"requirements\":\"\",\"resource_ids\":[\"courseware-030d7a7896b436eb7ae818b4\"],\"needs_normalization_fields\":[\"teaching_flow\"]}}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+            "title": "合成历史入口",
+            "topic": "合成主题",
+            "audience": "合成对象",
+            "duration_minutes": 45,
+            "target_slide_count": 8,
+            "input_revision": 1,
+            "working_revision": 1,
+            "created_at": "2026-10-06T14:56:19.753570Z",
+            "updated_at": "2026-10-06T14:56:19.753570Z",
+            "scope": "private",
+            "working": {
+              "requirements": "",
+              "resource_ids": [
+                "courseware-030d7a7896b436eb7ae818b4"
+              ],
+              "needs_normalization_fields": [
+                "teaching_flow"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/work/tasks",
+        "status": 200,
+        "actor": "full-app-other",
+        "idempotency_key": "history-other",
+        "request_utf8": "{\"title\":\"合成历史入口\",\"topic\":\"合成主题\",\"audience\":\"合成对象\",\"scope\":\"private\",\"resource_ids\":[\"courseware-030d7a7896b436eb7ae818b4\"]}",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"task_id\":\"b3a1873e-2dea-4da8-9b00-e8397ded3193\",\"title\":\"合成历史入口\",\"topic\":\"合成主题\",\"audience\":\"合成对象\",\"duration_minutes\":45,\"target_slide_count\":8,\"input_revision\":1,\"working_revision\":1,\"created_at\":\"2026-10-06T14:56:19.859447Z\",\"updated_at\":\"2026-10-06T14:56:19.859447Z\",\"scope\":\"private\",\"working\":{\"requirements\":\"\",\"resource_ids\":[\"courseware-030d7a7896b436eb7ae818b4\"],\"needs_normalization_fields\":[\"teaching_flow\"]}}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "task_id": "b3a1873e-2dea-4da8-9b00-e8397ded3193",
+            "title": "合成历史入口",
+            "topic": "合成主题",
+            "audience": "合成对象",
+            "duration_minutes": 45,
+            "target_slide_count": 8,
+            "input_revision": 1,
+            "working_revision": 1,
+            "created_at": "2026-10-06T14:56:19.859447Z",
+            "updated_at": "2026-10-06T14:56:19.859447Z",
+            "scope": "private",
+            "working": {
+              "requirements": "",
+              "resource_ids": [
+                "courseware-030d7a7896b436eb7ae818b4"
+              ],
+              "needs_normalization_fields": [
+                "teaching_flow"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=20",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000034\",\"title\":\"只读分页合成任务 52\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000033\",\"title\":\"只读分页合成任务 51\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000032\",\"title\":\"只读分页合成任务 50\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000031\",\"title\":\"只读分页合成任务 49\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000030\",\"title\":\"只读分页合成任务 48\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002f\",\"title\":\"只读分页合成任务 47\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002e\",\"title\":\"只读分页合成任务 46\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002d\",\"title\":\"只读分页合成任务 45\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002c\",\"title\":\"只读分页合成任务 44\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002b\",\"title\":\"只读分页合成任务 43\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002a\",\"title\":\"只读分页合成任务 42\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000029\",\"title\":\"只读分页合成任务 41\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000028\",\"title\":\"只读分页合成任务 40\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000027\",\"title\":\"只读分页合成任务 39\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000026\",\"title\":\"只读分页合成任务 38\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000025\",\"title\":\"只读分页合成任务 37\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000024\",\"title\":\"只读分页合成任务 36\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000023\",\"title\":\"只读分页合成任务 35\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000022\",\"title\":\"只读分页合成任务 34\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"}],\"has_more\":true,\"next_before\":\"00000000-0000-0000-0000-000000000022\"}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+                "title": "合成历史入口",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T14:56:19.753570Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000034",
+                "title": "只读分页合成任务 52",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000033",
+                "title": "只读分页合成任务 51",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000032",
+                "title": "只读分页合成任务 50",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000031",
+                "title": "只读分页合成任务 49",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000030",
+                "title": "只读分页合成任务 48",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002f",
+                "title": "只读分页合成任务 47",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002e",
+                "title": "只读分页合成任务 46",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002d",
+                "title": "只读分页合成任务 45",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002c",
+                "title": "只读分页合成任务 44",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002b",
+                "title": "只读分页合成任务 43",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002a",
+                "title": "只读分页合成任务 42",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000029",
+                "title": "只读分页合成任务 41",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000028",
+                "title": "只读分页合成任务 40",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000027",
+                "title": "只读分页合成任务 39",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000026",
+                "title": "只读分页合成任务 38",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000025",
+                "title": "只读分页合成任务 37",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000024",
+                "title": "只读分页合成任务 36",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000023",
+                "title": "只读分页合成任务 35",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000022",
+                "title": "只读分页合成任务 34",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              }
+            ],
+            "has_more": true,
+            "next_before": "00000000-0000-0000-0000-000000000022"
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=20",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000034\",\"title\":\"只读分页合成任务 52\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000033\",\"title\":\"只读分页合成任务 51\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000032\",\"title\":\"只读分页合成任务 50\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000031\",\"title\":\"只读分页合成任务 49\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000030\",\"title\":\"只读分页合成任务 48\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002f\",\"title\":\"只读分页合成任务 47\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002e\",\"title\":\"只读分页合成任务 46\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002d\",\"title\":\"只读分页合成任务 45\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002c\",\"title\":\"只读分页合成任务 44\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002b\",\"title\":\"只读分页合成任务 43\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002a\",\"title\":\"只读分页合成任务 42\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000029\",\"title\":\"只读分页合成任务 41\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000028\",\"title\":\"只读分页合成任务 40\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000027\",\"title\":\"只读分页合成任务 39\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000026\",\"title\":\"只读分页合成任务 38\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000025\",\"title\":\"只读分页合成任务 37\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000024\",\"title\":\"只读分页合成任务 36\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000023\",\"title\":\"只读分页合成任务 35\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000022\",\"title\":\"只读分页合成任务 34\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"}],\"has_more\":true,\"next_before\":\"00000000-0000-0000-0000-000000000022\"}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+                "title": "合成历史入口",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T14:56:19.753570Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000034",
+                "title": "只读分页合成任务 52",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000033",
+                "title": "只读分页合成任务 51",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000032",
+                "title": "只读分页合成任务 50",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000031",
+                "title": "只读分页合成任务 49",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000030",
+                "title": "只读分页合成任务 48",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002f",
+                "title": "只读分页合成任务 47",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002e",
+                "title": "只读分页合成任务 46",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002d",
+                "title": "只读分页合成任务 45",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002c",
+                "title": "只读分页合成任务 44",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002b",
+                "title": "只读分页合成任务 43",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002a",
+                "title": "只读分页合成任务 42",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000029",
+                "title": "只读分页合成任务 41",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000028",
+                "title": "只读分页合成任务 40",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000027",
+                "title": "只读分页合成任务 39",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000026",
+                "title": "只读分页合成任务 38",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000025",
+                "title": "只读分页合成任务 37",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000024",
+                "title": "只读分页合成任务 36",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000023",
+                "title": "只读分页合成任务 35",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000022",
+                "title": "只读分页合成任务 34",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              }
+            ],
+            "has_more": true,
+            "next_before": "00000000-0000-0000-0000-000000000022"
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=50",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000034\",\"title\":\"只读分页合成任务 52\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000033\",\"title\":\"只读分页合成任务 51\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000032\",\"title\":\"只读分页合成任务 50\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000031\",\"title\":\"只读分页合成任务 49\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000030\",\"title\":\"只读分页合成任务 48\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002f\",\"title\":\"只读分页合成任务 47\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002e\",\"title\":\"只读分页合成任务 46\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002d\",\"title\":\"只读分页合成任务 45\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002c\",\"title\":\"只读分页合成任务 44\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002b\",\"title\":\"只读分页合成任务 43\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002a\",\"title\":\"只读分页合成任务 42\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000029\",\"title\":\"只读分页合成任务 41\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000028\",\"title\":\"只读分页合成任务 40\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000027\",\"title\":\"只读分页合成任务 39\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000026\",\"title\":\"只读分页合成任务 38\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000025\",\"title\":\"只读分页合成任务 37\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000024\",\"title\":\"只读分页合成任务 36\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000023\",\"title\":\"只读分页合成任务 35\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000022\",\"title\":\"只读分页合成任务 34\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000021\",\"title\":\"只读分页合成任务 33\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000020\",\"title\":\"只读分页合成任务 32\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001f\",\"title\":\"只读分页合成任务 31\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001e\",\"title\":\"只读分页合成任务 30\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001d\",\"title\":\"只读分页合成任务 29\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001c\",\"title\":\"只读分页合成任务 28\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001b\",\"title\":\"只读分页合成任务 27\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001a\",\"title\":\"只读分页合成任务 26\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000019\",\"title\":\"只读分页合成任务 25\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000018\",\"title\":\"只读分页合成任务 24\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000017\",\"title\":\"只读分页合成任务 23\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000016\",\"title\":\"只读分页合成任务 22\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000015\",\"title\":\"只读分页合成任务 21\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000014\",\"title\":\"只读分页合成任务 20\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000013\",\"title\":\"只读分页合成任务 19\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000012\",\"title\":\"只读分页合成任务 18\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000011\",\"title\":\"只读分页合成任务 17\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000010\",\"title\":\"只读分页合成任务 16\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000f\",\"title\":\"只读分页合成任务 15\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000e\",\"title\":\"只读分页合成任务 14\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000d\",\"title\":\"只读分页合成任务 13\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000c\",\"title\":\"只读分页合成任务 12\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000b\",\"title\":\"只读分页合成任务 11\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000a\",\"title\":\"只读分页合成任务 10\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000009\",\"title\":\"只读分页合成任务 9\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000008\",\"title\":\"只读分页合成任务 8\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000007\",\"title\":\"只读分页合成任务 7\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000006\",\"title\":\"只读分页合成任务 6\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000005\",\"title\":\"只读分页合成任务 5\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000004\",\"title\":\"只读分页合成任务 4\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"}],\"has_more\":true,\"next_before\":\"00000000-0000-0000-0000-000000000004\"}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+                "title": "合成历史入口",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T14:56:19.753570Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000034",
+                "title": "只读分页合成任务 52",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000033",
+                "title": "只读分页合成任务 51",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000032",
+                "title": "只读分页合成任务 50",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000031",
+                "title": "只读分页合成任务 49",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000030",
+                "title": "只读分页合成任务 48",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002f",
+                "title": "只读分页合成任务 47",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002e",
+                "title": "只读分页合成任务 46",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002d",
+                "title": "只读分页合成任务 45",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002c",
+                "title": "只读分页合成任务 44",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002b",
+                "title": "只读分页合成任务 43",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002a",
+                "title": "只读分页合成任务 42",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000029",
+                "title": "只读分页合成任务 41",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000028",
+                "title": "只读分页合成任务 40",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000027",
+                "title": "只读分页合成任务 39",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000026",
+                "title": "只读分页合成任务 38",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000025",
+                "title": "只读分页合成任务 37",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000024",
+                "title": "只读分页合成任务 36",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000023",
+                "title": "只读分页合成任务 35",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000022",
+                "title": "只读分页合成任务 34",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000021",
+                "title": "只读分页合成任务 33",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000020",
+                "title": "只读分页合成任务 32",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001f",
+                "title": "只读分页合成任务 31",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001e",
+                "title": "只读分页合成任务 30",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001d",
+                "title": "只读分页合成任务 29",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001c",
+                "title": "只读分页合成任务 28",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001b",
+                "title": "只读分页合成任务 27",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001a",
+                "title": "只读分页合成任务 26",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000019",
+                "title": "只读分页合成任务 25",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000018",
+                "title": "只读分页合成任务 24",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000017",
+                "title": "只读分页合成任务 23",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000016",
+                "title": "只读分页合成任务 22",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000015",
+                "title": "只读分页合成任务 21",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000014",
+                "title": "只读分页合成任务 20",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000013",
+                "title": "只读分页合成任务 19",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000012",
+                "title": "只读分页合成任务 18",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000011",
+                "title": "只读分页合成任务 17",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000010",
+                "title": "只读分页合成任务 16",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000f",
+                "title": "只读分页合成任务 15",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000e",
+                "title": "只读分页合成任务 14",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000d",
+                "title": "只读分页合成任务 13",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000c",
+                "title": "只读分页合成任务 12",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000b",
+                "title": "只读分页合成任务 11",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000a",
+                "title": "只读分页合成任务 10",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000009",
+                "title": "只读分页合成任务 9",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000008",
+                "title": "只读分页合成任务 8",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000007",
+                "title": "只读分页合成任务 7",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000006",
+                "title": "只读分页合成任务 6",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000005",
+                "title": "只读分页合成任务 5",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000004",
+                "title": "只读分页合成任务 4",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              }
+            ],
+            "has_more": true,
+            "next_before": "00000000-0000-0000-0000-000000000004"
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=20&before=00000000-0000-0000-0000-000000000022",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"00000000-0000-0000-0000-000000000021\",\"title\":\"只读分页合成任务 33\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000020\",\"title\":\"只读分页合成任务 32\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001f\",\"title\":\"只读分页合成任务 31\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001e\",\"title\":\"只读分页合成任务 30\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001d\",\"title\":\"只读分页合成任务 29\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001c\",\"title\":\"只读分页合成任务 28\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001b\",\"title\":\"只读分页合成任务 27\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000001a\",\"title\":\"只读分页合成任务 26\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000019\",\"title\":\"只读分页合成任务 25\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000018\",\"title\":\"只读分页合成任务 24\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000017\",\"title\":\"只读分页合成任务 23\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000016\",\"title\":\"只读分页合成任务 22\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000015\",\"title\":\"只读分页合成任务 21\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000014\",\"title\":\"只读分页合成任务 20\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000013\",\"title\":\"只读分页合成任务 19\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000012\",\"title\":\"只读分页合成任务 18\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000011\",\"title\":\"只读分页合成任务 17\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000010\",\"title\":\"只读分页合成任务 16\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000f\",\"title\":\"只读分页合成任务 15\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000e\",\"title\":\"只读分页合成任务 14\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"}],\"has_more\":true,\"next_before\":\"00000000-0000-0000-0000-00000000000e\"}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "00000000-0000-0000-0000-000000000021",
+                "title": "只读分页合成任务 33",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000020",
+                "title": "只读分页合成任务 32",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001f",
+                "title": "只读分页合成任务 31",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001e",
+                "title": "只读分页合成任务 30",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001d",
+                "title": "只读分页合成任务 29",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001c",
+                "title": "只读分页合成任务 28",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001b",
+                "title": "只读分页合成任务 27",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000001a",
+                "title": "只读分页合成任务 26",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000019",
+                "title": "只读分页合成任务 25",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000018",
+                "title": "只读分页合成任务 24",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000017",
+                "title": "只读分页合成任务 23",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000016",
+                "title": "只读分页合成任务 22",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000015",
+                "title": "只读分页合成任务 21",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000014",
+                "title": "只读分页合成任务 20",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000013",
+                "title": "只读分页合成任务 19",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000012",
+                "title": "只读分页合成任务 18",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000011",
+                "title": "只读分页合成任务 17",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000010",
+                "title": "只读分页合成任务 16",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000f",
+                "title": "只读分页合成任务 15",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000e",
+                "title": "只读分页合成任务 14",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              }
+            ],
+            "has_more": true,
+            "next_before": "00000000-0000-0000-0000-00000000000e"
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=20&before=00000000-0000-0000-0000-00000000000e",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"00000000-0000-0000-0000-00000000000d\",\"title\":\"只读分页合成任务 13\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000c\",\"title\":\"只读分页合成任务 12\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000b\",\"title\":\"只读分页合成任务 11\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000000a\",\"title\":\"只读分页合成任务 10\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000009\",\"title\":\"只读分页合成任务 9\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000008\",\"title\":\"只读分页合成任务 8\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000007\",\"title\":\"只读分页合成任务 7\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000006\",\"title\":\"只读分页合成任务 6\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000005\",\"title\":\"只读分页合成任务 5\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000004\",\"title\":\"只读分页合成任务 4\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000003\",\"title\":\"只读分页合成任务 3\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000002\",\"title\":\"只读分页合成任务 2\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000001\",\"title\":\"只读分页合成任务 1\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2027-01-01T00:00:00Z\"}],\"has_more\":false,\"next_before\":null}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000d",
+                "title": "只读分页合成任务 13",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000c",
+                "title": "只读分页合成任务 12",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000b",
+                "title": "只读分页合成任务 11",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000000a",
+                "title": "只读分页合成任务 10",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000009",
+                "title": "只读分页合成任务 9",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000008",
+                "title": "只读分页合成任务 8",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000007",
+                "title": "只读分页合成任务 7",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000006",
+                "title": "只读分页合成任务 6",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000005",
+                "title": "只读分页合成任务 5",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000004",
+                "title": "只读分页合成任务 4",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000003",
+                "title": "只读分页合成任务 3",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000002",
+                "title": "只读分页合成任务 2",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000001",
+                "title": "只读分页合成任务 1",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2027-01-01T00:00:00Z"
+              }
+            ],
+            "has_more": false,
+            "next_before": null
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?before=b3a1873e-2dea-4da8-9b00-e8397ded3193",
+        "status": 404,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":404,\"message\":\"NOT_FOUND\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 404,
+          "message": "NOT_FOUND",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?before=49bd0b15-488f-4844-a9ff-f72a644f2b08",
+        "status": 404,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":404,\"message\":\"NOT_FOUND\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 404,
+          "message": "NOT_FOUND",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?before=f5bfdd5c-d6a4-449f-9765-5463dbf94eaf",
+        "status": 404,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":404,\"message\":\"NOT_FOUND\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 404,
+          "message": "NOT_FOUND",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=0",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=51",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=1.2",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=true",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?before=bad",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?limit=1&limit=2",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?unknown=yes",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks?before=ABCDEFAB-0000-0000-0000-000000000001",
+        "status": 422,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":422,\"message\":\"INVALID_PRIVATE_TASK_LIST\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 422,
+          "message": "INVALID_PRIVATE_TASK_LIST",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 403,
+        "actor": "full-app-student",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":403,\"message\":\"CURRENT_TEACHER_REQUIRED\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 403,
+          "message": "CURRENT_TEACHER_REQUIRED",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 401,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":401,\"message\":\"INVALID_CURRENT_IDENTITY\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 401,
+          "message": "INVALID_CURRENT_IDENTITY",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 401,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":401,\"message\":\"INVALID_CURRENT_IDENTITY\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 401,
+          "message": "INVALID_CURRENT_IDENTITY",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 401,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":401,\"message\":\"INVALID_CURRENT_IDENTITY\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 401,
+          "message": "INVALID_CURRENT_IDENTITY",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 401,
+        "actor": "anonymous",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":401,\"message\":\"INVALID_CURRENT_IDENTITY\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 401,
+          "message": "INVALID_CURRENT_IDENTITY",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 403,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":403,\"message\":\"CURRENT_TEACHER_REQUIRED\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 403,
+          "message": "CURRENT_TEACHER_REQUIRED",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"items\":[{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000034\",\"title\":\"只读分页合成任务 52\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000033\",\"title\":\"只读分页合成任务 51\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000032\",\"title\":\"只读分页合成任务 50\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000031\",\"title\":\"只读分页合成任务 49\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000030\",\"title\":\"只读分页合成任务 48\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002f\",\"title\":\"只读分页合成任务 47\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002e\",\"title\":\"只读分页合成任务 46\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002d\",\"title\":\"只读分页合成任务 45\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002c\",\"title\":\"只读分页合成任务 44\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002b\",\"title\":\"只读分页合成任务 43\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-00000000002a\",\"title\":\"只读分页合成任务 42\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000029\",\"title\":\"只读分页合成任务 41\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000028\",\"title\":\"只读分页合成任务 40\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000027\",\"title\":\"只读分页合成任务 39\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000026\",\"title\":\"只读分页合成任务 38\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000025\",\"title\":\"只读分页合成任务 37\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000024\",\"title\":\"只读分页合成任务 36\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000023\",\"title\":\"只读分页合成任务 35\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"},{\"task_id\":\"00000000-0000-0000-0000-000000000022\",\"title\":\"只读分页合成任务 34\",\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T12:00:00.123456Z\"}],\"has_more\":true,\"next_before\":\"00000000-0000-0000-0000-000000000022\"}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "items": [
+              {
+                "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+                "title": "合成历史入口",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T14:56:19.753570Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000034",
+                "title": "只读分页合成任务 52",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000033",
+                "title": "只读分页合成任务 51",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000032",
+                "title": "只读分页合成任务 50",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000031",
+                "title": "只读分页合成任务 49",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000030",
+                "title": "只读分页合成任务 48",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002f",
+                "title": "只读分页合成任务 47",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002e",
+                "title": "只读分页合成任务 46",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002d",
+                "title": "只读分页合成任务 45",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002c",
+                "title": "只读分页合成任务 44",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002b",
+                "title": "只读分页合成任务 43",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-00000000002a",
+                "title": "只读分页合成任务 42",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000029",
+                "title": "只读分页合成任务 41",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000028",
+                "title": "只读分页合成任务 40",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000027",
+                "title": "只读分页合成任务 39",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000026",
+                "title": "只读分页合成任务 38",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000025",
+                "title": "只读分页合成任务 37",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000024",
+                "title": "只读分页合成任务 36",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000023",
+                "title": "只读分页合成任务 35",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              },
+              {
+                "task_id": "00000000-0000-0000-0000-000000000022",
+                "title": "只读分页合成任务 34",
+                "created_at": "2026-10-06T12:00:00.123456Z",
+                "updated_at": "2026-10-06T12:00:00.123456Z"
+              }
+            ],
+            "has_more": true,
+            "next_before": "00000000-0000-0000-0000-000000000022"
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 503,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":503,\"message\":\"TEACHER_WORK_LIVE_GATES_UNVERIFIED\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 503,
+          "message": "TEACHER_WORK_LIVE_GATES_UNVERIFIED",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks/f1984b2f-f478-4517-a4e4-864740393205",
+        "status": 200,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":200,\"message\":\"ok\",\"data\":{\"task_id\":\"f1984b2f-f478-4517-a4e4-864740393205\",\"title\":\"合成历史入口\",\"topic\":\"合成主题\",\"audience\":\"合成对象\",\"duration_minutes\":45,\"target_slide_count\":8,\"input_revision\":1,\"working_revision\":1,\"created_at\":\"2026-10-06T12:00:00.123456Z\",\"updated_at\":\"2026-10-06T14:56:19.753570Z\",\"scope\":\"private\",\"working\":{\"requirements\":\"\",\"resource_ids\":[\"courseware-030d7a7896b436eb7ae818b4\"],\"needs_normalization_fields\":[\"teaching_flow\"]}}}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 200,
+          "message": "ok",
+          "data": {
+            "task_id": "f1984b2f-f478-4517-a4e4-864740393205",
+            "title": "合成历史入口",
+            "topic": "合成主题",
+            "audience": "合成对象",
+            "duration_minutes": 45,
+            "target_slide_count": 8,
+            "input_revision": 1,
+            "working_revision": 1,
+            "created_at": "2026-10-06T12:00:00.123456Z",
+            "updated_at": "2026-10-06T14:56:19.753570Z",
+            "scope": "private",
+            "working": {
+              "requirements": "",
+              "resource_ids": [
+                "courseware-030d7a7896b436eb7ae818b4"
+              ],
+              "needs_normalization_fields": [
+                "teaching_flow"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks/f1984b2f-f478-4517-a4e4-864740393205",
+        "status": 404,
+        "actor": "full-app-other",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":404,\"message\":\"NOT_FOUND\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 404,
+          "message": "NOT_FOUND",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks/f5bfdd5c-d6a4-449f-9765-5463dbf94eaf",
+        "status": 404,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":404,\"message\":\"NOT_FOUND\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 404,
+          "message": "NOT_FOUND",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 503,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":503,\"message\":\"OWNER_NAMESPACE_MISMATCH\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 503,
+          "message": "OWNER_NAMESPACE_MISMATCH",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 503,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":503,\"message\":\"OWNER_NAMESPACE_MISMATCH\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 503,
+          "message": "OWNER_NAMESPACE_MISMATCH",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 403,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":403,\"message\":\"CURRENT_TEACHER_REQUIRED\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 403,
+          "message": "CURRENT_TEACHER_REQUIRED",
+          "data": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/teacher/work/tasks",
+        "status": 401,
+        "actor": "full-app-teacher",
+        "idempotency_key": null,
+        "request_utf8": "",
+        "response_utf8": "{\"code\":401,\"message\":\"INVALID_CURRENT_IDENTITY\",\"data\":null}",
+        "body_encoding": "actual request/response UTF8",
+        "body": {
+          "code": 401,
+          "message": "INVALID_CURRENT_IDENTITY",
+          "data": null
+        }
+      }
+    ],
+    "observations": [
+      {
+        "independent_connection": 12,
+        "row_counts": {
+          "teacher_work_artifacts": 0,
+          "teacher_work_catalog_selections": 0,
+          "teacher_work_evidence_snapshots": 0,
+          "teacher_work_material_proposal_records": 0,
+          "teacher_work_messages": 0,
+          "teacher_work_outline_approvals": 0,
+          "teacher_work_outline_snapshots": 0,
+          "teacher_work_owner_run_leases": 0,
+          "teacher_work_package_versions": 0,
+          "teacher_work_preview_states": 0,
+          "teacher_work_runs": 0,
+          "teacher_work_schema_versions": 2,
+          "teacher_work_tasks": 0,
+          "teacher_work_version_reviews": 0
+        }
+      },
+      {
+        "independent_connection": 12,
+        "row_counts": {
+          "teacher_work_artifacts": 0,
+          "teacher_work_catalog_selections": 0,
+          "teacher_work_evidence_snapshots": 0,
+          "teacher_work_material_proposal_records": 0,
+          "teacher_work_messages": 0,
+          "teacher_work_outline_approvals": 0,
+          "teacher_work_outline_snapshots": 0,
+          "teacher_work_owner_run_leases": 0,
+          "teacher_work_package_versions": 0,
+          "teacher_work_preview_states": 0,
+          "teacher_work_runs": 0,
+          "teacher_work_schema_versions": 2,
+          "teacher_work_tasks": 0,
+          "teacher_work_version_reviews": 0
+        }
+      },
+      {
+        "independent_connection": 12,
+        "row_counts": {
+          "teacher_work_artifacts": 0,
+          "teacher_work_catalog_selections": 0,
+          "teacher_work_evidence_snapshots": 0,
+          "teacher_work_material_proposal_records": 0,
+          "teacher_work_messages": 0,
+          "teacher_work_outline_approvals": 0,
+          "teacher_work_outline_snapshots": 0,
+          "teacher_work_owner_run_leases": 2,
+          "teacher_work_package_versions": 0,
+          "teacher_work_preview_states": 0,
+          "teacher_work_runs": 0,
+          "teacher_work_schema_versions": 2,
+          "teacher_work_tasks": 55,
+          "teacher_work_version_reviews": 0
+        }
+      },
+      {
+        "independent_connection": 12,
+        "row_counts": {
+          "teacher_work_artifacts": 0,
+          "teacher_work_catalog_selections": 0,
+          "teacher_work_evidence_snapshots": 0,
+          "teacher_work_material_proposal_records": 0,
+          "teacher_work_messages": 0,
+          "teacher_work_outline_approvals": 0,
+          "teacher_work_outline_snapshots": 0,
+          "teacher_work_owner_run_leases": 2,
+          "teacher_work_package_versions": 0,
+          "teacher_work_preview_states": 0,
+          "teacher_work_runs": 0,
+          "teacher_work_schema_versions": 2,
+          "teacher_work_tasks": 55,
+          "teacher_work_version_reviews": 0
+        }
+      }
+    ],
+    "provider_calls": [],
+    "identity": {
+      "schema_name": "tw_native_4fef673692cd401d9625b71b5fdff6ba",
+      "server_uuid": "0ec973fe-c196-11f1-93df-a764fece0fdc",
+      "datadir": "/var/lib/mysql/",
+      "socket": "/run/gezhi-native/mysql.sock"
+    },
+    "startup_tables": [
+      "chat_messages",
+      "code_diagnoses",
+      "domain_records",
+      "gitea_account_bindings",
+      "ranked_questions",
+      "sms_verification_codes",
+      "student_profiles",
+      "user_accounts",
+      "user_custom_ai_models",
+      "user_knowledge_documents",
+      "user_knowledge_repositories",
+      "user_rag_mappings"
+    ],
+    "migration_receipts": [
+      {
+        "identity": {
+          "schema_name": "tw_native_4fef673692cd401d9625b71b5fdff6ba",
+          "server_uuid": "0ec973fe-c196-11f1-93df-a764fece0fdc",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "contract_hash": "6f2548a7f09b44d182a0d73aa408486634f55de4bdaaac512ed166eedd0822f5",
+        "attempted_tables": [
+          "teacher_work_tasks",
+          "teacher_work_runs",
+          "teacher_work_messages",
+          "teacher_work_evidence_snapshots",
+          "teacher_work_outline_snapshots",
+          "teacher_work_outline_approvals",
+          "teacher_work_package_versions",
+          "teacher_work_artifacts",
+          "teacher_work_preview_states",
+          "teacher_work_version_reviews",
+          "teacher_work_catalog_selections",
+          "teacher_work_owner_run_leases",
+          "teacher_work_schema_versions"
+        ],
+        "confirmed_tables": [
+          "teacher_work_tasks",
+          "teacher_work_runs",
+          "teacher_work_messages",
+          "teacher_work_evidence_snapshots",
+          "teacher_work_outline_snapshots",
+          "teacher_work_outline_approvals",
+          "teacher_work_package_versions",
+          "teacher_work_artifacts",
+          "teacher_work_preview_states",
+          "teacher_work_version_reviews",
+          "teacher_work_catalog_selections",
+          "teacher_work_owner_run_leases",
+          "teacher_work_schema_versions"
+        ],
+        "completed": true,
+        "ledger_written": true,
+        "ledger_commit_state": "ACKNOWLEDGED"
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_4fef673692cd401d9625b71b5fdff6ba",
+          "server_uuid": "0ec973fe-c196-11f1-93df-a764fece0fdc",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "attempted_steps": [
+          "approval_reference",
+          "immutable_binding",
+          "manual_run",
+          "ready_files"
+        ],
+        "confirmed_steps": [
+          "approval_reference",
+          "immutable_binding",
+          "manual_run",
+          "ready_files"
+        ],
+        "completed": true,
+        "ledger_commit_state": "CONFIRMED"
+      },
+      {
+        "identity": {
+          "schema_name": "tw_native_4fef673692cd401d9625b71b5fdff6ba",
+          "server_uuid": "0ec973fe-c196-11f1-93df-a764fece0fdc",
+          "datadir": "/var/lib/mysql/",
+          "socket": "/run/gezhi-native/mysql.sock"
+        },
+        "contract_hash": "e6c93af0bf516a51ba387476f43db6481154cbc5f1498a659efef44d7be07887",
+        "attempted_tables": [
+          "teacher_work_material_proposal_records"
+        ],
+        "confirmed_tables": [
+          "teacher_work_material_proposal_records"
+        ],
+        "completed": true,
+        "ledger_written": true,
+        "ledger_commit_state": "ACKNOWLEDGED"
+      }
+    ],
+    "real_lifespan_entered": true,
+    "task_history": {
+      "owner_rows": 53,
+      "same_timestamp_stable": true,
+      "read_dml_count": 0,
+      "read_commit_count": 0,
+      "bounded_task_queries": 20,
+      "namespace_corruption_refused": true,
+      "list_provider_calls": 0,
+      "summary_grants_no_authority": true
+    },
+    "real_lifespan_closed_runtimes": true,
+    "private_storage_removed": true,
+    "guards": {
+      "env_reads_denied": 0,
+      "tcp_connections_denied": 0,
+      "unix_connects": 1
+    }
+  },
+  "ordinary": {
+    "command": {
+      "command": [
+        "/tmp/gezhi-full-app-venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "pytest_asyncio.plugin",
+        "--junitxml=/tmp/gezhi-task-history-ttfgzlas/ordinary-final/pytest.xml",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_ai_bridge.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_ai_bridge_regressions.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_authorization.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_chat.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_chat_execution.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_chat_execution_regressions.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_contracts.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_exporters.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_full_app_runner.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_legacy.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_mysql_schema.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_chat.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_export_bytes.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_exports.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_materials.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_snapshots.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_private_task_list.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_proposal_execution.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_proposal_http.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_proposal_persistence.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_proposals.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_repository.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_run_persistence.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_run_repository.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_run_sql.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_run_sql_poison.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_run_statements.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_runs.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_teacher_work_wiring.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_auth_guards.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_sms_auth.py",
+        "/workspace/GeZhi-task-history/backend/tests/test_cors_config.py"
+      ],
+      "cwd": "/tmp/gezhi-task-history-ttfgzlas/ordinary-final/blank-cwd",
+      "environment_names": [
+        "APP_SECRET_KEY",
+        "DB_HOST",
+        "DB_NAME",
+        "DB_PASS",
+        "DB_USER",
+        "DOCKER_CONFIG",
+        "GEZHI_FULL_APP_EVIDENCE",
+        "LANG",
+        "MPLCONFIGDIR",
+        "OPENAI_API_BASE",
+        "OPENAI_API_KEY",
+        "PATH",
+        "PIP_CONFIG_FILE",
+        "PIP_NO_CACHE_DIR",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONPATH",
+        "RAGFLOW_AGENT_ID",
+        "RAGFLOW_API_KEY",
+        "RAGFLOW_BASE_URL",
+        "RAGFLOW_CHAT_ID",
+        "RAGFLOW_DATASET_ID",
+        "RAGFLOW_PUBLIC_DATASET_IDS",
+        "SMS_MOCK_ENABLED",
+        "TZ",
+        "XDG_CACHE_HOME"
+      ]
+    },
+    "exit_code": 0,
+    "primary_tests": 326,
+    "subtests": 30,
+    "subtests_not_added": true,
+    "junit": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "356",
+        "time": "25.820",
+        "timestamp": "2026-10-06T14:50:22.833017+00:00",
+        "hostname": "b65e56b1d82a"
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "/tmp/gezhi-task-history-ttfgzlas/ordinary-final/command.json",
+        "byte_size": 3632,
+        "sha256": "ca2863e9e5b6cf073aa7cb8803a124b94e540d83e25383ab01dede6a18b8eb08"
+      },
+      {
+        "path": "/tmp/gezhi-task-history-ttfgzlas/ordinary-final/pytest.log",
+        "byte_size": 3953,
+        "sha256": "c803acf6b276e74f6b0f0b562929bc9989213dfc7e199a7980ec940204fc71b8"
+      },
+      {
+        "path": "/tmp/gezhi-task-history-ttfgzlas/ordinary-final/pytest.xml",
+        "byte_size": 43012,
+        "sha256": "1c360306ee59e6918d9ba9e68ad0d1d82603b97eb0de6a6e004f453bba55fa15"
+      }
+    ]
+  },
+  "frontend": {
+    "command": "TZ=Asia/Shanghai node --import ./frontend/tests/fixtures/desktopShippedNodePreload.mjs --test --test-concurrency=1 --test-reporter=tap frontend/tests/teacherWork*.test.mjs",
+    "exit_code": 0,
+    "summary": {
+      "tests": 1130,
+      "pass": 1130,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "new_history_tests": 24,
+    "log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-frozen-final.log",
+      "byte_size": 316655,
+      "sha256": "8e5e33205ebe03fd5f4ee1d801a5b6ff5489f6afd2c1159d255ac04af1094bb4"
+    }
+  },
+  "complete_desktop": {
+    "command": "TZ=Asia/Shanghai node frontend/scripts/desktopTestRunner.mjs",
+    "exit_code": 1,
+    "collected": false,
+    "reason": "ERR_MODULE_NOT_FOUND: locked @babel/parser absent",
+    "log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/desktop-frozen-final.log",
+      "byte_size": 1052,
+      "sha256": "b499e4c69e8f3ce8d36bb1c6e24d9c964c7f5a98b374c97869a44d80a4ec1eb9"
+    },
+    "handoff": "dot must verify full locked desktop suite; no dependency/registry/DNS changes"
+  },
+  "independent_review": {
+    "critical": 0,
+    "important": 2,
+    "minor": 1,
+    "reviewer": "/root/review_teacher_task_history",
+    "base": "3bc5f0bf768bffe8e1df0628cb9992cf83215748",
+    "frozen_files_verified": 22,
+    "reproduction_tests": 22,
+    "review_root": "/tmp/gezhi-history-review-20261006",
+    "log": "/tmp/gezhi-history-review-20261006-node.log",
+    "findings": [
+      "new-create bypasses task guard and loses uncertain chat replay",
+      "ordinary editing clears presentation error and releases unknown working save guard",
+      "artifact region misses modal inert guard"
+    ],
+    "fix_verification": {
+      "red": "review-fixes-red.log",
+      "green": "create-success-guard-green.log",
+      "tests": 24,
+      "failures": 0,
+      "skipped": 0,
+      "related_final_tests": 1130,
+      "related_exit_code": 0
+    },
+    "ruling": "Minor inert omission is treated as Important: modal background remained keyboard-interactive; fixed with a finite-rendered inert assertion."
+  },
+  "red_green_logs": {
+    "backend-dto-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/backend-dto-red.log",
+      "byte_size": 1156,
+      "sha256": "3711ee7089cb64666d7a13915f0e8cdbf809591e6d6e67dc2b9984975a418c15"
+    },
+    "backend-dto-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/backend-dto-green.log",
+      "byte_size": 98,
+      "sha256": "775b7aa27d0c17f48b3feff20c836f14b6ed8ebcb90ec7e0b76d2a13c579268a"
+    },
+    "native-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/native-red.log",
+      "byte_size": 5180,
+      "sha256": "5778156c10f1b1dbe321b7553885fcb25e55bb972cfd8d71320c1bbab093c770"
+    },
+    "frontend-history-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-history-red.log",
+      "byte_size": 11379,
+      "sha256": "902f89471a6326545ffda2be997a0e5cfa9aa30471d59d0959f11b5713c87922"
+    },
+    "frontend-history-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-history-green.log",
+      "byte_size": 2117,
+      "sha256": "80904a95a6a3574b2a9c1e7a67b32a0bb00c84c1c55f9ea9e4a4b94a52045468"
+    },
+    "frontend-guard-followup-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-guard-followup-red.log",
+      "byte_size": 4459,
+      "sha256": "be3448361d372882bf73994d846261d45953d4dbee36317b4ed61e9159e7ce1b"
+    },
+    "frontend-guard-followup-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/frontend-guard-followup-green.log",
+      "byte_size": 2669,
+      "sha256": "86a016d472395ed2f0336aa12144787f34dfe17ceb1ef2c7a288fcdba10b85ee"
+    },
+    "review-fixes-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/review-fixes-red.log",
+      "byte_size": 6174,
+      "sha256": "da96ffafae821d989331a1f43ab559b8ea047529784a7a24b89dcdbcd6fc78e3"
+    },
+    "review-fixes-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/review-fixes-green.log",
+      "byte_size": 3005,
+      "sha256": "4b7d0d901646ec20941cb0e46e3da38ff69e3100ae316b9dae808b6709c42848"
+    },
+    "unknown-save-ui-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/unknown-save-ui-red.log",
+      "byte_size": 3811,
+      "sha256": "c1735b7bfdf6d1e93e8c24faf051d0c8c3257762c95ba9cf86e82d744cd9cf46"
+    },
+    "create-success-guard-red.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/create-success-guard-red.log",
+      "byte_size": 4101,
+      "sha256": "4b54a378c9f5aa4140ae68b3732be8b9d6d610c2a8e18ee98f5e8c2a26aac39b"
+    },
+    "create-success-guard-green.log": {
+      "path": "/tmp/gezhi-task-history-ttfgzlas/create-success-guard-green.log",
+      "byte_size": 3132,
+      "sha256": "10fb58180739009bc0e7ee4a4c01603a57b73449ef25185cff0e9ae2f3f5740e"
+    }
+  },
+  "limits": [
+    "No browser/mobile/CI queries/deployment/main changes/self push",
+    "No credentials or real external provider/academic calls",
+    "Full app provider fixtures are synthetic at HTTP transport only; list calls provider zero times",
+    "Overlapping phases/subsets/repeats must not be added",
+    "Source contains existing username identity-incarnation contract; no account migration in this stage"
+  ]
+}

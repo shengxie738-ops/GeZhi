@@ -227,7 +227,7 @@ def test_t3_router_registration_has_no_startup_or_student_mutation():
     assert [keyword.value.value for item in ast.walk(factory) if isinstance(item, ast.Call) and _name(item.func) == "APIRouter" for keyword in item.keywords if keyword.arg == "prefix"] == ["/teacher/work"]
     route_calls = [item for item in ast.walk(factory) if isinstance(item, ast.Call) and _name(item.func).startswith("router.")]
     assert {(_name(n.func), n.args[0].value) for n in route_calls} == {
-        ("router.get", "/capabilities"), ("router.post", "/tasks"),
+        ("router.get", "/capabilities"), ("router.get", "/tasks"), ("router.post", "/tasks"),
         ("router.get", "/tasks/{task_id}"), ("router.patch", "/tasks/{task_id}/working"),
         ("router.post", "/tasks/{task_id}/messages"), ("router.get", "/tasks/{task_id}/messages"),
         ("router.get", "/tasks/{task_id}/runs/{run_id}"), ("router.post", "/tasks/{task_id}/runs/{run_id}/cancel"),

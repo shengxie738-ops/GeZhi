@@ -460,6 +460,119 @@ class Scenario:
         self.facts["ack_loss"] = dict(position="after" if after else "before", faults=target["faults"],
                                       real_commit_called=after, unknown_has_no_receipt=True, confirmed_replay=after)
 
+    async def task_history(self):
+        from datetime import datetime
+        from uuid import UUID, uuid4
+        from app.models.teacher_work import OwnerRunLease
+        root = "/api/teacher/work/tasks"
+        before = self.rows()
+        empty = await self.call("GET", root)
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["data"] == dict(items=[], has_more=False, next_before=None)
+        assert self.rows() == before  # No implicit namespace/lease initialization.
+        create = dict(title="合成历史入口", topic="合成主题", audience="合成对象",
+                      scope="private", resource_ids=[self.resource])
+        created = await self.call("POST", root, body=create, key="history-owner")
+        assert created.status_code == 200, created.text
+        task = created.json()["data"]
+        foreign = await self.call("POST", root, body=create, key="history-other", owner=OTHER)
+        assert foreign.status_code == 200, foreign.text
+        fixed = datetime(2026, 10, 6, 12, 0, 0, 123456)
+        with database.engine.begin() as connection:
+            exemplar = dict(connection.execute(select(WorkTask.__table__).where(
+                WorkTask.task_id == task["task_id"])).mappings().one())
+            connection.execute(update(WorkTask).where(WorkTask.task_id == task["task_id"]).values(created_at=fixed))
+            fixture = []
+            for number in range(1, 53):
+                fixture.append({**exemplar, "task_id": str(UUID(int=number)), "lesson_draft_id": "history-fixture-" + str(number),
+                    "create_idempotency_key": None, "create_request_digest": None,
+                    "title": "只读分页合成任务 " + str(number), "created_at": fixed, "updated_at": fixed})
+            connection.execute(insert(WorkTask), fixture)
+            offering_id = str(uuid4())
+            connection.execute(insert(WorkTask).values({**exemplar, "task_id": offering_id,
+                "lesson_draft_id": "history-offering-fixture", "create_idempotency_key": None,
+                "create_request_digest": None, "institution_id": str(uuid4()), "offering_id": str(uuid4()),
+                "created_at": fixed, "updated_at": fixed}))
+            # Display timestamps cannot move a task across immutable pages.
+            connection.execute(update(WorkTask).where(WorkTask.task_id == str(UUID(int=1))).values(
+                updated_at=datetime(2027, 1, 1)))
+        baseline = self.rows()
+        statements, commits = [], []
+        def trace(conn, cursor, statement, params, context, many):
+            statements.append(statement)
+        def commit(conn):
+            commits.append(True)
+        event.listen(database.engine, "before_cursor_execute", trace)
+        event.listen(database.engine, "commit", commit)
+        try:
+            first = await self.call("GET", root + "?limit=20")
+            assert first.status_code == 200, first.text
+            page = first.json()["data"]
+            assert len(page["items"]) == 20 and page["has_more"]
+            assert page["next_before"] == page["items"][-1]["task_id"]
+            assert all(set(item) == {"task_id", "title", "created_at", "updated_at"} for item in page["items"])
+            assert (await self.call("GET", root + "?limit=20")).json()["data"] == page
+            maximum = await self.call("GET", root + "?limit=50")
+            assert len(maximum.json()["data"]["items"]) == 50 and maximum.json()["data"]["has_more"]
+            ids = [item["task_id"] for item in page["items"]]
+            while page["has_more"]:
+                response = await self.call("GET", root + "?limit=20&before=" + page["next_before"])
+                assert response.status_code == 200, response.text
+                page = response.json()["data"]
+                ids.extend(item["task_id"] for item in page["items"])
+            assert page["next_before"] is None
+            expected = sorted([task["task_id"], *(str(UUID(int=n)) for n in range(1, 53))], reverse=True)
+            assert ids == expected and len(set(ids)) == 53
+            for anchor in (foreign.json()["data"]["task_id"], str(uuid4()), offering_id):
+                refused = await self.call("GET", root + "?before=" + anchor)
+                assert refused.status_code == 404 and refused.json()["data"] is None, refused.text
+            for query in ("limit=0", "limit=51", "limit=1.2", "limit=true", "before=bad", "limit=1&limit=2", "unknown=yes"):
+                refused = await self.call("GET", root + "?" + query)
+                assert refused.status_code == 422, refused.text
+            assert (await self.call("GET", root + "?before=ABCDEFAB-0000-0000-0000-000000000001")).status_code == 422
+            assert (await self.call("GET", root, owner=STUDENT)).status_code == 403
+            for token in ("invalid", create_access_token(OWNER, "teacher", expires_in=-10),
+                          create_access_token("missing-history-teacher", "teacher")):
+                assert (await self.call("GET", root, token=token)).status_code == 401
+            assert (await self.call("GET", root, auth=False)).status_code == 401
+            assert (await self.call("GET", root, token=create_access_token(STUDENT, "teacher"))).status_code == 403
+            assert (await self.call("GET", root, token=create_access_token(OWNER, "student"))).status_code == 200
+            settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED = False
+            try:
+                assert (await self.call("GET", root)).status_code == 503
+            finally:
+                settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED = True
+        finally:
+            event.remove(database.engine, "before_cursor_execute", trace)
+            event.remove(database.engine, "commit", commit)
+        assert not commits
+        assert not any(re.match(r"\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|TRUNCATE)\b", s, re.I) for s in statements)
+        task_queries = [s for s in statements if "FROM teacher_work_tasks" in s]
+        assert task_queries and all("LIMIT" in s.upper() for s in task_queries)
+        assert self.rows() == baseline and not self.provider_calls
+        opened = await self.call("GET", root + "/" + task["task_id"])
+        assert opened.status_code == 200 and opened.json()["data"]["task_id"] == task["task_id"]
+        denied = await self.call("GET", root + "/" + task["task_id"], owner=OTHER)
+        assert denied.status_code == 404
+        assert (await self.call("GET", root + "/" + offering_id)).status_code == 404
+        # A namespace mismatch refuses rather than hiding corrupted ownership.
+        with database.engine.begin() as connection:
+            connection.execute(update(WorkTask).where(WorkTask.task_id == str(UUID(int=1))).values(owner_storage_id=str(uuid4())))
+        assert (await self.call("GET", root)).status_code == 503
+        with database.engine.begin() as connection:
+            connection.execute(update(WorkTask).where(WorkTask.task_id == str(UUID(int=1))).values(owner_storage_id=exemplar["owner_storage_id"]))
+            connection.execute(delete(OwnerRunLease).where(OwnerRunLease.owner == OWNER))
+        assert (await self.call("GET", root)).status_code == 503
+        with database.engine.begin() as connection:
+            connection.execute(update(UserAccount).where(UserAccount.username == OWNER).values(role="student"))
+        assert (await self.call("GET", root)).status_code == 403
+        with database.engine.begin() as connection:
+            connection.execute(delete(UserAccount).where(UserAccount.username == OWNER))
+        assert (await self.call("GET", root)).status_code == 401
+        self.facts["task_history"] = dict(owner_rows=53, same_timestamp_stable=True,
+            read_dml_count=0, read_commit_count=0, bounded_task_queries=len(task_queries),
+            namespace_corruption_refused=True, list_provider_calls=0, summary_grants_no_authority=True)
+
     async def isolation(self):
         try:
             Path(".env").open()
@@ -496,6 +609,8 @@ class Scenario:
                         await self.gates()
                     elif self.name.startswith("ack_"):
                         await self.ack_loss()
+                    elif self.name == "task_history":
+                        await self.task_history()
                     elif self.name == "isolation":
                         await self.isolation()
                     else:

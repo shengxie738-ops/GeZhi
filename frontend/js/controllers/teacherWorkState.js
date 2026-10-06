@@ -8,6 +8,8 @@ export const closedPrivateChat = () => ({ send: false, history: false, read_run:
 export const emptyTeacherChat = () => ({ chatText: '', chatStatus: 'idle', chatError: null, chatRun: null,
     chatHistoryStatus: 'idle', chatHistoryHasMore: false, chatHistoryBefore: null, chatHistoryError: null, chatRetryAvailable: false });
 const defaultCreateForm = () => ({ title: '', topic: '', audience: '', duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
+const emptyTaskHistory = () => ({ items: [], status: 'idle', error: null, has_more: false, next_before: null });
+const emptyTaskSwitch = () => ({ open: false, target: null, reason: null });
 const defaultPreferences = () => ({ navCollapsed: false, taskRailCollapsed: false, artifactCollapsed: false,
     drawerOpen: false, artifactTab: 'files' });
 const actorValid = actor => typeof actor === 'string' && actor.length > 0 && actor.length <= 200 &&
@@ -22,6 +24,7 @@ export function createTeacherWorkState() {
     return { actor: null, role: null, authEpoch: 0, authVerified: false, active: false,
         task_id: null, input_revision: null, working_revision: null, view_epoch: 0, run_id: null,
         task: null, taskReadStatus: 'idle', taskConflict: false, edit_epoch: 0, requirementsEdited: false,
+        taskHistory: emptyTaskHistory(), taskSwitch: emptyTaskSwitch(), workingOutcomeUnknown: false,
         createOpen: false, createForm: defaultCreateForm(), createStatus: 'idle',
         draftResourceIds: [], draftTargetSlideCount: 8, resourceCatalog: [], resourcesStatus: 'idle', resourceError: null,
         privateTaskAvailability: closedPrivateTasks(), privateChatAvailability: closedPrivateChat(), ...emptyTeacherChat(),
@@ -43,6 +46,8 @@ export function clearTeacherTaskSelection(state) {
 
 export function invalidateTeacherWork(state) {
     clearTeacherTaskSelection(state);
+    state.taskHistory = emptyTaskHistory(); state.taskSwitch = emptyTaskSwitch();
+    state.workingOutcomeUnknown = false;
     state.capabilities = { status: 'idle', data: null, reason: null };
     state.operationAvailability = closedOperations(); state.privateTaskAvailability = closedPrivateTasks(); state.privateChatAvailability = closedPrivateChat();
     state.createOpen = false; state.createForm = defaultCreateForm(); state.createStatus = 'idle';

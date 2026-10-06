@@ -2594,6 +2594,8 @@
             @open-tool="teachingOpenTool" @logout="handleLogout">
         </teaching-workbench-shell>
         <teacher-work v-else-if="isLoggedIn && authVerified && currentRole === 'teacher' && currentView === 't_work' && teachingLegacyRenderAllowed"
+            @reload-task-history="teacherWorkReloadTaskHistory" @load-older-tasks="teacherWorkLoadOlderTasks"
+            @request-task-switch="teacherWorkRequestTaskSwitch" @confirm-task-switch="teacherWorkConfirmTaskSwitch" @cancel-task-switch="teacherWorkCancelTaskSwitch"
             :state="teacherWorkState" :menus="activeMenus" :current-user="currentUser"
             @navigate="teachingOpenTool" @logout="handleLogout" @open-user-center="openUserCenter"
             @retry-capabilities="teacherWorkRetryCapabilities" @toggle-navigation="teacherWorkToggleNavigation"

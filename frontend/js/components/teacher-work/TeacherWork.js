@@ -20,7 +20,8 @@ export default {
         'select-material-proposal-source', 'generate-material-proposal', 'retry-material-proposal', 'refresh-material-proposal',
         'cancel-material-proposal', 'adopt-material-proposal', 'confirm-material-proposal-replace',
         'cancel-material-proposal-replace', 'retry-material-proposals-capabilities',
-        'open-material-proposal-run', 'reload-material-proposal-history'],
+        'open-material-proposal-run', 'reload-material-proposal-history',
+        'reload-task-history', 'load-older-tasks', 'request-task-switch', 'confirm-task-switch', 'cancel-task-switch'],
     setup(props, { emit }) {
         const privateTaskAvailability = computed(() => props.state.privateTaskAvailability || { create: false, read: false, update: false });
         const privateTasksConnected = computed(() => Object.values(privateTaskAvailability.value).some(value => value === true));
@@ -60,16 +61,19 @@ export default {
                 message.message_id === messageId && materialProposalSourceCandidate(message))) emit('select-material-proposal-source', messageId);
         }
         const canEditTask = computed(() => Boolean(selectedTask.value && !props.state.createOpen && privateTaskAvailability.value.update));
-        const canSave = computed(() => canEditTask.value && !props.state.createOpen && props.state.taskReadStatus === 'ready' &&
+        const canSave = computed(() => canEditTask.value && !props.state.workingOutcomeUnknown && !props.state.createOpen && props.state.taskReadStatus === 'ready' &&
             !props.state.taskConflict && props.state.composerStatus === 'unsaved' && !packageWriteBusy.value && !props.state.materialProposalBusy);
-        const composerNote = computed(() => props.state.createOpen ? '新建任务信息尚未提交 · 当前教学需求仍保留在页面' :
+        const composerNote = computed(() => props.state.workingOutcomeUnknown ? '保存结果尚未确认 · 请重新读取当前任务，较新的编辑仍保留在页面' :
+            props.state.createOpen ? '新建任务信息尚未提交 · 当前教学需求仍保留在页面' :
             !selectedTask.value ? '未发送 · 仅保留在当前页面' :
             props.state.taskConflict ? '未保存 · 版本已变更，重新读取后可继续保存；当前编辑可复制' :
             props.state.taskReadStatus === 'loading' ? '正在重新读取任务 · 当前编辑保留在页面' :
             props.state.taskReadStatus === 'error' ? '任务读取失败 · 当前编辑保留在页面，可复制' :
             props.state.composerStatus === 'saving' ? '正在保存 · 以服务端确认结果为准' :
             props.state.composerStatus === 'saved' ? '已保存 · 教师私人草稿' : '未保存 · 请点击保存需求');
-        const dialogOpen = computed(() => props.state.presentation.catalogOpen !== null ||
+        const taskHistory = computed(() => props.state.taskHistory || { items: [], status: 'idle', error: null, has_more: false });
+        const taskSwitch = computed(() => props.state.taskSwitch || { open: false, reason: null });
+        const dialogOpen = computed(() => taskSwitch.value.open || props.state.presentation.catalogOpen !== null ||
             props.state.presentation.drawerMode && props.state.ui.drawerOpen);
         const capabilityTitle = computed(() => ({ idle: '等待登录身份验证', loading: '正在读取服务端能力',
             unavailable: '教师 Work 暂不可用', error: '无法读取教师 Work 能力',
@@ -78,7 +82,7 @@ export default {
         const handleDialogKey = (event, kind) => {
             if (kind === 'artifacts' && (!props.state.presentation.drawerMode || !props.state.ui.drawerOpen)) return;
             if (event.key === 'Escape') {
-                event.preventDefault(); event.stopPropagation?.(); emit(kind === 'artifacts' ? 'close-artifacts' : 'close-catalog');
+                event.preventDefault(); event.stopPropagation?.(); emit(kind === 'switch' ? 'cancel-task-switch' : kind === 'artifacts' ? 'close-artifacts' : 'close-catalog');
                 return;
             }
             if (event.key !== 'Tab') return;
@@ -103,7 +107,7 @@ export default {
             event.preventDefault(); emit('set-artifact-tab', tabs[index]);
             event.currentTarget.querySelectorAll('[role="tab"]')[index]?.focus();
         };
-        return { dialogOpen, capabilityTitle, capabilityReason, teacherWorkReasonText, handleDialogKey, handleArtifactTabKey,
+        return { dialogOpen, taskHistory, taskSwitch, capabilityTitle, capabilityReason, teacherWorkReasonText, handleDialogKey, handleArtifactTabKey,
             privateTaskAvailability, privateTasksConnected, privateChatAvailability, packageWriteBusy, canCreateTask,
             chatBusy, canSendChat, canCancelChat, cancelChatVisible,
             chatStatusText, chatReasonText, resultLabel, createForm, resources, selectedTask, canEditTask, canSave, composerNote,
@@ -158,11 +162,25 @@ export default {
                 <div class="teacher-work-task-groups">
                     <section class="teacher-work-task-group"><h3><i class="ph ph-caret-down" aria-hidden="true"></i>课程项目</h3>
                         <p>课程任务尚未读取</p></section>
-                    <section class="teacher-work-task-group"><h3><i class="ph ph-caret-down" aria-hidden="true"></i>私人备课</h3>
-                        <p v-if="selectedTask" class="teacher-work-current-task" aria-current="true">{{ selectedTask.title }}</p>
-                        <p v-else>暂无可显示的任务</p></section>
+                    <section class="teacher-work-task-group" :aria-busy="taskHistory.status === 'loading'"><h3><i class="ph ph-caret-down" aria-hidden="true"></i>私人备课</h3>
+                        <p v-if="selectedTask && !taskHistory.items.some(item => item.task_id === selectedTask.task_id)"
+                            class="teacher-work-current-task" aria-current="true">{{ selectedTask.title }}</p>
+                        <button v-for="item in taskHistory.items" :key="item.task_id" type="button"
+                            class="teacher-work-button teacher-work-button--quiet" :class="{ 'teacher-work-current-task': item.task_id === state.task_id }"
+                            :aria-current="item.task_id === state.task_id ? 'true' : undefined" :disabled="!privateTaskAvailability.read"
+                            @click="$emit('request-task-switch', item.task_id, $event)">{{ item.title }}</button>
+                        <p v-if="taskHistory.status === 'loading'" role="status">正在读取私人任务</p>
+                        <p v-else-if="taskHistory.status === 'error'" role="alert">{{ teacherWorkReasonText(taskHistory.error) }}</p>
+                        <p v-else-if="taskHistory.status === 'ready' && !taskHistory.items.length">暂无私人任务</p>
+                        <p v-else-if="taskHistory.status === 'idle' && !selectedTask">任务列表尚未读取</p>
+                        <button type="button" class="teacher-work-button teacher-work-button--quiet"
+                            :disabled="!privateTaskAvailability.read || taskHistory.status === 'loading'" @click="$emit('reload-task-history')">
+                            {{ taskHistory.status === 'error' ? '重试任务列表' : '刷新任务列表' }}</button>
+                        <button v-if="taskHistory.has_more" type="button" class="teacher-work-button teacher-work-button--quiet"
+                            :disabled="!privateTaskAvailability.read || taskHistory.status === 'loading'" @click="$emit('load-older-tasks')">加载更早任务</button>
+                    </section>
                     <p id="teacher-work-task-unavailable" class="teacher-work-muted">{{ privateTasksConnected ?
-                        '仅显示当前私人任务；可通过任务链接重新打开' : '任务入口尚未接通，原有草稿仍可从 AI 备课打开' }}</p>
+                        '仅显示当前教师的私人任务；打开后单独核对各项操作权限' : '任务入口尚未接通，原有草稿仍可从 AI 备课打开' }}</p>
                 </div>
                 <div class="teacher-work-task-tools">
                     <button type="button" @click="$emit('open-catalog', 'skills', $event)"><i class="ph ph-cube" aria-hidden="true"></i>
@@ -359,7 +377,7 @@ export default {
             <aside v-if="!state.presentation.drawerMode || state.ui.drawerOpen" id="teacher-work-artifacts" class="teacher-work-artifacts"
                 :class="{ 'teacher-work-artifacts--drawer': state.presentation.drawerMode }" data-teacher-work-zone="artifacts"
                 :role="state.presentation.drawerMode ? 'dialog' : 'region'" :aria-modal="state.presentation.drawerMode ? true : undefined"
-                aria-labelledby="teacher-work-artifact-heading" :inert="state.presentation.catalogOpen ? '' : undefined"
+                aria-labelledby="teacher-work-artifact-heading" :inert="taskSwitch.open || state.presentation.catalogOpen ? '' : undefined"
                 @keydown="handleDialogKey($event, 'artifacts')">
                 <header class="teacher-work-artifact-heading">
                     <h2 id="teacher-work-artifact-heading" tabindex="-1" data-teacher-work-artifact-heading
@@ -418,6 +436,22 @@ export default {
 
         <div v-if="state.presentation.drawerMode && state.ui.drawerOpen" class="teacher-work-backdrop" aria-hidden="true"
             @click="$event.target === $event.currentTarget && $emit('close-artifacts')"></div>
+        <div v-if="taskSwitch.open" class="teacher-work-catalog-backdrop">
+            <section class="teacher-work-catalog" role="dialog" :aria-modal="true" aria-labelledby="teacher-work-switch-heading"
+                @keydown="handleDialogKey($event, 'switch')">
+                <header><h2 id="teacher-work-switch-heading" tabindex="-1" data-teacher-work-switch-heading>{{ taskSwitch.action === 'open-create' || taskSwitch.action === 'submit-create' ? '准备新建任务' : '打开另一任务' }}</h2></header>
+                <div class="teacher-work-catalog-content">
+                    <p v-if="taskSwitch.created">新任务已创建。请先处理当前任务的操作或编辑，再从任务列表打开。</p>
+                    <p v-if="taskSwitch.reason === 'operation'">当前任务有运行中或结果尚未确认的操作。请继续查询、明确取消或确认结果后再切换。</p>
+                    <p v-else-if="taskSwitch.reason === 'changed'">任务版本或编辑内容已变化。请重新检查，再确认是否放弃当前未保存编辑。</p>
+                    <p v-else>当前任务有未保存编辑或未发送内容。放弃后不会保存、审批或导出。</p>
+                    <button type="button" class="teacher-work-button teacher-work-button--quiet" @click="$emit('cancel-task-switch')">继续编辑</button>
+                    <button v-if="taskSwitch.reason !== 'operation'" type="button" class="teacher-work-button teacher-work-button--outline"
+                        :disabled="taskSwitch.action === 'open-create' || taskSwitch.action === 'submit-create' ? !privateTaskAvailability.create : !privateTaskAvailability.read"
+                        @click="$emit('confirm-task-switch')">放弃未保存编辑并打开</button>
+                </div>
+            </section>
+        </div>
         <div v-if="state.presentation.catalogOpen" class="teacher-work-catalog-backdrop"
             @click="$event.target === $event.currentTarget && $emit('close-catalog')">
             <section class="teacher-work-catalog" role="dialog" :aria-modal="true" aria-labelledby="teacher-work-catalog-heading"

@@ -176,6 +176,20 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         state.materials.draftEpoch = ++editEpoch; stash(scopeToken); flags(); return true;
     }
     function cancelMaterialsReplace() { state.materials.pendingReplace = false; return true; }
+    function discardCurrentMaterialsDraft(expected) {
+        const token = taskScope();
+        if (!token || !expected || expected.task_id !== token.task_id || expected.draftEpoch !== state.materials.draftEpoch ||
+            operation || writeFlight || state.materials.retryAvailable || state.materials.status === 'uncertain' ||
+            state.packageWriteBusy || state.materialProposalBusy) return false;
+        abortRead();
+        const outline = state.materials.snapshot?.outline;
+        state.materials.draft = outline ? { lesson: copy(outline.lesson), slides: copy(outline.slides) } : blankDraft(state.task);
+        state.materials.dirty = false; state.materials.proposalOrigin = null; state.materials.pendingReplace = false;
+        state.materials.draftEpoch = ++editEpoch;
+        // Scope watcher may stash again; it must stash this clean baseline.
+        // Only this task is replaced; other same-session cached drafts survive.
+        drafts.delete(cacheKey(token)); stash(scopeToken); flags(); return true;
+    }
     async function submit(kind, retry = false) {
         flags();
         if (state.packageWriteBusy || state.materialProposalBusy || !usable(kind === 'save' ? 'save' : 'approve') || writeFlight || readFlight || typeof api[kind === 'save' ? 'saveMaterials' : 'approveMaterials'] !== 'function') return false;
@@ -273,6 +287,6 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         if (!state.authVerified || state.role !== 'teacher') drafts.clear();
     }, { flush: 'sync' });
     if (getCurrentScope()) onScopeDispose(() => { disposed = true; capabilityFlight?.controller.abort(); abortRead(); abortWrite(); drafts.clear(); });
-    return { retryMaterialsCapabilities, updateMaterialsDraft, adoptMaterialsProposal, reloadMaterials, replaceMaterialsDraft, cancelMaterialsReplace,
+    return { retryMaterialsCapabilities, updateMaterialsDraft, adoptMaterialsProposal, reloadMaterials, replaceMaterialsDraft, cancelMaterialsReplace, discardCurrentMaterialsDraft,
         saveMaterials: () => submit('save'), approveMaterials: () => submit('approve'), retryMaterials: () => operation ? submit(operation.kind, true) : false };
 }

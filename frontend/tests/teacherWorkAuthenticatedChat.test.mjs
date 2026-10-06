@@ -112,7 +112,8 @@ test('bounded polling can resume explicitly and cancel aborts the old poll witho
     } finally { bounded.scope.stop(); }
 });
 
-test('stale send history run and cancel responses cannot cross task actor auth view or disposal', async () => {
+test('stale send history run and cancel responses cannot cross external task actor auth view or disposal', async () => {
+    const { clearTeacherTaskSelection } = await import('../js/controllers/teacherWorkState.js');
     for (const operation of ['sendMessage', 'listMessages', 'getRun', 'cancelRun']) for (const change of ['task', 'actor', 'epoch', 'view', 'dispose']) {
         const pending = deferred(), calls = []; let armed = false; const h = await harness({ [operation]: (...args) => { calls.push(args);
             if (armed) return pending.promise; return Promise.resolve(operation === 'listMessages' ? page() : run()); } });
@@ -121,7 +122,12 @@ test('stale send history run and cancel responses cannot cross task actor auth v
             else if (operation === 'listMessages') { armed = true; result = h.hook.reloadChatHistory(); }
             else { await h.hook.sendChat(); armed = true; result = operation === 'getRun' ? h.hook.refreshChatRun() : h.hook.cancelChat(); }
             await settle(); const last = calls.at(-1);
-            if (change === 'task') await h.hook.readTask(taskB);
+            if (change === 'task') {
+                assert.equal(await h.hook.readTask(taskB), false); assert.equal(last.at(-1).signal.aborted, false);
+                // A forced external scope invalidation still fences late results;
+                // normal navigation now preserves active/dirty requests.
+                clearTeacherTaskSelection(h.hook.state); await h.hook.readTask(taskB);
+            }
             if (change === 'actor') h.refs.actor.value = 'teacher-b';
             if (change === 'epoch') h.refs.authEpoch.value++;
             if (change === 'view') h.refs.currentView.value = 't_lesson_prep';
@@ -200,12 +206,13 @@ test('newer history and run requests fence older out-of-order results within the
     } finally { r.scope.stop(); }
 });
 
-test('opening and closing create task clears chat waits without dropping unsaved requirements or cancelling upstream', async () => {
+test('new-task entry cannot abort a pending chat or drop unsaved requirements and never cancels upstream', async () => {
     const pending = deferred(), calls = []; const h = await harness({ sendMessage: (...args) => { calls.push(args); return pending.promise; } });
     try { h.hook.updateInput('保留需求草稿'); h.hook.updateChatText('待发送问题'); const sending = h.hook.sendChat();
-        h.hook.openCreateTask(); assert.equal(calls[0][2].signal.aborted, true); assert.equal(h.hook.state.chatStatus, 'uncertain');
-        assert.equal(h.hook.state.chatRetryAvailable, true); h.hook.closeCreateTask(); pending.resolve(run()); assert.equal(await sending, false); await settle();
-        assert.equal(h.hook.state.chatText, '待发送问题'); assert.equal(h.hook.state.composerText, '保留需求草稿');
+        assert.equal(h.hook.openCreateTask(), false); assert.equal(calls[0][2].signal.aborted, false); assert.equal(h.hook.state.chatStatus, 'sending');
+        assert.equal(h.hook.state.taskSwitch.reason, 'operation'); h.hook.cancelTaskSwitch();
+        pending.resolve(run('COMPLETE')); assert.equal(await sending, true); await settle();
+        assert.equal(h.hook.state.chatText, ''); assert.equal(h.hook.state.composerText, '保留需求草稿');
         assert.equal(h.hook.state.composerStatus, 'unsaved'); assert.equal(h.calls.cancel.length, 0);
         assert.equal(h.hook.state.chatHistoryStatus, 'ready'); assert.equal(h.timer.jobs.size, 0);
     } finally { h.scope.stop(); }
