@@ -56,6 +56,8 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         yield
         from app.services.teacher_work.private_chat import close_runtime
         await close_runtime()
+        from app.services.teacher_work.private_proposals import close_runtime as close_proposals
+        await close_proposals()
     router = APIRouter(prefix="/teacher/work", tags=["teacher-work"], route_class=PrivateWorkBodyRoute, lifespan=lifespan)
 
     def task_operation(authorization, operation, *, task_id=None, body=None, key=None):
@@ -244,7 +246,8 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         try:
             parsed = UUID(task_id)
             key = TypeAdapter(MessageKey).validate_python(idempotency_key)
-            body = PrivateMaterialSaveRequest.model_validate_json(await request.body())
+            from app.api.endpoints.teacher_work_proposals import parse_strict_request
+            body = parse_strict_request(PrivateMaterialSaveRequest, await request.body())
         except (ValueError, ValidationError):
             return _response(422, "INVALID_PRIVATE_MATERIAL_REQUEST")
         return await run_in_threadpool(material_operation, authorization, "private_material_save", task_id=parsed, body=body, key=key)
@@ -326,6 +329,9 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         except (WorkAuthorizationError,WorkRepositoryError) as error:return _response(error.status_code,error.code)
         except Exception:return _response(503,'PACKAGE_STATE_UNAVAILABLE')
 
+    from app.api.endpoints.teacher_work_proposals import mount_material_proposals_router
+    mount_material_proposals_router(router, request_owner_factory=request_owner_factory,
+        dependencies_factory=dependencies_factory)
     return router
 
 

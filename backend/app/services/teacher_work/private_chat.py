@@ -32,13 +32,22 @@ def provider_configured():
                 for key in ("AI_LESSON_PREP_MAX_OUTPUT_TOKENS", "AI_LESSON_PREP_TIMEOUT_SECONDS")))
 
 
+def _runtime_pool_current():
+    from app.core.config import settings
+    from app.services.teacher_work.execution_capacity import _shared_capacity
+    capacity = settings.TEACHER_WORK_MAX_ACTIVE_RUNS
+    return (type(capacity) is int and capacity > 0 and
+        (_runtime is None or (_runtime.pool is _shared_capacity and _runtime.pool.loop is _runtime.loop
+            and _runtime.pool.capacity == min(capacity,4))))
+
+
 def chat_capabilities():
     from app.core.config import settings
     if settings.TEACHER_WORK_PRIVATE_CHAT_ENABLED is not True:
         return PrivateChatCapabilities(), "private_chat_disabled"
     configured = provider_configured()
     capacity = settings.TEACHER_WORK_MAX_ACTIVE_RUNS
-    available = (type(capacity) is int and capacity > 0
+    available = (type(capacity) is int and capacity > 0 and _runtime_pool_current()
                  and (_runtime is None or not _runtime.closed and not _runtime.loop.is_closed()))
     return PrivateChatCapabilities(send=configured and available, history=True, read_run=True, cancel=True,
         provider_configured=configured), ("chat_runtime_unavailable" if not available else None if configured else "ai_ready")
@@ -150,10 +159,16 @@ class PrivateChatRuntime:
         capacity = settings.TEACHER_WORK_MAX_ACTIVE_RUNS
         if type(capacity) is not int or capacity < 1:
             raise WorkRunError("WORK_EXECUTION_UNAVAILABLE", 503)
+        from app.services.teacher_work.execution_capacity import get_shared_capacity
+        try:
+            self.pool = get_shared_capacity(capacity)
+        except WorkRunError:
+            raise WorkRunError("CHAT_RUNTIME_UNAVAILABLE", 503) from None
+        self.pool.owners.add(self)
         self.execution = TeacherChatExecution(transactions=self.transactions, context_source=self.transactions,
             ai=self.ai, clock=_Clock(), process_instance=uuid4(), new_uuid=uuid4,
             configured_output_tokens=settings.AI_LESSON_PREP_MAX_OUTPUT_TOKENS,
-            configured_timeout_seconds=settings.AI_LESSON_PREP_TIMEOUT_SECONDS, capacity=min(capacity, 4))
+            configured_timeout_seconds=settings.AI_LESSON_PREP_TIMEOUT_SECONDS, capacity=min(capacity, 4), pool=self.pool)
 
     async def close(self):
         """Stop only owned local tasks, preserving uncertain durable leases."""
@@ -170,6 +185,8 @@ def get_runtime(*, create=True):
     global _runtime
     if _runtime is not None:
         if _runtime.closed or _runtime.loop is not asyncio.get_running_loop():
+            raise WorkRunError("CHAT_RUNTIME_UNAVAILABLE", 503)
+        if create and not _runtime_pool_current():
             raise WorkRunError("CHAT_RUNTIME_UNAVAILABLE", 503)
         return _runtime
     if not create:

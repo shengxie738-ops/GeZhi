@@ -127,7 +127,7 @@ class TeacherChatExecution:
                  context_source: ChatContextSource, process_instance: UUID, clock: ChatExecutionClock,
                  new_uuid: Callable[[], UUID], configured_output_tokens: int,
                  configured_timeout_seconds: int, capacity: int = 4,
-                 schedule: Callable[[object], asyncio.Task] | None = None):
+                 schedule: Callable[[object], asyncio.Task] | None = None, pool=None):
         if (type(process_instance) is not UUID or not callable(new_uuid)
                 or type(configured_output_tokens) is not int or configured_output_tokens < 1
                 or type(configured_timeout_seconds) is not int or configured_timeout_seconds < 1
@@ -138,7 +138,11 @@ class TeacherChatExecution:
         self.process_instance, self.clock, self.new_uuid = process_instance, clock, new_uuid
         self.configured_output_tokens, self.configured_timeout_seconds = configured_output_tokens, configured_timeout_seconds
         self.capacity, self.schedule = capacity, schedule if schedule is not None else asyncio.create_task
-        self._slots: set[object] = set()
+        from app.services.teacher_work.execution_capacity import InstanceRunCapacity
+        self.pool = pool if pool is not None else InstanceRunCapacity(capacity)
+        if type(self.pool) is not InstanceRunCapacity or self.pool.capacity != capacity:
+            raise WorkRunError("INVALID_CALL_LIMITS", 503)
+        self._slots: set[object] = self.pool.slots
         self._runs: dict[UUID, _LocalChat] = {}
 
     def _utc(self) -> datetime:

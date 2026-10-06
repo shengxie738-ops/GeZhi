@@ -632,6 +632,37 @@ class _WorkRequestBindings:
         except Exception:
             self._cleanup();raise
 
+    def finish_proposal_capabilities(self):
+        from app.core.config import settings
+        from app.services.current_identity import load_current_account
+        from app.services.teacher_work.private_tasks import require_private_schema
+        from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
+        from app.services.teacher_work.proposal_schema import observe_teacher_work_proposals_mysql
+        from app.services.teacher_work.material_sources import source_configured
+        from app.services.teacher_work.private_proposals import capabilities
+        if self._finished or self.mode != "read" or self.operation != "private_read":
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        self._finished = True
+        try:
+            self.transport._healthy()
+            _require_live_admission(self.mode, self.operation)
+            account = load_current_account(self.session, self.subject, lock=True)
+            require_current_teacher_facts(self.subject, CurrentAccountFacts(account.username, account.role))
+            require_private_schema(self.transport)
+            if not observe_teacher_work_mysql_v3(self.transport.connection).ready:
+                raise WorkAuthorizationError("TEACHER_WORK_SCHEMA_UNAVAILABLE", 503)
+            schema_ready = observe_teacher_work_proposals_mysql(self.transport.connection).ready
+            if self.transport.has_pending_writes():
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            result = capabilities(enabled=settings.TEACHER_WORK_PRIVATE_MATERIAL_PROPOSALS_ENABLED is True,
+                schema_ready=schema_ready, materials_ready=settings.TEACHER_WORK_PRIVATE_MATERIALS_ENABLED is True and source_configured())
+            self.transport.rollback()
+            self.transport.close()
+            return result
+        except Exception:
+            self._cleanup()
+            raise
+
     def finish_material_capabilities(self):
         from app.core.config import settings
         from app.schemas.teacher_work import PrivateMaterialCapabilities

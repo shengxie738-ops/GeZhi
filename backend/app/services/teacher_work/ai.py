@@ -18,3 +18,8 @@ class LessonPrepWorkAI:
     async def complete(self, prompt: str, *, max_output_tokens: int, timeout_seconds: int) -> str:
         return await self._lesson_client.complete_raw(system_prompt=CHAT_SYSTEM_PROMPT_V1,
             user_prompt=prompt, max_output_tokens=max_output_tokens, timeout_seconds=timeout_seconds)
+
+    async def complete_proposal(self, prompt: str, *, max_output_tokens: int, timeout_seconds: int) -> str:
+        from app.services.teacher_work.proposals import PROPOSAL_SYSTEM_PROMPT_V1
+        return await self._lesson_client.complete_raw(system_prompt=PROPOSAL_SYSTEM_PROMPT_V1,
+            user_prompt=prompt, max_output_tokens=max_output_tokens, timeout_seconds=timeout_seconds)
