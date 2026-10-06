@@ -90,7 +90,7 @@ test('T5a05 four-zone unavailable shell has real legacy fallback and no seeded s
         assert.match(textOf(host.root), /教师 Work 暂不可用/); assert.match(textOf(host.root), /TEACHER_WORK_UNAVAILABLE/);
         assert.match(textOf(host.root), /尚未接通|尚未开放/);
         assert.match(textOf(host.root), /没有.*任务|暂无.*任务/); assert.match(textOf(host.root), /没有.*文件|暂无.*文件/);
-        assert.ok(button(host.root, '新建任务').props.disabled); assert.ok(button(host.root, '发送').props.disabled);
+        assert.ok(button(host.root, '新建任务').props.disabled); assert.ok(button(host.root, '发送教学问题').props.disabled);
         assert.equal(walk(host.root).filter(node => node.props['data-teacher-work-message'] !== undefined).length, 0);
         assert.equal(walk(host.root).filter(node => node.props['data-teacher-work-artifact'] !== undefined).length, 0);
         assert.doesNotMatch(textOf(host.root), /进程同步|王老师|10:14|已按确认|v1.*待审阅|资料包完成|已审阅/);

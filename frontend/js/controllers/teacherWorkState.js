@@ -3,6 +3,10 @@ const preferenceNames = Object.freeze(['navCollapsed', 'taskRailCollapsed', 'art
 const capabilityNames = Object.freeze(['chat', 'task_write', 'generate', 'storage', 'structural_preview', 'rendered_preview', 'publish']);
 const closedOperations = () => ({ task_write: false, chat: false, generate: false, storage: false });
 const closedPrivateTasks = () => ({ create: false, read: false, update: false });
+export const closedPrivateChat = () => ({ send: false, history: false, read_run: false, cancel: false,
+    provider_configured: false, external_provider_verified: false });
+export const emptyTeacherChat = () => ({ chatText: '', chatStatus: 'idle', chatError: null, chatRun: null,
+    chatHistoryStatus: 'idle', chatHistoryHasMore: false, chatHistoryBefore: null, chatHistoryError: null, chatRetryAvailable: false });
 const defaultCreateForm = () => ({ title: '', topic: '', audience: '', duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
 const defaultPreferences = () => ({ navCollapsed: false, taskRailCollapsed: false, artifactCollapsed: false,
     drawerOpen: false, artifactTab: 'files' });
@@ -20,7 +24,7 @@ export function createTeacherWorkState() {
         task: null, taskReadStatus: 'idle', taskConflict: false, edit_epoch: 0, requirementsEdited: false,
         createOpen: false, createForm: defaultCreateForm(), createStatus: 'idle',
         draftResourceIds: [], draftTargetSlideCount: 8, resourceCatalog: [], resourcesStatus: 'idle', resourceError: null,
-        privateTaskAvailability: closedPrivateTasks(),
+        privateTaskAvailability: closedPrivateTasks(), privateChatAvailability: closedPrivateChat(), ...emptyTeacherChat(),
         tasks: [], messages: [], artifacts: [], versions: [], sources: [],
         composerText: '', composerStatus: 'unsaved', operationError: null,
         capabilities: { status: 'idle', data: null, reason: null },
@@ -34,13 +38,13 @@ export function clearTeacherTaskSelection(state) {
     state.task = null; state.taskReadStatus = 'idle'; state.taskConflict = false; state.edit_epoch++; state.requirementsEdited = false;
     state.draftResourceIds = []; state.draftTargetSlideCount = 8;
     for (const name of ['tasks', 'messages', 'artifacts', 'versions', 'sources']) state[name] = [];
-    state.composerText = ''; state.composerStatus = 'unsaved'; state.operationError = null;
+    state.composerText = ''; state.composerStatus = 'unsaved'; state.operationError = null; Object.assign(state, emptyTeacherChat());
 }
 
 export function invalidateTeacherWork(state) {
     clearTeacherTaskSelection(state);
     state.capabilities = { status: 'idle', data: null, reason: null };
-    state.operationAvailability = closedOperations(); state.privateTaskAvailability = closedPrivateTasks();
+    state.operationAvailability = closedOperations(); state.privateTaskAvailability = closedPrivateTasks(); state.privateChatAvailability = closedPrivateChat();
     state.createOpen = false; state.createForm = defaultCreateForm(); state.createStatus = 'idle';
     state.resourceCatalog = []; state.resourcesStatus = 'idle'; state.resourceError = null;
     state.ui.drawerOpen = false; state.presentation.catalogOpen = null;
@@ -99,6 +103,11 @@ export function applyCapabilityResult(state, token, result = {}) {
         const privateTasks = result.data.private_tasks;
         if (privateTasks !== undefined && (!object(privateTasks) || Object.keys(privateTasks).length !== 3 ||
             !['create', 'read', 'update'].every(name => typeof privateTasks[name] === 'boolean'))) return false;
+        const privateChat = result.data.private_chat, chatNames = Object.keys(closedPrivateChat());
+        if (privateChat !== undefined && (!object(privateChat) || Object.keys(privateChat).length !== chatNames.length ||
+            !chatNames.every(name => typeof privateChat[name] === 'boolean') || privateChat.external_provider_verified !== false ||
+            privateChat.send && (data.chat !== true || !privateChat.provider_configured))) return false;
+        data.private_chat = Object.fromEntries(chatNames.map(name => [name, privateChat?.[name] === true]));
         data.private_tasks = Object.fromEntries(['create', 'read', 'update'].map(name => [name, privateTasks?.[name] === true]));
         data.reasons = Object.fromEntries(Object.entries(result.data.reasons).filter(([name, value]) =>
             capabilityNames.includes(name) && typeof value === 'string' && value.length <= 200));
@@ -106,7 +115,8 @@ export function applyCapabilityResult(state, token, result = {}) {
     state.capabilities = { status: result.status, data, reason: result.status === 'ready' ? null : safeReason(result.reason) };
     // Only the explicitly wired private sub-capabilities can open these three adapters.
     state.privateTaskAvailability = data ? { ...data.private_tasks } : closedPrivateTasks();
-    state.operationAvailability = closedOperations();
+    state.privateChatAvailability = data ? { ...data.private_chat } : closedPrivateChat();
+    state.operationAvailability = { ...closedOperations(), chat: state.privateChatAvailability.send };
     state.operationUnavailableReason = 'TEACHER_WORK_OPERATIONS_UNWIRED';
     return true;
 }

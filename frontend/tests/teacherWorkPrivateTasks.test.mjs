@@ -182,7 +182,7 @@ test('four-zone UI exposes only real private create/read/edit-save, keeps confli
             const input = find(host.root, node => node.props.id === 'teacher-work-create-title'); input.props.onInput({ target: { value: '新标题' } });
             assert.deepEqual(host.emitted['update-create-form'].at(-1), [{ title: '新标题' }]);
             button(host.root, '创建私人任务').props.onClick(); assert.deepEqual(host.emitted['create-task'], [[]]);
-            assert.ok(button(host.root, '发送').props.disabled); assert.doesNotMatch(textOf(host.root), /已保存/);
+            assert.equal(button(host.root, '发送教学问题'), undefined, 'create form hides chat actions'); assert.doesNotMatch(textOf(host.root), /已保存/);
         } finally { host.close(); }
         await h.hook.readTask(taskA); h.hook.updateInput('可复制');
         const savedHost = await mount(component, { state: h.hook.state });
@@ -445,7 +445,7 @@ async function nativeReplayApi(captured) {
 
 test('captured native public envelopes match the actual API decoder, reasons, UTC, normalization, and request DTOs exactly', async () => {
     globals(); const { raw, captured } = capturedNativeContract(), { api, calls } = await nativeReplayApi(captured);
-    assert.deepEqual(await api.getCapabilities(), captured.capabilities.data);
+    assert.deepEqual(await api.getCapabilities(), { ...captured.capabilities.data, private_chat: { send: false, history: false, read_run: false, cancel: false, provider_configured: false, external_provider_verified: false } });
     assert.deepEqual(await api.createTask(nativeCreateRequest(), { idempotencyKey: 'synthetic-create' }), captured.create.data);
     assert.deepEqual(await api.getTask(captured.create.data.task_id), captured.get.data);
     assert.deepEqual(await api.updateWorking(captured.create.data.task_id, nativePatchRequest()), captured.patch.data);
@@ -481,7 +481,7 @@ test('captured native envelopes drive the real API plus hook create-read-edit-sa
         viewportTarget: { innerWidth: 1440 }, location, history, newIdempotencyKey: () => 'synthetic-create' }));
     try {
         await settle(); assert.equal(hook.state.capabilities.status, 'ready');
-        assert.deepEqual(hook.state.capabilities.data, captured.capabilities.data);
+        assert.deepEqual(hook.state.capabilities.data, { ...captured.capabilities.data, private_chat: { send: false, history: false, read_run: false, cancel: false, provider_configured: false, external_provider_verified: false } });
         hook.openCreateTask(); hook.updateCreateForm(nativeCreateRequest());
         assert.equal(await hook.createTask(), true); assert.deepEqual(hook.state.task, captured.create.data);
         assert.equal(location.searchParams.get('teacher_work_task'), captured.create.data.task_id);

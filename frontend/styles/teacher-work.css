@@ -203,3 +203,20 @@
     .teacher-work-breadcrumb { padding-right: 22px; padding-left: 22px; }
     .teacher-work-conversation { padding-right: 22px; padding-left: 22px; }
 }
+
+/* Persisted private chat; desktop four-region layout and explicit requirements save are unchanged. */
+.teacher-work-chat-history { margin-top: 26px; }
+.teacher-work-chat-history h2 { font-size: 22px; }
+.teacher-work-chat-messages { display: flex; flex-direction: column; gap: 12px; margin: 14px 0 0; padding: 0; list-style: none; }
+.teacher-work-chat-message { padding: 15px 18px; border: 1px solid var(--tw-line); border-radius: 8px; background: #fff; }
+.teacher-work-chat-message--user { border-left: 3px solid var(--tw-accent); }
+.teacher-work-chat-message-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-bottom: 9px; }
+.teacher-work-chat-message-heading strong { font-size: 14px; }
+.teacher-work-chat-message-heading time { color: var(--tw-muted); font-size: 11px; overflow-wrap: anywhere; }
+.teacher-work-chat-plain-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
+.teacher-work-composer-label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; color: var(--tw-muted); }
+.teacher-work-chat-composer { margin-top: 10px; padding: 14px 18px; border: 1px solid var(--tw-line); border-radius: 8px; background: #fff; }
+.teacher-work-chat-composer textarea { display: block; width: 100%; min-height: 58px; max-height: 160px; padding: 0; resize: vertical;
+    border: 0; background: transparent; color: var(--tw-ink); font: inherit; font-size: 14px; line-height: 1.7; }
+.teacher-work-chat-composer .teacher-work-composer-controls { gap: 8px; flex-wrap: wrap; }
+.teacher-work-chat-composer .teacher-work-button { min-height: 34px; padding: 7px 10px; font-size: 12px; }

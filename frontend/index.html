@@ -2605,7 +2605,10 @@
             @update-create-form="teacherWorkUpdateCreateForm" @create-task="teacherWorkCreateTask"
             @reload-task="teacherWorkReloadTask" @save-working="teacherWorkSaveWorking"
             @toggle-resource="teacherWorkToggleResource" @update-target-slides="teacherWorkUpdateTargetSlides"
-            @reload-resources="teacherWorkLoadResources">
+            @reload-resources="teacherWorkLoadResources"
+            @update-chat-text="teacherWorkUpdateChatText" @send-chat="teacherWorkSendChat" @retry-chat="teacherWorkRetryChat"
+            @reload-chat-history="teacherWorkReloadChatHistory" @load-older-chat="teacherWorkLoadOlderChat"
+            @refresh-chat-run="teacherWorkRefreshChatRun" @cancel-chat="teacherWorkCancelChat">
         </teacher-work>
         <div v-else-if="isLoggedIn && authVerified && teachingLegacyRenderAllowed" class="h-full w-full flex relative home-bg-container"
             :class="{ 'student-legacy-shell': currentRole === 'student' }">

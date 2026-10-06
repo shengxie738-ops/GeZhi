@@ -8,10 +8,31 @@ export default {
     emits: ['navigate', 'logout', 'open-user-center', 'retry-capabilities', 'toggle-navigation', 'toggle-taskrail',
         'toggle-artifacts', 'open-artifacts', 'close-artifacts', 'set-artifact-tab', 'open-catalog', 'close-catalog', 'update-input',
         'open-create-task', 'close-create-task', 'update-create-form', 'create-task', 'reload-task', 'save-working',
-        'toggle-resource', 'update-target-slides', 'reload-resources'],
+        'toggle-resource', 'update-target-slides', 'reload-resources', 'update-chat-text', 'send-chat', 'retry-chat',
+        'reload-chat-history', 'load-older-chat', 'refresh-chat-run', 'cancel-chat'],
     setup(props, { emit }) {
         const privateTaskAvailability = computed(() => props.state.privateTaskAvailability || { create: false, read: false, update: false });
         const privateTasksConnected = computed(() => Object.values(privateTaskAvailability.value).some(value => value === true));
+        const privateChatAvailability = computed(() => props.state.privateChatAvailability || {});
+        const chatBusy = computed(() => ['sending', 'cancelling', 'queued', 'running', 'checking'].includes(props.state.chatStatus));
+        const canSendChat = computed(() => Boolean(props.state.task && !props.state.createOpen && privateChatAvailability.value.send &&
+            props.state.taskReadStatus === 'ready' && !props.state.taskConflict && !chatBusy.value &&
+            !(props.state.chatRun && (!props.state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(props.state.chatRun.stage))) &&
+            typeof props.state.chatText === 'string' && props.state.chatText.trim()));
+        const canCancelChat = computed(() => Boolean(privateChatAvailability.value.cancel && props.state.chatRun &&
+            (!props.state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(props.state.chatRun.stage)) && props.state.chatStatus !== 'cancelling'));
+        const chatStatusText = computed(() => ({ idle: '问题尚未发送', sending: '正在提交问题 · 尚未确认入队',
+            checking: '正在读取执行状态', uncertain: '提交结果未确认 · 输入已保留，可用同一请求标识重试', queued: '已入队 · 等待 AI 处理',
+            running: 'AI 正在处理 · 回复尚未完成', complete: '处理已完成 · 回复以持久对话记录为准',
+            failed: 'AI 处理失败 · 未生成成功回复', cancelled: '任务已取消', interrupted: 'AI 处理已中断',
+            paused: '执行状态未确认 · 可手动查询，或重新检查读取能力', cancelling: '正在请求取消 · 以服务端确认结果为准',
+            error: '问题未确认发送 · 输入仍保留在页面' }[props.state.chatStatus] || '问题尚未发送'));
+        const chatReasonText = reason => ({ invalid_input: '请填写 1–4000 字的教学问题',
+            revision_conflict: '已保存任务版本有变化，请重新读取任务后检查并发送问题',
+            idempotency_conflict: '请求标识与内容不一致，请修改问题后重新发送', owner_busy: '已有问题正在处理，请先查询执行状态',
+            request_too_large: '问题内容过大，请缩短后发送', capacity_unavailable: '当前处理容量已满，请稍后重新发送' }[reason] || teacherWorkReasonText(reason));
+        const resultLabel = type => ({ answer: 'AI 回复', outline_proposal: '大纲建议（仅展示）',
+            revision_proposal: '修改建议（仅展示）', skill_suggestion: 'Skill 建议（仅展示）' }[type] || '历史回复');
         const createForm = computed(() => props.state.createForm || { title: '', topic: '', audience: '',
             duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
         const resources = computed(() => props.state.resourceCatalog || []);
@@ -61,7 +82,8 @@ export default {
             event.currentTarget.querySelectorAll('[role="tab"]')[index]?.focus();
         };
         return { dialogOpen, capabilityTitle, capabilityReason, teacherWorkReasonText, handleDialogKey, handleArtifactTabKey,
-            privateTaskAvailability, privateTasksConnected, createForm, resources, selectedTask, canEditTask, canSave, composerNote };
+            privateTaskAvailability, privateTasksConnected, privateChatAvailability, chatBusy, canSendChat, canCancelChat,
+            chatStatusText, chatReasonText, resultLabel, createForm, resources, selectedTask, canEditTask, canSave, composerNote };
     },
     template: `
     <div class="teacher-work" :class="{
@@ -147,7 +169,9 @@ export default {
                         <h2 id="teacher-work-availability-heading" role="status" aria-live="polite">{{ capabilityTitle }}</h2>
                         <template v-if="state.capabilities.status === 'ready' && privateTasksConnected">
                             <p>私人任务按当前教师身份保存，教学需求需手动保存</p>
-                            <p class="teacher-work-muted">对话、AI 生成与文件产物尚未接通</p>
+                            <p class="teacher-work-muted">{{ privateChatAvailability.send ? '私人教学对话已接通' : privateChatAvailability.provider_configured ?
+                                '私人教学对话暂不可发送' : 'AI 尚未配置，教学问题暂不可发送' }} · 外部模型尚未验证</p>
+                            <p class="teacher-work-muted">AI 生成与文件产物尚未接通</p>
                         </template>
                         <template v-else-if="state.capabilities.status !== 'loading'">
                             <p>{{ teacherWorkReasonText(capabilityReason) }}</p><p class="teacher-work-reason-code">{{ capabilityReason }}</p>
@@ -216,11 +240,32 @@ export default {
                             :disabled="!privateTaskAvailability.read || state.taskReadStatus === 'loading' || state.composerStatus === 'saving'"
                             @click="$emit('reload-task')">{{ state.taskConflict ? '重新读取版本并保留编辑' : '重新读取任务' }}</button>
                     </div>
-                    <div v-if="!state.createOpen" class="teacher-work-empty-conversation"><i class="ph ph-chat-teardrop-text" aria-hidden="true"></i>
-                        <h3>这里将显示当前任务的真实对话</h3><p>当前没有对话记录、执行结果或资料包</p></div>
+                    <section v-if="selectedTask && !state.createOpen" class="teacher-work-chat-history" aria-labelledby="teacher-work-chat-heading"
+                        :aria-busy="state.chatHistoryStatus === 'loading'">
+                        <div class="teacher-work-section-heading"><h2 id="teacher-work-chat-heading">私人教学对话</h2>
+                            <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="!privateChatAvailability.history"
+                                @click="$emit('reload-chat-history')">重新读取对话</button></div>
+                        <button v-if="state.chatHistoryHasMore" type="button" class="teacher-work-button teacher-work-button--quiet"
+                            :disabled="state.chatHistoryStatus === 'loading' || !privateChatAvailability.history" @click="$emit('load-older-chat')">读取更早对话</button>
+                        <p v-if="state.chatHistoryStatus === 'loading'" class="teacher-work-muted" role="status">正在读取已保存对话</p>
+                        <p v-if="state.chatHistoryError" class="teacher-work-input-error" role="alert">{{ chatReasonText(state.chatHistoryError.reason) }}</p>
+                        <ol class="teacher-work-chat-messages" aria-label="已保存的对话记录">
+                            <li v-for="message in state.messages" :key="message.message_id" class="teacher-work-chat-message"
+                                :class="{ 'teacher-work-chat-message--user': message.role === 'user' }">
+                                <div class="teacher-work-chat-message-heading"><strong>{{ message.role === 'user' ? '教师问题' :
+                                    message.role === 'assistant' ? resultLabel(message.result_type) : '历史工具记录' }}</strong>
+                                    <time :datetime="message.created_at">{{ message.created_at }}</time></div>
+                                <p class="teacher-work-chat-plain-text">{{ message.plain_text }}</p>
+                                <small v-if="message.omitted_context === true" class="teacher-work-muted">部分历史上下文已省略</small>
+                            </li>
+                        </ol>
+                        <p v-if="!state.messages.length && state.chatHistoryStatus !== 'loading'" class="teacher-work-muted">当前没有已读取的持久对话记录</p>
+                    </section>
+                    <div v-else-if="!state.createOpen" class="teacher-work-empty-conversation"><i class="ph ph-chat-teardrop-text" aria-hidden="true"></i>
+                        <h3>这里将显示当前任务的真实对话</h3><p>请先创建或读取私人任务</p></div>
                 </div>
                 <div class="teacher-work-composer">
-                    <label class="teacher-work-sr-only" for="teacher-work-input">{{ selectedTask ? '教学需求' : '未发送的教学需求' }}</label>
+                    <label class="teacher-work-composer-label" for="teacher-work-input">{{ selectedTask ? '教学需求' : '未发送的教学需求' }}</label>
                     <textarea id="teacher-work-input" data-teacher-work-composer :value="state.composerText" :maxlength="4000"
                         rows="3" aria-describedby="teacher-work-composer-note" placeholder="输入教学需求（尚未发送）"
                         @input="$emit('update-input', $event.target.value)"></textarea>
@@ -232,14 +277,34 @@ export default {
                             <i class="ph ph-paperclip" aria-hidden="true"></i>引用资料<i class="ph ph-caret-down" aria-hidden="true"></i></button>
                         <button v-if="selectedTask" type="button" class="teacher-work-button teacher-work-button--primary"
                             :disabled="!canSave" @click="$emit('save-working')">保存需求</button>
-                        <button type="button" class="teacher-work-send" :disabled="true" aria-label="发送" title="真实对话入口尚未接通">
-                            <i class="ph ph-arrow-up-right" aria-hidden="true"></i></button>
                     </div>
                     <p v-if="state.operationError && !(state.createOpen && state.operationError.operation === 'create')"
                         class="teacher-work-input-error" role="alert">{{ teacherWorkReasonText(state.operationError.reason) }}</p>
                     <p id="teacher-work-composer-note" class="teacher-work-composer-note" role="status" aria-live="polite">{{ composerNote }}</p>
                 </div>
-                <p class="teacher-work-review-note">AI 内容需教师审阅</p>
+                <section v-if="!state.createOpen" class="teacher-work-chat-composer" aria-label="发送私人教学问题">
+                    <label for="teacher-work-chat-input" class="teacher-work-composer-label">教学问题</label>
+                    <textarea id="teacher-work-chat-input" data-teacher-work-chat-composer :value="state.chatText || ''" rows="2" maxlength="4000"
+                        :disabled="!selectedTask" aria-describedby="teacher-work-chat-note teacher-work-chat-status" placeholder="向 AI 提问（不会自动保存教学需求）"
+                        @input="$emit('update-chat-text', $event.target.value)"></textarea>
+                    <div class="teacher-work-composer-controls">
+                        <button v-if="state.chatRetryAvailable" type="button" class="teacher-work-button teacher-work-button--quiet"
+                            :disabled="!canSendChat" @click="$emit('retry-chat')">用同一请求重试</button>
+                        <button v-if="state.chatRun" type="button" class="teacher-work-button teacher-work-button--quiet"
+                            :disabled="!privateChatAvailability.read_run || state.chatStatus === 'cancelling'" @click="$emit('refresh-chat-run')">查询执行状态</button>
+                        <button v-if="canCancelChat" type="button" class="teacher-work-button teacher-work-button--quiet"
+                            @click="$emit('cancel-chat')">取消当前问题</button>
+                        <button type="button" class="teacher-work-button teacher-work-button--primary" :disabled="!canSendChat || state.chatRetryAvailable"
+                            @click="$emit('send-chat')">发送教学问题</button>
+                    </div>
+                    <p id="teacher-work-chat-status" class="teacher-work-composer-note" role="status" aria-live="polite">{{ chatStatusText }}</p>
+                    <p v-if="state.chatError" class="teacher-work-input-error" role="alert">{{ chatReasonText(state.chatError.reason) }}</p>
+                    <p v-if="state.chatRun && state.chatRun.error_code" class="teacher-work-input-error">执行错误：{{ state.chatRun.error_code }}</p>
+                    <p id="teacher-work-chat-note" class="teacher-work-composer-note">{{ !selectedTask ? '请先创建或读取私人任务' :
+                        !privateChatAvailability.provider_configured ? 'AI 尚未配置；已获授权的历史和执行状态仍可读取' :
+                        '使用已保存任务信息和对话；未保存需求不会自动保存，不读取资料正文' }} · 外部模型尚未验证</p>
+                </section>
+                <p class="teacher-work-review-note">AI 内容需教师审阅，建议不会自动改动任务或生成文件</p>
             </main>
 
             <aside v-if="!state.presentation.drawerMode || state.ui.drawerOpen" id="teacher-work-artifacts" class="teacher-work-artifacts"

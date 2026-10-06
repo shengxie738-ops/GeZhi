@@ -4,12 +4,15 @@ import { createTeacherWorkState, synchronizeTeacherWork, captureRequest, acceptR
     updateTeacherInput, clearTeacherTaskSelection, applyTeacherTaskSnapshot, teacherWorkingChanges,
     patchTeacherWorkPreferences, readTeacherWorkPreferences, writeTeacherWorkPreferences } from '../controllers/teacherWorkState.js';
 
+import { useTeacherWorkChat } from './useTeacherWorkChat.js';
+
 // Isolated teacher lifecycle. No student transcript, plugin, task-tree or cancellation handles.
 export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThis.localStorage,
     documentTarget = globalThis.document, eventTarget = globalThis.window, viewportTarget = globalThis.window,
     location = globalThis.window?.location, history = globalThis.window?.history,
-    newIdempotencyKey = () => globalThis.crypto?.randomUUID?.() } = {}) {
+    newIdempotencyKey = () => globalThis.crypto?.randomUUID?.(), chatScheduler = globalThis, chatPollLimit = 60 } = {}) {
     const state = reactive(createTeacherWorkState());
+    const chat = useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler: chatScheduler, pollLimit: chatPollLimit });
     let disposed = false, flight = null, taskReadFlight = null, saveFlight = null, createFlight = null, resourceFlight = null,
         creationKey = null, createEpoch = 0, focusEpoch = 0, artifactTrigger = null, catalogTrigger = null, createTrigger = null;
     const eligible = () => !disposed && captureRequest(state) !== null;
@@ -225,6 +228,8 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         const controller = new AbortController(), token = captureRequest(state), request = { controller, token };
         flight = request; state.capabilities = { status: 'loading', data: null, reason: null };
         state.privateTaskAvailability = { create: false, read: false, update: false };
+        state.privateChatAvailability = { send: false, history: false, read_run: false, cancel: false, provider_configured: false, external_provider_verified: false };
+        state.operationAvailability.chat = false;
         // Global capability facts belong to the authenticated actor, not one task revision.
         // Account/view lifetime changes abort this flight synchronously in the watcher.
         const fresh = () => {
@@ -338,7 +343,7 @@ export function useTeacherWork(auth, { api = teacherWorkApi, storage = globalThi
         eventTarget?.removeEventListener?.('resize', updateViewport);
         eventTarget?.removeEventListener?.('popstate', locatorChanged);
     });
-    return { state, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
+    return { state, ...chat, retryCapabilities, toggleNavigation, toggleTaskRail, toggleArtifacts, openArtifacts, closeArtifacts,
         setArtifactTab, openCatalog, closeCatalog, updateInput, openCreateTask, closeCreateTask, updateCreateForm, createTask,
         readTask, reloadTask, saveWorking, toggleResource, updateTargetSlides, loadResources };
 }
