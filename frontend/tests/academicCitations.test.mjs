@@ -49,7 +49,7 @@ test('academicCitations: formatBibtex correctly maps workType to BibTeX entry ty
         title: 'Deep Learning',
         authors: ['Ian Goodfellow', 'Yoshua Bengio'],
         year: 2016,
-        venue: 'MIT Press',
+        publisher: 'MIT Press',
         workType: 'book'
     });
     const bibBook = formatBibtex(bookPaper);

@@ -118,7 +118,7 @@ export async function searchEuropePmc(query, options = {}) {
         const venue = item.journalTitle || item.journalInfo?.journal?.title || '';
         const publicationTypes = Array.isArray(item.pubTypeList?.pubType) ? item.pubTypeList.pubType : [];
         const mappedTypes = publicationTypes.map(normalizeWorkType);
-        const workType = ['preprint','journal-article','conference-paper','thesis','book'].find(t=>mappedTypes.includes(t)) || 'other';
+        const workType = ['preprint','journal-article','conference-paper','thesis','book-chapter','book'].find(t=>mappedTypes.includes(t)) || 'other';
         const abstract = item.abstractText ? String(item.abstractText).replace(/<[^>]+>/g, '').trim() : '';
 
         const doi = normalizeDoi(item.doi);

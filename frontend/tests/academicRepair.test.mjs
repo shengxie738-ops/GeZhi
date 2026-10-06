@@ -38,11 +38,11 @@ test('repair: exact DOI suffix fidelity and whole-input lookup planning', async 
     assert.equal(normalizeDoi('see 10.1000/test(abc) for details'),'');
     assert.equal(prepareAcademicSearchQuery('机器学习 10.1000/test(abc) 2024').queryType,'keywords');
     const calls=[];
-    const providers={crossref:{label:'Crossref',search:async q=>{calls.push(q);return[];}},openalex:{label:'OpenAlex',search:async()=>{assert.fail('Exact DOI must not become topical OpenAlex search');}}};
+    const providers={crossref:{label:'Crossref',search:async q=>{calls.push(q);return[];}},openalex:{label:'OpenAlex',search:async q=>{calls.push(q);return[];}}};
     const result=await searchAcademicPapers(`https://doi.org/${encodeURIComponent(legacy)}`,{providers});
-    assert.deepEqual(calls,[legacy.toLowerCase()]);
+    assert.deepEqual(calls,[legacy.toLowerCase(),legacy.toLowerCase()]);
     assert.equal(result.status,'empty');
-    assert.equal(result.sourceStatuses.find(s=>s.key==='openalex').status,'skipped');
+    assert.equal(result.sourceStatuses.find(s=>s.key==='openalex').status,'success');
 });
 
 test('repair: exact versioned arXiv URLs are routed unchanged and invalid explicit IDs do not search', async () => {

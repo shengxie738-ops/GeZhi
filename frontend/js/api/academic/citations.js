@@ -7,6 +7,7 @@ const BIBTEX_TYPES = {
     'conference-paper': 'inproceedings',
     preprint: 'misc',
     book: 'book',
+    'book-chapter': 'incollection',
     thesis: 'phdthesis',
     other: 'misc'
 };
@@ -16,6 +17,7 @@ const RIS_TYPES = {
     'conference-paper': 'CPAPER',
     preprint: 'RPRT',
     book: 'BOOK',
+    'book-chapter': 'CHAP',
     thesis: 'THES',
     other: 'GEN'
 };
@@ -80,7 +82,7 @@ export function formatBibtex(paper) {
 
     // Authors
     if (Array.isArray(paper.authors) && paper.authors.length > 0) {
-        const authorsEscaped = paper.authors.map(escapeBibtex).join(' and ');
+        const authorsEscaped = paper.authors.map(author => paper.literalAuthors?.includes(author) ? `{${escapeBibtex(author)}}` : escapeBibtex(author)).join(' and ');
         fields.push(`  author = {${authorsEscaped}}`);
     }
 
@@ -89,15 +91,16 @@ export function formatBibtex(paper) {
         const venueEscaped = escapeBibtex(paper.venue);
         if (entryType === 'article') {
             fields.push(`  journal = {${venueEscaped}}`);
-        } else if (entryType === 'inproceedings') {
+        } else if (entryType === 'inproceedings' || entryType === 'incollection') {
             fields.push(`  booktitle = {${venueEscaped}}`);
-        } else if (entryType === 'book') {
-            fields.push(`  publisher = {${venueEscaped}}`);
         } else if (entryType === 'phdthesis') {
             fields.push(`  school = {${venueEscaped}}`);
-        } else {
+        } else if (entryType !== 'book') {
             fields.push(`  howpublished = {${venueEscaped}}`);
         }
+    }
+    if (paper.publisher && ['book', 'incollection'].includes(entryType)) {
+        fields.push(`  publisher = {${escapeBibtex(paper.publisher)}}`);
     }
 
     // Year
@@ -147,14 +150,13 @@ export function formatRis(paper) {
     }
 
     if (paper.venue) {
-        if (risType === 'CPAPER') {
+        if (risType === 'CPAPER' || risType === 'CHAP') {
             lines.push(`T2  - ${paper.venue}`);
-        } else if (risType === 'BOOK') {
-            lines.push(`PB  - ${paper.venue}`);
-        } else {
+        } else if (risType !== 'BOOK') {
             lines.push(`JO  - ${paper.venue}`);
         }
     }
+    if (paper.publisher && ['BOOK', 'CHAP'].includes(risType)) lines.push(`PB  - ${paper.publisher}`);
 
     if (paper.doi) {
         lines.push(`DO  - ${paper.doi}`);

@@ -32,10 +32,15 @@ export async function searchCrossref(query, options = {}) {
     validateProviderRecords(items, 'crossref');
     return items.map(item => {
         const title = Array.isArray(item.title) ? (item.title[0] || '') : String(item.title || '');
+        const literalAuthors = [];
         const authors = (item.author || []).map(a => {
             const given = String(a.given || '').trim();
             const family = String(a.family || '').trim();
-            return `${given} ${family}`.trim();
+            const personalName = `${given} ${family}`.trim();
+            if (personalName) return personalName;
+            const name = String(a.name || '').trim();
+            if (name) literalAuthors.push(name);
+            return name;
         }).filter(Boolean);
 
         let year = null;
@@ -78,8 +83,10 @@ export async function searchCrossref(query, options = {}) {
         return createAcademicPaper({
             title,
             authors,
+            literalAuthors,
             year,
             venue,
+            publisher: item.publisher || '',
             workType,
             abstract,
             doi,

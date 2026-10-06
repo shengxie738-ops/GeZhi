@@ -89,17 +89,18 @@ export async function searchAcademicPapers(query, options = {}) {
         checkActive();
         return {...result,cached:true};
     }
-    const exactSource=queryPlan.queryType==='doi'?'crossref':queryPlan.queryType==='arxiv'||queryPlan.advancedSyntax?'arxiv':'';
+    const exactSources=queryPlan.queryType==='doi'?['crossref','openalex']:queryPlan.queryType==='arxiv'||queryPlan.advancedSyntax?['arxiv']:[];
     const sourceRequirement=queryPlan.advancedSyntax?'高级 arXiv 检索':'精确标识检索';
-    const exactSourceMissing=exactSource&&!sourceKeys.includes(exactSource);
+    const exactSourceMissing=exactSources.length>0&&!exactSources.some(key=>sourceKeys.includes(key));
+    const exactSourceLabels=exactSources.map(key=>ACADEMIC_PROVIDERS[key].label).join(' 或 ');
     const sourceStatusMap=new Map();
     for(const key of sourceKeys) {
         const label=providers[key]?.label || key;
         let status={key,label,status:'searching',count:0,rawCount:0,durationMs:0,error:''};
         if(queryPlan.queryTooLong)status={...status,status:'error',error:'展开后的检索词不能超过 4096 字符；未截断任何内容，请缩短查询',errorCode:'query_too_long'};
         else if(queryPlan.invalidIdentifier)status={...status,status:'error',error:'标识符格式无效，请检查 DOI 或 arXiv ID',errorCode:'invalid_identifier'};
-        else if(exactSourceMissing)status={...status,status:'error',error:`${sourceRequirement}需要启用 ${ACADEMIC_PROVIDERS[exactSource].label}`,errorCode:'identifier_source_unavailable'};
-        else if(exactSource && key!==exactSource)status={...status,status:'skipped',reason:queryPlan.advancedSyntax?'arXiv 高级语法仅检索 arXiv':'精确标识仅检索对应来源'};
+        else if(exactSourceMissing)status={...status,status:'error',error:`${sourceRequirement}需要启用 ${exactSourceLabels}`,errorCode:'identifier_source_unavailable'};
+        else if(exactSources.length && !exactSources.includes(key))status={...status,status:'skipped',reason:queryPlan.advancedSyntax?'arXiv 高级语法仅检索 arXiv':'精确标识仅检索支持该标识的来源'};
         else if(!cleanQuery)status={...status,status:'skipped',reason:'检索词为空'};
         sourceStatusMap.set(key,status);emit(status);
     }
@@ -158,7 +159,7 @@ export async function searchAcademicPapers(query, options = {}) {
         queryPlanning:queryPlan,status,items,sourceStatuses,totalFetched,totalRejected,totalLimited,totalBeforeMerge:rankedItems.length,totalAfterMerge:items.length,
         fetchedSubset:true,perSourceLimit:limit,totalShown:items.length,searchedAt:new Date().toISOString(),cached:false};
     if(queryPlan.invalidIdentifier || exactSourceMissing) {
-        response.status='error';response.error=queryPlan.invalidIdentifier?'标识符格式无效，请检查 DOI 或 arXiv ID':`${sourceRequirement}需要启用 ${ACADEMIC_PROVIDERS[exactSource].label}`;
+        response.status='error';response.error=queryPlan.invalidIdentifier?'标识符格式无效，请检查 DOI 或 arXiv ID':`${sourceRequirement}需要启用 ${exactSourceLabels}`;
     }
     checkActive();
     // A valid no-hit search is distinct from error, but is not cached as a successful hit set.

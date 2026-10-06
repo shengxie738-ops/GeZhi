@@ -421,18 +421,30 @@ _ARXIV_FIELDS = {"ti", "au", "abs", "co", "jr", "cat", "rn", "id", "all", "submi
 
 def _valid_arxiv_advanced(query):
     """Validate a bounded field/Boolean grammar; punctuation alone is not syntax."""
-    tokens = re.findall(r'"[^"]*"|\[.*?\]|[^\s():]+:|\bANDNOT\b|\bAND\b|\bOR\b|[()]|[^\s()]+', query)
+    tokens = re.findall(r'''-?"[^"]*"|-?'[^']*'|\[.*?\]|[^\s():]+:|\bANDNOT\b|\bAND\b|\bOR\b|[()]|[^\s()]+''', query)
+    # Incidental field-like text in ordinary prose or quoted literals is not
+    # advanced intent. Only a leading field, optionally in groups, qualifies.
+    leading = next((token for token in tokens if token != '('), '')
+    advanced_candidate = leading.endswith(':') and leading[:-1] in _ARXIV_FIELDS
+    if len(tokens) > 256:
+        if advanced_candidate:
+            raise _source_error("arxiv", "invalid_query", "Advanced arXiv query must not exceed 256 tokens", 422)
+        return False
     # The tokenizer must consume all non-whitespace input without dropping punctuation.
     if re.sub(r"\s+", "", "".join(tokens)) != re.sub(r"\s+", "", query):
         return False
     position = 0
-    def term():
+    def term(depth):
         nonlocal position
+        if depth > 32:
+            if advanced_candidate:
+                raise _source_error("arxiv", "invalid_query", "Advanced arXiv query must not exceed 32 nested groups", 422)
+            return False
         if position >= len(tokens):
             return False
         if tokens[position] == "(":
             position += 1
-            if not expression() or position >= len(tokens) or tokens[position] != ")":
+            if not expression(depth + 1) or position >= len(tokens) or tokens[position] != ")":
                 return False
             position += 1
             return True
@@ -442,18 +454,21 @@ def _valid_arxiv_advanced(query):
         position += 1
         if position >= len(tokens) or tokens[position] in {"AND", "OR", "ANDNOT", "(", ")"} or tokens[position].endswith(":"):
             return False
+        # Single quotes are plain literal intent, not the advanced API grammar.
+        if re.match(r"^-?'", tokens[position]):
+            return False
         position += 1
         return True
-    def expression():
+    def expression(depth):
         nonlocal position
-        if not term():
+        if not term(depth):
             return False
         while position < len(tokens) and tokens[position] in {"AND", "OR", "ANDNOT"}:
             position += 1
-            if not term():
+            if not term(depth):
                 return False
         return True
-    return expression() and position == len(tokens)
+    return expression(0) and position == len(tokens)
 
 
 def compile_arxiv_query(query):

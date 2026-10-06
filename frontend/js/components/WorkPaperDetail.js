@@ -38,7 +38,7 @@ export default {
             </header>
             <div class="work-paper-detail-content">
                 <div class="work-detail-sources">
-                    <span v-for="src in paper.sources || []" :key="src.key">{{ src.label || src.key }}</span>
+                    <span v-for="(src, index) in paper.sources || []" :key="[src.key, src.recordId || src.rawId || src.recordKey || '', index].join(':')">{{ src.label || src.key }}</span>
                     <span v-if="paper.year">{{ paper.year }}</span>
                     <span v-if="paper.workType">{{ paper.workType }}</span>
                 </div>
@@ -64,7 +64,7 @@ export default {
                 <p v-if="paper.ranking && typeof paper.ranking.relevanceScore === 'number'">检索概念覆盖度：{{ Math.round(paper.ranking.relevanceScore * 100) }}%（启发式，非相关性保证）</p>
                 <div v-if="paper.sources && paper.sources.length" class="work-detail-trace">
                     <h4>来源记录追踪</h4>
-                    <div v-for="src in paper.sources" :key="src.key"><strong>{{ src.label || src.key }}</strong><span v-if="src.rawId"> ID: {{ src.rawId }}</span></div>
+                    <div v-for="(src, index) in paper.sources" :key="[src.key, src.recordId || src.rawId || src.recordKey || '', index].join(':')"><strong>{{ src.label || src.key }}</strong><span v-if="src.recordId || src.rawId"> ID: {{ src.recordId || src.rawId }}</span></div>
                 </div>
                 <div class="work-detail-actions">
                     <button type="button" class="work-detail-primary" @click="$emit('insert-to-chat')">引入对话</button>

@@ -89,7 +89,7 @@ export function normalizeHttpUrl(value) {
 
 /**
  * 标准化学术成果类型
- * 映射为: journal-article | conference-paper | preprint | book | thesis | other
+ * 映射为: journal-article | conference-paper | preprint | book | book-chapter | thesis | other
  */
 export function normalizeWorkType(value) {
     if (!value || typeof value !== 'string') return 'other';
@@ -104,7 +104,8 @@ export function normalizeWorkType(value) {
     if (['preprint', 'working-paper', 'posted-content'].includes(clean)) {
         return 'preprint';
     }
-    if (['book', 'monograph', 'edited-book', 'book-chapter'].includes(clean)) {
+    if (clean === 'book-chapter') return 'book-chapter';
+    if (['book', 'monograph', 'edited-book'].includes(clean)) {
         return 'book';
     }
     if (['thesis', 'dissertation', 'phdthesis', 'mastersthesis'].includes(clean)) {
@@ -165,6 +166,7 @@ const validNumeric = value => (typeof value === 'number' || typeof value === 'st
 export function createAcademicPaper(raw = {}, source = null) {
     const title = (typeof raw.title === 'string' ? raw.title : '').replace(/\s+/g, ' ').trim();
     const authors = (Array.isArray(raw.authors) ? raw.authors : typeof raw.authors === 'string' ? raw.authors.split(',') : []).map(a => typeof a === 'string' ? a.trim() : '').filter(Boolean);
+    const literalAuthors = [...new Set((Array.isArray(raw.literalAuthors) ? raw.literalAuthors : []).filter(name => typeof name === 'string' && authors.includes(name.trim())).map(name => name.trim()))];
     const year = validNumeric(raw.year) ? Number(raw.year) : null;
     const abstract = safeText(raw.abstract).replace(/\s+/g, ' ').trim();
     const doi = normalizeDoi(raw.doi);
@@ -177,8 +179,8 @@ export function createAcademicPaper(raw = {}, source = null) {
     const retrievedAt = raw.retrievedAt || new Date().toISOString();
     const citationCount = validNumeric(raw.citationCount) && Number(raw.citationCount) >= 0 ? Number(raw.citationCount) : null;
     const paper = {
-        id:raw.id || recordKey, recordKey, canonicalKey:'', identityKeys:[], title, authors, authorsText:authors.join(', '), year,
-        venue:safeText(raw.venue).trim(), workType:normalizeWorkType(raw.workType || (source?.key === 'arxiv' ? 'preprint' : 'other')),
+        id:raw.id || recordKey, recordKey, canonicalKey:'', identityKeys:[], title, authors, literalAuthors, authorsText:authors.join(', '), year,
+        venue:safeText(raw.venue).trim(), publisher:safeText(raw.publisher).trim(), workType:normalizeWorkType(raw.workType || (source?.key === 'arxiv' ? 'preprint' : 'other')),
         abstract, abstractSource:abstract ? raw.abstractSource || sources[0]?.key || '' : '', doi,
         arxivId:normalizeArxivId(arxivIdentifier), arxivIdentifier, arxivVersion:raw.arxivVersion || arxivIdentifier.match(/v(\d+)$/i)?.[1] || '',
         pmid:normalizePmid(raw.pmid), officialUrl:normalizeHttpUrl(raw.officialUrl || buildDoiUrl(doi)), openAccessUrl,
@@ -190,7 +192,7 @@ export function createAcademicPaper(raw = {}, source = null) {
         paper.openAccessEvidence = {url:openAccessUrl,license:paper.license,version:safeText(raw.openAccessVersion || raw.openAccessEvidence?.version),...provenance(paper)};
         paper.accessLocations.push({...paper.openAccessEvidence});
     }
-    for (const field of ['title','authors','year','venue','workType','abstract','doi','arxivId','pmid','officialUrl','citationCount']) {
+    for (const field of ['title','authors','year','venue','publisher','workType','abstract','doi','arxivId','pmid','officialUrl','citationCount']) {
         if (paper[field] !== '' && paper[field] !== null && (!Array.isArray(paper[field]) || paper[field].length)) paper.fieldProvenance[field] = provenance(paper);
     }
     paper.identityKeys = getPaperIdentityKeys(paper);
@@ -254,8 +256,8 @@ function mergePaperGroup(records) {
     if(group.length===1) return {...group[0],sources:(group[0].sources || []).map(s=>({...s}))};
     const pick=(field, preferLength=false)=> [...group].sort((a,b)=> (preferLength ? (b[field]?.length || 0)-(a[field]?.length || 0):0) || recordOrder(a,b)).find(p=>p[field]!=='' && p[field]!==null && p[field]!==undefined && (!Array.isArray(p[field]) || p[field].length));
     const chosen={};
-    for(const field of ['title','authors','year','venue','abstract','doi','arxivId','pmid','officialUrl']) chosen[field]=pick(field,['title','authors','venue','abstract'].includes(field));
-    const typeRanks={'journal-article':5,'conference-paper':4,preprint:3,book:2,thesis:1,other:0};
+    for(const field of ['title','authors','year','venue','publisher','abstract','doi','arxivId','pmid','officialUrl']) chosen[field]=pick(field,['title','authors','venue','abstract'].includes(field));
+    const typeRanks={'journal-article':6,'conference-paper':5,'book-chapter':4,preprint:3,book:2,thesis:1,other:0};
     chosen.workType=[...group].sort((a,b)=>(typeRanks[b.workType]||0)-(typeRanks[a.workType]||0)||recordOrder(a,b))[0];
     chosen.citationCount=[...group].filter(p=>p.citationCount!==null && p.citationCount!==undefined).sort((a,b)=> {
         const priority=p=> {const i=CITATION_SOURCE_PRIORITY.indexOf(p.citationCountSource || p.sources?.[0]?.key);return i<0?99:i;};
@@ -276,6 +278,7 @@ function mergePaperGroup(records) {
         if(p)merged.fieldProvenance[field]=p.fieldProvenance?.[field] || provenance(p);
     }
     merged.authorsText=merged.authors.join(', ');
+    merged.literalAuthors=(chosen.authors?.literalAuthors || []).filter(name=>merged.authors.includes(name));
     merged.abstractSource=chosen.abstract?.abstractSource || '';
     merged.citationCountSource=chosen.citationCount?.citationCountSource || '';
     merged.arxivIdentifier=chosen.arxivId?.arxivIdentifier || merged.arxivId;
