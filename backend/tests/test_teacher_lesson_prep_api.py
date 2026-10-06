@@ -2,6 +2,8 @@ import asyncio
 import io
 import json
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import unquote, quote
@@ -53,6 +55,8 @@ from app.schemas.teacher_lesson_prep import (
 )
 from app.services.teacher_lesson_prep.ai_client import LessonPrepAIClient
 from app.services.teacher_lesson_prep.service import TeacherLessonPrepService
+from app.services.teacher_lesson_prep.courseware_catalog import CoursewareCatalog
+from tests.support.courseware_synthetic import build_courseware, COMPUTER_PDF, PDF_PAGES
 
 
 class FakeResponse:
@@ -111,7 +115,11 @@ class SyntheticLessonAccounts:
             setting = patch.object(settings, name, value)
             setting.start()
             self.addCleanup(setting.stop)
-        service = patch("app.api.endpoints.teacher_lesson_prep.lesson_prep_service", TeacherLessonPrepService())
+        owned = tempfile.TemporaryDirectory(prefix="gezhi-synthetic-courseware-")
+        self.addCleanup(owned.cleanup)
+        self.synthetic_catalog = CoursewareCatalog(frontend_root=build_courseware(Path(owned.name) / "frontend"))
+        service = patch("app.api.endpoints.teacher_lesson_prep.lesson_prep_service",
+                        TeacherLessonPrepService(catalog=self.synthetic_catalog))
         service.start()
         self.addCleanup(service.stop)
 
@@ -217,11 +225,11 @@ class TeacherLessonPrepApiTest(SyntheticLessonAccounts, unittest.TestCase):
             "content": "课件介绍计算机组成、程序代码层次与硬件结构。",
             "key_points": ["计算机组成", "程序代码层次"],
         }
-        service = TeacherLessonPrepService(ai_client=ai_client)
+        service = TeacherLessonPrepService(catalog=self.synthetic_catalog, ai_client=ai_client)
         resource = next(
             item
             for item in service.catalog.scan()
-            if item.frontend_url == "/Computer_ Organization/01_Introduction_fang.pdf"
+            if item.frontend_url == COMPUTER_PDF
         )
 
         result = asyncio.run(service.summarize(LessonPrepSummaryRequest(resource_ids=[resource.id])))
@@ -233,6 +241,7 @@ class TeacherLessonPrepApiTest(SyntheticLessonAccounts, unittest.TestCase):
         self.assertGreaterEqual(result["citations"][0]["page"], 1)
         evidence = json.loads(ai_client.complete.await_args.kwargs["user_prompt"])["evidence"]
         self.assertTrue(evidence)
+        self.assertIn(PDF_PAGES[0], str(evidence))
 
     def test_summary_without_ai_key_returns_configuration_error(self):
         service = TeacherLessonPrepService.__new__(TeacherLessonPrepService)
@@ -252,7 +261,7 @@ class TeacherLessonPrepApiTest(SyntheticLessonAccounts, unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertIn("AI_LESSON_PREP_API_KEY", ctx.exception.detail)
 
-    def test_draft_storage_is_isolated_by_teacher(self):
+    def test_draft_save_on_sqlite_is_503_without_mutation(self):
         payload = LessonPrepDraftRequest(
             title="线性表教学设计",
             topic="线性表",
@@ -261,19 +270,11 @@ class TeacherLessonPrepApiTest(SyntheticLessonAccounts, unittest.TestCase):
             content={"objectives": ["理解线性表"]},
         )
         created = save_lesson_prep_draft(payload, self.teacher_auth, self.db)
-        draft_id = created["data"]["draft_id"]
-        listed = list_lesson_prep_drafts(self.teacher_auth, self.db)
-        detail = get_lesson_prep_draft(draft_id, self.teacher_auth, self.db)
-
-        other_auth = f"Bearer {create_access_token('teacher-2', 'teacher')}"
-        other_list = list_lesson_prep_drafts(other_auth, self.db)
-        with self.assertRaises(HTTPException) as ctx:
-            get_lesson_prep_draft(draft_id, other_auth, self.db)
-
-        self.assertEqual(len(listed["data"]["drafts"]), 1)
-        self.assertEqual(detail["data"]["title"], "线性表教学设计")
-        self.assertEqual(other_list["data"]["drafts"], [])
-        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(created.status_code, 503)
+        self.assertEqual(json.loads(created.body), {
+            "code": 503, "message": "TEACHER_WORK_SCHEMA_UNAVAILABLE", "data": None})
+        self.assertEqual(self.db.query(DomainRecord).count(), 0)
+        self.assertFalse(self.db.new or self.db.dirty or self.db.deleted)
 
     def test_search_requires_selected_resources_and_limits_payload(self):
         with self.assertRaises(ValueError):

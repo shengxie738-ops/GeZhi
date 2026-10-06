@@ -13,7 +13,8 @@ from app.services.teacher_lesson_prep.courseware_catalog import (
 from app.services.teacher_lesson_prep.document_retriever import DocumentRetriever
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+from tests.support.courseware_synthetic import build_courseware, write_pdf, AI_PDF, PDF_PAGES, SLIDE_TEXTS
+
 EXPECTED_COURSE_NAMES = {
     "AI_technology": "人工智能技术",
     "Computer_ Organization": "计算机组成原理",
@@ -23,12 +24,12 @@ EXPECTED_COURSE_NAMES = {
 }
 
 
-@pytest.fixture(scope="module")
-def catalog() -> CoursewareCatalog:
-    return CoursewareCatalog(REPOSITORY_ROOT)
+@pytest.fixture
+def catalog(tmp_path) -> CoursewareCatalog:
+    return CoursewareCatalog(frontend_root=build_courseware(tmp_path / "synthetic-frontend"))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def resources(catalog: CoursewareCatalog) -> list[CoursewareResource]:
     return catalog.scan()
 
@@ -49,10 +50,12 @@ def test_catalog_reports_the_expected_resource_totals_and_index_states(
 ) -> None:
     summary = catalog.summarize(resources)
 
-    assert summary.total == 97
-    assert summary.pdf == 58
-    assert summary.slides == 39
-    assert summary.ppt == 38
+    # Synthetic engineering fixture: five PDFs, a real PPTX, one unread
+    # unsupported-extension sentinel. Original 97 totals are operator-only.
+    assert summary.total == 7
+    assert summary.pdf == 5
+    assert summary.slides == 2
+    assert summary.ppt == 1
     assert summary.pptx == 1
 
     legacy_ppt = [resource for resource in resources if resource.extension == ".ppt"]
@@ -89,19 +92,19 @@ def test_catalog_rejects_paths_outside_the_allowed_course_directories(
         catalog.resolve_frontend_path("not_a_course/file.pdf")
 
 
-def test_catalog_refreshes_when_courseware_changes() -> None:
-    catalog = CoursewareCatalog(REPOSITORY_ROOT)
+def test_catalog_refreshes_when_courseware_changes(catalog) -> None:
     first = catalog.list_resources()
-    sample = REPOSITORY_ROOT / "frontend" / "data_structure" / "temporary-refresh-test.pdf"
-    sample.write_bytes(b"%PDF-1.4\n%%EOF")
+    sample = catalog.frontend_root / "data_structure" / "synthetic-refresh.pdf"
+    write_pdf(sample, ("Synthetic refresh document.",))
     try:
         second = catalog.list_resources()
         assert second.summary.total == first.summary.total + 1
     finally:
         sample.unlink(missing_ok=True)
+    assert catalog.list_resources().summary.total == first.summary.total
 
 
-def test_catalog_refreshes_when_extractor_dependency_becomes_available(monkeypatch) -> None:
+def test_catalog_refreshes_when_extractor_dependency_becomes_available(monkeypatch, catalog) -> None:
     import app.services.teacher_lesson_prep.courseware_catalog as catalog_module
 
     real_find_spec = catalog_module.importlib.util.find_spec
@@ -113,13 +116,12 @@ def test_catalog_refreshes_when_extractor_dependency_becomes_available(monkeypat
         return real_find_spec(name)
 
     monkeypatch.setattr(catalog_module.importlib.util, "find_spec", fake_find_spec)
-    catalog = CoursewareCatalog(REPOSITORY_ROOT)
 
     unavailable = catalog.list_resources()
     unavailable_pdf = next(
         item
         for item in unavailable.resources
-        if item.frontend_url == "/AI_technology/16-Making_Simple_Decisions.pdf"
+        if item.frontend_url == AI_PDF
     )
     assert unavailable_pdf.index_status == "PYPDF_UNAVAILABLE"
     assert unavailable_pdf.searchable is False
@@ -129,7 +131,7 @@ def test_catalog_refreshes_when_extractor_dependency_becomes_available(monkeypat
     refreshed_pdf = next(
         item
         for item in refreshed.resources
-        if item.frontend_url == "/AI_technology/16-Making_Simple_Decisions.pdf"
+        if item.frontend_url == AI_PDF
     )
     assert refreshed_pdf.index_status == "NOT_INDEXED"
     assert refreshed_pdf.searchable is True
@@ -142,7 +144,7 @@ def test_pdf_extraction_builds_page_chunks_and_returns_page_citations(
     resource = next(
         item
         for item in resources
-        if item.frontend_url == "/AI_technology/16-Making_Simple_Decisions.pdf"
+        if item.frontend_url == AI_PDF
     )
     retriever = DocumentRetriever(catalog)
 
@@ -154,6 +156,7 @@ def test_pdf_extraction_builds_page_chunks_and_returns_page_citations(
     assert indexed.chunks[0].page >= 1
     assert [chunk.page for chunk in indexed.chunks] == sorted(chunk.page for chunk in indexed.chunks)
     assert all(chunk.resource_id == resource.id for chunk in indexed.chunks)
+    assert [(chunk.page, chunk.text) for chunk in indexed.chunks] == list(enumerate(PDF_PAGES, start=1))
     assert result.matches
     assert result.matches[0].resource_id == resource.id
     assert result.matches[0].page >= 1
@@ -205,7 +208,10 @@ def test_pptx_dependency_or_legacy_ppt_failures_are_explicit(
 
     pptx = next(resource for resource in resources if resource.extension == ".pptx")
     pptx_result = retriever.index_resource(pptx.id)
-    assert pptx_result.status in {"INDEXED", "PYTHON_PPTX_UNAVAILABLE"}
-    if pptx_result.status == "PYTHON_PPTX_UNAVAILABLE":
-        assert pptx_result.chunks == []
-        assert "python-pptx" in pptx_result.message
+    assert pptx_result.status == "INDEXED"
+    assert [chunk.page for chunk in pptx_result.chunks] == [1, 2]
+    for chunk, text in zip(pptx_result.chunks, SLIDE_TEXTS):
+        assert text in chunk.text
+    found = retriever.search("linked list nodes", resource_ids=[pptx.id])
+    assert found.matches[0].resource_id == pptx.id and found.matches[0].page == 1
+    assert "linked list nodes" in found.matches[0].excerpt
