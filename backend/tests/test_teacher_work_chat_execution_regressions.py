@@ -28,7 +28,12 @@ def _support():
     # is asserted here: RED must come from the actual behavioral regression.
     path = Path(__file__).with_name("test_teacher_work_chat_execution.py")
     assert path.is_file(), "Task4b2B frozen execution fixture is missing"
-    assert hashlib.sha256(path.read_bytes()).hexdigest() == SUPPORT_SHA, "Task4b2B original four-selector fixture changed"
+    # Task2 explicitly extends only this exact operation-dictionary line.
+    # Preserve the original complete byte pin for every historical byte.
+    addition = b'        "private_proposal_read": "read", "private_proposal_write": "write",\n'
+    current = path.read_bytes()
+    assert current.count(addition) == 1, "exact authorized proposal operation addition required"
+    assert hashlib.sha256(current.replace(addition, b"", 1)).hexdigest() == SUPPORT_SHA, "Task4b2B original four-selector fixture changed"
     # Only the exact named admission guard expanded; all four original
     # behavioral fixtures and remaining support bytes stay independently pinned.
     raw=path.read_bytes(); lines=raw.splitlines(keepends=True)

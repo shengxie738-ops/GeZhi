@@ -374,6 +374,7 @@ def test_contract_slice_keeps_runtime_gates_closed():
     body = guard.body[1:] if isinstance(guard.body[0], ast.Expr) and isinstance(guard.body[0].value, ast.Constant) else guard.body
     assert ast.literal_eval(body[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
         "private_chat_read": "read", "private_chat_write": "write",
+        "private_proposal_read": "read", "private_proposal_write": "write",
         "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write",
         "private_package_read":"read","private_package_create":"write","private_package_retry":"write","private_package_file":"write"}
     assert ast.unparse(body[1].test) == "operation not in expected or mode != expected[operation]"

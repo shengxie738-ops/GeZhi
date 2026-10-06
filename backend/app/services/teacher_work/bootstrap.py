@@ -19,6 +19,8 @@ from app.services.teacher_work.types import WorkDependencies
 from app.services.teacher_work.run_persistence import (
     ChatCallReservation, ChatRequestObservation, ChatRunAdmission, ChatRunOutcome,
 )
+from app.services.teacher_work.proposal_persistence import (ProposalOutcome, ProposalAdmission, ProposalObservation,
+    ProposalReservation, ProposalReadOutcome, ProposalListOutcome)
 from app.services.teacher_work.runs import WorkRunError
 from app.schemas.teacher_work_exports import PrivatePackageState,PrivatePackageList
 
@@ -27,11 +29,16 @@ def _require_live_admission(mode, operation=None):
     """Only named private operations; ordinary/later admission stays closed."""
     expected = {"private_create": "write", "private_read": "read", "private_update": "write",
                 "private_chat_read": "read", "private_chat_write": "write",
+                "private_proposal_read": "read", "private_proposal_write": "write",
                 "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write",
                 "private_package_read":"read","private_package_create":"write","private_package_retry":"write","private_package_file":"write"}
     if operation not in expected or mode != expected[operation]:
         raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
     from app.core.config import settings
+    if (operation in ("private_proposal_read", "private_proposal_write")
+            and settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is True
+            and settings.TEACHER_WORK_PRIVATE_MATERIAL_PROPOSALS_ENABLED is not True):
+        raise WorkAuthorizationError("PRIVATE_MATERIAL_PROPOSALS_DISABLED", 503)
     if settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True:
         raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
     if operation in ("private_chat_read", "private_chat_write") and settings.TEACHER_WORK_PRIVATE_CHAT_ENABLED is not True:
@@ -40,6 +47,15 @@ def _require_live_admission(mode, operation=None):
         raise WorkAuthorizationError("PRIVATE_MATERIALS_DISABLED", 503)
     if operation in ('private_package_read','private_package_create','private_package_retry','private_package_file') and settings.TEACHER_WORK_PRIVATE_EXPORTS_ENABLED is not True:
         raise WorkAuthorizationError('PRIVATE_EXPORTS_DISABLED',503)
+
+
+def _require_proposal_schema(transport):
+    from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
+    from app.services.teacher_work.proposal_schema import observe_teacher_work_proposals_mysql
+    if not observe_teacher_work_mysql_v3(transport.connection).ready:
+        raise WorkAuthorizationError("TEACHER_WORK_SCHEMA_UNAVAILABLE", 503)
+    if not observe_teacher_work_proposals_mysql(transport.connection).ready:
+        raise WorkAuthorizationError("PROPOSAL_SCHEMA_UNAVAILABLE", 503)
 
 
 @contextmanager
@@ -202,6 +218,8 @@ class _WorkRequestBindings:
         if operation is not None:
             from app.services.teacher_work.private_tasks import require_private_schema
             require_private_schema(self.transport)
+        if operation in ("private_proposal_read", "private_proposal_write"):
+            _require_proposal_schema(self.transport)
         self.models = SqlWorkModels(WorkTask, OwnerRunLease, PackageVersion, DomainRecord)
         store = JsonStore(session, commit_policy='caller_owned', record_model=DomainRecord)
         self.repository = build_sql_repository(session, models=self.models, draft_store=store,
@@ -210,12 +228,21 @@ class _WorkRequestBindings:
         self.transport.uow = self.repository.uow
         self.transport._uow = self.repository.uow
         self.materials = None
-        if operation in ("private_material_read", "private_material_save", "private_material_approve",'private_package_read','private_package_create','private_package_retry','private_package_file'):
+        if operation in ("private_material_read", "private_material_save", "private_material_approve",'private_package_read','private_package_create','private_package_retry','private_package_file',"private_proposal_write"):
             from app.models.teacher_work import OutlineSnapshot, OutlineApproval
             from app.repositories.teacher_work_materials import PrivateMaterialRepository, SqlMaterialRows
             from app.services.teacher_work.material_sources import MaterialSources
             self.materials = PrivateMaterialRepository(self.repository,
                 SqlMaterialRows(self.repository.run_rows, OutlineSnapshot, OutlineApproval), MaterialSources())
+        self.proposals = None
+        self._proposal_candidate = None
+        if operation in ("private_proposal_read", "private_proposal_write"):
+            from app.models.teacher_work_proposals import MaterialProposalRecord
+            from app.repositories.teacher_work_proposals import PrivateProposalRepository
+            from app.services.teacher_work.material_sources import MaterialSources
+            self.proposals = PrivateProposalRepository(self.repository, MaterialProposalRecord, MaterialSources(), self.materials)
+            if self.materials is not None:
+                self.materials.proposals = self.proposals
         self.packages=None
         self._package_candidate=None
         self._package_current=False
@@ -346,7 +373,7 @@ class _WorkRequestBindings:
         if held is not self._held or policy != self._held.policy:
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
         account = self._private_account if self._context is None else self._context.actor_account
-        if self.operation in ("private_material_read", "private_material_save", "private_material_approve",'private_package_read','private_package_create','private_package_retry','private_package_file'):
+        if self.operation in ("private_material_read", "private_material_save", "private_material_approve",'private_package_read','private_package_create','private_package_retry','private_package_file',"private_proposal_read","private_proposal_write"):
             from fastapi import HTTPException
             from app.services.current_identity import load_current_account
             try:
@@ -376,6 +403,13 @@ class _WorkRequestBindings:
             # The owner invokes this after its final flush and account/namespace
             # checks, before committing the same physical root.
             self.materials.verify_source(self._material_candidate)
+        if self.operation in ("private_proposal_read", "private_proposal_write"):
+            _require_live_admission(self.mode, self.operation)
+            _require_proposal_schema(self.transport)
+            if self.proposals is None or type(self._proposal_candidate) not in (ProposalOutcome, ProposalAdmission,
+                    ProposalObservation, ProposalReservation, ProposalReadOutcome, ProposalListOutcome):
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            self._verify_proposal_outcome(self._proposal_candidate)
         if self.operation in ('private_package_read','private_package_create','private_package_retry','private_package_file'):
             _require_live_admission(self.mode,self.operation)
             if self.packages is None or type(self._package_candidate) not in (PrivatePackageState,PrivatePackageList):raise WorkAuthorizationError('REQUEST_BINDING_CHANGED',503)
@@ -401,14 +435,19 @@ class _WorkRequestBindings:
                     else (PrivateMaterialState,) if self.operation in ("private_material_read", "private_material_save", "private_material_approve")
                     else (PrivatePackageState,PrivatePackageList) if self.operation=='private_package_read'
                     else (PrivatePackageState,) if self.operation in ('private_package_create','private_package_retry','private_package_file')
+                    else (ProposalOutcome, ProposalAdmission, ProposalObservation, ProposalReservation, ProposalReadOutcome, ProposalListOutcome)
+                        if self.operation in ("private_proposal_read", "private_proposal_write")
                     else (PrivateChatHistory, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome))
                 if type(value) not in permitted:
                     raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
                 require_private_schema(self.transport)
+                if self.operation in ("private_proposal_read", "private_proposal_write"):
+                    _require_proposal_schema(self.transport)
             if mode != self.mode or self._held is None or self._actor is None or self._namespace is None or not isinstance(task, WorkTaskDTO):
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
             if value is not None:
-                if (type(value) not in (PrivateTaskSnapshot, PrivateChatHistory, PrivateMaterialState, PrivatePackageState,PrivatePackageList, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
+                if (type(value) not in (PrivateTaskSnapshot, PrivateChatHistory, PrivateMaterialState, PrivatePackageState,PrivatePackageList, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome,
+                        ProposalOutcome, ProposalAdmission, ProposalObservation, ProposalReservation, ProposalReadOutcome, ProposalListOutcome)
                         or value.task != task):
                     raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
                 if type(value) in (PrivateTaskSnapshot, PrivateChatHistory, PrivateMaterialState,PrivatePackageState,PrivatePackageList):
@@ -416,7 +455,8 @@ class _WorkRequestBindings:
                 else:
                     value.__post_init__()
             context = authorize_task(self._actor, task, self._decision)
-            if type(value) in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation) and value.context != context:
+            if type(value) in (ChatRequestObservation, ChatRunAdmission, ChatCallReservation,
+                    ProposalObservation, ProposalAdmission, ProposalReservation) and value.context != context:
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
             candidate = BoundCandidate(task if value is None else value, context.actor_subject,
                 context.owner_storage_id, context.institution_id, context.offering_id)
@@ -507,6 +547,32 @@ class _WorkRequestBindings:
             self._finished = True
             self._cleanup()
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503) from None
+        return self._finish(value.task, mode, value=value)
+
+    def _verify_proposal_outcome(self, value):
+        # The shared request owner intentionally recognizes only repository and
+        # authority errors. Preserve proposal's controlled final-fence failures
+        # at this dedicated boundary without widening its chat error family.
+        try:
+            self.proposals.verify_outcome(value)
+        except WorkRunError as error:
+            raise WorkRepositoryError(error.code, error.status_code) from None
+
+    def finish_proposal_outcome(self, value, *, mode):
+        expected = {"private_proposal_read": "read", "private_proposal_write": "write"}
+        try:
+            if (self._finished or self.operation not in expected or mode != expected[self.operation]
+                    or self.mode != mode or self.proposals is None
+                    or type(value) not in (ProposalOutcome, ProposalAdmission, ProposalObservation,
+                        ProposalReservation, ProposalReadOutcome, ProposalListOutcome)):
+                raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+            value.__post_init__()
+            self._verify_proposal_outcome(value)
+            self._proposal_candidate = value
+        except Exception:
+            self._finished = True
+            self._cleanup()
+            raise
         return self._finish(value.task, mode, value=value)
 
     def finish_private_history(self, value):

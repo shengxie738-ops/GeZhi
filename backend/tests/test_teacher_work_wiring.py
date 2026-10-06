@@ -102,6 +102,7 @@ def test_t3_bootstrap_is_lazy_request_scoped_and_closed():
     body = _body(guard)
     assert ast.literal_eval(body[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
         "private_chat_read": "read", "private_chat_write": "write",
+        "private_proposal_read": "read", "private_proposal_write": "write",
         "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write",
         'private_package_read':'read','private_package_create':'write','private_package_retry':'write','private_package_file':'write'}
     assert ast.unparse(body[1].test) == "operation not in expected or mode != expected[operation]"

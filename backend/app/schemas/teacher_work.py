@@ -206,7 +206,16 @@ class OutlineApprovalRequest(StrictRequest):
     source_digest: Digest
 
 
+def _material_origin_uuid(value):
+    if value is None or type(value) is UUID:
+        return value
+    if type(value) is not str or str(UUID(value)) != value:
+        raise ValueError("canonical origin UUID required")
+    return UUID(value)
+
+
 class PrivateMaterialSaveRequest(StrictRequest):
+    origin_proposal_run_id: Annotated[UUID | None, BeforeValidator(_material_origin_uuid)] = None
     expected_revision: Revision
     input_revision: Revision
     expected_outline_revision: int = Field(ge=0)

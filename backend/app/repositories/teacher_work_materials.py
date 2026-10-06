@@ -26,6 +26,48 @@ def check_original_payload_size(payload):
         raise WorkRepositoryError("PRIVATE_DRAFT_TOO_LARGE", 422)
 
 
+def material_request_digest(request):
+    data = request.model_dump(mode="json")
+    # Only this new top-level optional field is removed. Nested nulls retain
+    # their historical meaning and must continue to participate in the digest.
+    if data.get("origin_proposal_run_id") is None:
+        data.pop("origin_proposal_run_id", None)
+    return canonical_digest(data)
+
+
+def prepare_manual_save(payload, task, request, key, *, records, digest, outline_id, now, fingerprints):
+    """Actual save serialization, shared with proposal completion's dry check.
+
+    Detached copies only: no row lookup, SQL, revisions, UUID generation or clock.
+    Slides live in the immutable outline, only the lesson enters DomainRecord.
+    """
+    TypeAdapter(MessageKey).validate_python(key)
+    payload, records = deepcopy(payload), deepcopy(records)
+    metadata = payload["teacher_work"]
+    try:
+        payload["content"] = preserve_legacy_lesson(payload.get("content"), request.lesson.model_dump(mode="json"))
+    except LegacyLessonPreservationError:
+        raise WorkRepositoryError("NORMALIZATION_REQUIRED", 422) from None
+    metadata["needs_normalization_fields"] = normalize_legacy_for_task(payload["content"], task.duration_minutes).needs_normalization_fields
+    saved = WorkTaskDTO.model_validate({**task.model_dump(), "input_revision": task.input_revision + 1,
+        "working_revision": task.working_revision + 1, "target_slide_count": len(request.slides),
+        "current_outline_id": outline_id, "updated_at": now})
+    snapshot = OutlineSnapshotDTO(outline_id=outline_id, task_id=task.task_id, input_revision=saved.input_revision,
+        outline_revision=request.expected_outline_revision + 1, lesson=request.lesson, slides=request.slides,
+        source_digest=source_digest(saved, metadata["requirements"], fingerprints), outline_digest="0" * 64,
+        skill_versions=(), created_at=now)
+    snapshot = snapshot.model_copy(update={"outline_digest": outline_digest(snapshot)})
+    receipt = MaterialWriteReceipt(operation="save", outline_id=outline_id, approval_id=None,
+        input_revision=saved.input_revision, working_revision=saved.working_revision, replayed=False)
+    records.append(receipt.model_dump(mode="json", exclude={"replayed"}) | {"key": key, "request_digest": digest})
+    if len(records) > 64 or len(canonical_json_bytes(records)) > 32768:
+        raise WorkRepositoryError("MATERIAL_RECEIPT_LIMIT", 409)
+    metadata["private_material_receipts"] = records
+    payload["updated_at"] = now.isoformat()
+    check_original_payload_size(payload)
+    return payload, saved, snapshot, receipt
+
+
 class SqlMaterialRows:
     def __init__(self, guard, outline_model, approval_model):
         if (type(guard) is not SqlChatRows or outline_model.__table__.name != "teacher_work_outline_snapshots"
@@ -101,6 +143,9 @@ class PrivateMaterialRepository:
         if repository.run_rows is not rows.guard or repository.uow is not rows.guard.uow:
             raise ValueError("one caller root required")
         self.core, self.rows, self.sources = repository, rows, sources
+        self.proposals = None
+        self._origin_checks = []
+        self._origin_replay_checks = []
 
     def _locked(self, owner, task_id):
         row, draft = self.core._locked_task(owner, task_id)
@@ -130,7 +175,7 @@ class PrivateMaterialRepository:
 
     def _replay(self, owner, task_id, metadata, operation, key, request):
         TypeAdapter(MessageKey).validate_python(key)
-        digest = canonical_digest(request.model_dump(mode="json"))
+        digest = material_request_digest(request)
         records = self._records(metadata)
         for record in records:
             if (record["operation"], record["key"]) != (operation, key):
@@ -211,6 +256,10 @@ class PrivateMaterialRepository:
             approval_blocker=blocker, receipt=receipt)
 
     def verify_source(self, value):
+        for args in self._origin_replay_checks:
+            self._origin_operation("verify_lineage", *args)
+        for origin, snapshot in self._origin_checks:
+            self._origin_operation("verify_saved_origin", origin, snapshot)
         current = self.get(value.task.owner_subject, value.task.task_id, receipt=value.receipt)
         if current.task != value.task:
             raise WorkRepositoryError("REVISION_CONFLICT", 409)
@@ -241,7 +290,15 @@ class PrivateMaterialRepository:
         metadata = self.core._metadata(payload)
         records, digest, replay = self._replay(owner, task_id, metadata, "save", key, request)
         if replay is not None:
+            if request.origin_proposal_run_id is not None:
+                snapshot = self.rows.get_outline(owner, task_id, replay.outline_id)
+                args = (owner, task_id, request.origin_proposal_run_id, snapshot)
+                self._origin_operation("verify_lineage", *args)
+                self._origin_replay_checks.append(args)
             return self.get(owner, task_id, receipt=replay)
+        origin = None
+        if request.origin_proposal_run_id is not None:
+            origin = self._origin_operation("resolve_origin", owner, task_id, request.origin_proposal_run_id)
         if (request.expected_revision, request.input_revision) != (task.working_revision, task.input_revision):
             raise WorkRepositoryError("REVISION_CONFLICT", 409)
         latest = self.rows.latest(owner, task_id)
@@ -256,28 +313,63 @@ class PrivateMaterialRepository:
             # does not certify retrieved page/excerpt evidence.
             raise WorkRepositoryError("MATERIAL_EVIDENCE_NOT_ENABLED", 422)
         FrozenPackageContent(lesson=request.lesson, slides=request.slides)
-        try:
-            payload["content"] = preserve_legacy_lesson(payload.get("content"), request.lesson.model_dump(mode="json"))
-        except LegacyLessonPreservationError:
-            raise WorkRepositoryError("NORMALIZATION_REQUIRED", 422) from None
-        markers = normalize_legacy_for_task(payload["content"], task.duration_minutes).needs_normalization_fields
-        metadata["needs_normalization_fields"] = markers
-        now, outline_id = self.core._instant(), self.core._uuid()
-        saved = WorkTaskDTO.model_validate({**task.model_dump(), "input_revision": task.input_revision + 1,
-            "working_revision": task.working_revision + 1, "target_slide_count": len(request.slides),
-            "current_outline_id": outline_id, "updated_at": now})
-        snapshot = OutlineSnapshotDTO(outline_id=outline_id, task_id=task_id, input_revision=saved.input_revision,
-            outline_revision=request.expected_outline_revision + 1, lesson=request.lesson, slides=request.slides,
-            source_digest=self._source(saved, payload), outline_digest="0" * 64, skill_versions=(), created_at=now)
-        snapshot = snapshot.model_copy(update={"outline_digest": outline_digest(snapshot)})
-        receipt = MaterialWriteReceipt(operation="save", outline_id=outline_id, approval_id=None,
-            input_revision=saved.input_revision, working_revision=saved.working_revision, replayed=False)
-        self._journal(metadata, records, digest, receipt, key)
-        payload["updated_at"] = now.isoformat()
-        check_original_payload_size(payload)
+        payload, saved, snapshot, receipt = prepare_manual_save(payload, task, request, key,
+            records=records, digest=digest, outline_id=self.core._uuid(), now=self.core._instant(),
+            fingerprints=self.sources.observe(payload["resource_ids"]))
         self.rows.append_outline(owner, snapshot)
+        if origin is not None:
+            self._origin_operation("append_lineage", origin, snapshot)
+            self._origin_checks.append((origin, snapshot))
         self._save_root(row, payload, saved)
         return self.get(owner, task_id, receipt=receipt)
+
+    def _origin_operation(self, name, *args):
+        from app.services.teacher_work.runs import WorkRunError
+        try:
+            return getattr(self._proposal_repository(), name)(*args)
+        except WorkRunError as error:
+            raise WorkRepositoryError(error.code, error.status_code) from None
+
+    def _proposal_repository(self):
+        # Only a provided origin enters this lazy path. Every origin operation,
+        # including final historical replay verification, repeats its gates.
+        from app.core.config import settings
+        from app.services.teacher_work.authorization import WorkAuthorizationError
+        from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
+        from app.services.teacher_work.proposal_schema import observe_teacher_work_proposals_mysql
+        if settings.TEACHER_WORK_PRIVATE_MATERIAL_PROPOSALS_ENABLED is not True:
+            raise WorkAuthorizationError("PRIVATE_MATERIAL_PROPOSALS_DISABLED", 503)
+        connection = self.rows.guard.session.get_bind()
+        if not observe_teacher_work_mysql_v3(connection).ready:
+            raise WorkAuthorizationError("TEACHER_WORK_SCHEMA_UNAVAILABLE", 503)
+        if not observe_teacher_work_proposals_mysql(connection).ready:
+            raise WorkAuthorizationError("PROPOSAL_SCHEMA_UNAVAILABLE", 503)
+        if self.proposals is None:
+            from app.models.teacher_work_proposals import MaterialProposalRecord
+            from app.repositories.teacher_work_proposals import PrivateProposalRepository
+            self.proposals = PrivateProposalRepository(self.core, MaterialProposalRecord, self.sources, self)
+        return self.proposals
+
+    def prepare_proposal_save(self, owner, task_id, proposal):
+        from datetime import datetime, timezone
+        from app.schemas.teacher_work import PrivateMaterialSaveRequest
+        row, draft = self._locked(owner, task_id)
+        latest = self.rows.latest(owner, task_id)
+        request = PrivateMaterialSaveRequest(expected_revision=row.task.working_revision,
+            input_revision=row.task.input_revision, expected_outline_revision=latest.outline_revision if latest else 0,
+            lesson=proposal.lesson, slides=proposal.slides, origin_proposal_run_id=UUID(int=(1 << 128)-1))
+        # 128 Unicode codepoints, 512 UTF-8 bytes: maximum valid receipt-key
+        # width. Fixed UUID width and maximal UTC timestamp fraction reserve
+        # the exact journal serializer's overhead. Origin is separate lineage;
+        # only its 64-character request digest enters the original draft.
+        reserved_key = "\U0001f600" * 128
+        records = self._records(self.core._metadata(draft.payload))
+        if any(record["input_revision"] > row.task.input_revision or record["working_revision"] > row.task.working_revision for record in records):
+            raise unavailable()
+        return prepare_manual_save(draft.payload, row.task, request, reserved_key,
+            records=records, digest=material_request_digest(request),
+            outline_id=UUID(int=(1 << 128)-1), now=datetime(9999,12,31,23,59,59,999999,tzinfo=timezone.utc),
+            fingerprints=self.sources.observe(draft.payload["resource_ids"]))
 
     def approve(self, owner, task_id, request, key):
         row, draft = self._locked(owner, task_id)

@@ -107,6 +107,7 @@ def _bootstrap_source_contract(tree, binding):
     statements = [node for node in guard.body if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))]
     assert ast.literal_eval(statements[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
         "private_chat_read": "read", "private_chat_write": "write",
+        "private_proposal_read": "read", "private_proposal_write": "write",
         "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write",
         "private_package_read":"read","private_package_create":"write","private_package_retry":"write","private_package_file":"write"}
     assert ast.unparse(statements[1].test) == "operation not in expected or mode != expected[operation]"
