@@ -1,5 +1,8 @@
 # 教师 Work 普通对话持久化切片
 
+前半为 Task4b2A 历史记录；2026-10-06 私有聊天 HTTP 阶段的计划见文末，
+最终结果见 [原生私有聊天 HTTP 验证](102V12-teacher-work-native-private-chat-http.md)。
+
 ## 当前状态
 
 本次实现 Task4b2A：普通对话的授权仓储命令、严格记录解码和显式调用方事务内的 SQL 行操作。所有返回值仍是未提交候选或授权观察结果，不能据此发送提供商请求、显示已保存成功或认定事务已经提交。
@@ -22,3 +25,25 @@ Task4b2B 仍需连接提交前后的请求所有者、真实原始响应适配�
 当前完成方法能幂等观察已经提交的相同结果回执，但不能证明未知提交后的重试保留同一个助手消息 UUID 和时间。后续集成必须在第一次完成尝试前保留服务端准备的不可变消息、回执、结果和 token，并通过另行测试和审阅的内部接口重用该确切对象；这不授权重试提供商调用。
 
 本切片未开放 HTTP 对话、提供商派发、修复/重试、重启恢复或实时页面接线。真实 MySQL 唯一性、外键顺序、隔离与回滚、撤权序列化、账号重建安全、选定证据、真实提供商和桌面浏览器仍是独立未完成验收项。现有草稿、学生数据与课程发布安全门保持各自边界。
+# 2026-10-06 私有聊天 HTTP 原生验证阶段
+
+基线 `74695e58c5e6ac89cd64d9fde7e7a3c75368ecf0`，保留已有前端，限后端私有任务。
+新增聊天开关默认关闭，普通 Work、生成、文件、发布门禁保持关闭。单进程执行器容量
+最多 4；所有同步事务端口使用独立真实鉴权/账户锁/READ COMMITTED 根事务，并在
+等待实际 LessonPrepAIClient 适配器之前完成提交或回滚、关闭 Session。
+
+验证计划：先记录无路由/无任务简报的失败测试；实现稳定、有界、授权历史及
+任务 title/topic/audience/已保存 requirements 的不可信 JSON 引用；当前 admitted
+消息只出现在 current_input。HTTP 新消息仅确认持久接收，轮询 run/history；完全
+相同重放不再派发。独立连接核验消息、run、lease、原草稿，验证跨账户、删除/变更
+角色、输入修订变化、并发/容量、错误/超时/取消及伪执行字段拒绝。提供商仅使用
+受控 HTTP transport，组装实际 LessonPrepWorkAI/LessonPrepAIClient，不调用外部 AI。
+
+接口已向上游冻结：messages POST/GET、runs GET/cancel POST；成功均为 200 通用
+envelope。Run 公开十字段，history 公开十消息字段并包含 has_more/next_before。
+capabilities 新增 private_chat 六布尔字段；external_provider_verified 恒为 false。
+缺配置关闭 send，开启聊天开关后的授权 history/read_run/cancel 仍可用。
+
+按 red→green 原生及针对性普通回归、独立代码复核后普通提交/推送 102V12，核对
+精确提交 CI。临时官方 MySQL 实例测试结束停止并移除，仅保留脱敏日志；不导入
+app.main，不运行浏览器或移动端，不连接现有数据库，不开发恢复/重试/检索框架。

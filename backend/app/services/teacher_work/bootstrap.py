@@ -1,14 +1,14 @@
-"""Lazy request-local bindings for the default-off private task CRU slice.
+"""Lazy request-local bindings for default-off private CRU/first-call chat.
 
 Named private operations require actual schema/session observations and current
-account locks. Ordinary/chat/package admission remains closed. Account reuse by
+account locks. Ordinary/offering/package admission remains closed. Account reuse by
 external administrators is an explicit lifecycle limitation, not certified here.
 """
 from contextlib import contextmanager
 from uuid import UUID
 
 from app.repositories.teacher_work import AuthorizedWorkScope, WorkRepositoryError
-from app.schemas.teacher_work import WorkTaskDTO, PrivateTaskSnapshot
+from app.schemas.teacher_work import WorkTaskDTO, PrivateTaskSnapshot, PrivateChatHistory
 from app.services.teacher_work.authorization import (
     BoundCandidate, CommitReceipt, CurrentAccountFacts, HeldAdmissionReceipt,
     HeldWorkAuthority, NamespaceObservation, OfferingDecision, PolicySnapshot,
@@ -23,13 +23,16 @@ from app.services.teacher_work.runs import WorkRunError
 
 
 def _require_live_admission(mode, operation=None):
-    """Only the named private CRU slice; ordinary/later admission stays closed."""
-    expected = {"private_create": "write", "private_read": "read", "private_update": "write"}
+    """Only named private operations; ordinary/later admission stays closed."""
+    expected = {"private_create": "write", "private_read": "read", "private_update": "write",
+                "private_chat_read": "read", "private_chat_write": "write"}
     if operation not in expected or mode != expected[operation]:
         raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
     from app.core.config import settings
     if settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True:
         raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
+    if operation in ("private_chat_read", "private_chat_write") and settings.TEACHER_WORK_PRIVATE_CHAT_ENABLED is not True:
+        raise WorkAuthorizationError("PRIVATE_CHAT_DISABLED", 503)
 
 
 @contextmanager
@@ -346,17 +349,19 @@ class _WorkRequestBindings:
             if self.operation is not None:
                 from app.services.teacher_work.private_tasks import require_private_schema
                 _require_live_admission(self.mode, self.operation)
-                if type(value) is not PrivateTaskSnapshot:
+                permitted = ((PrivateTaskSnapshot,) if self.operation in ("private_create", "private_read", "private_update")
+                    else (PrivateChatHistory, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome))
+                if type(value) not in permitted:
                     raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
                 require_private_schema(self.transport)
             if mode != self.mode or self._held is None or self._actor is None or self._namespace is None or not isinstance(task, WorkTaskDTO):
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
             if value is not None:
-                if (type(value) not in (PrivateTaskSnapshot, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
+                if (type(value) not in (PrivateTaskSnapshot, PrivateChatHistory, ChatRequestObservation, ChatRunAdmission, ChatCallReservation, ChatRunOutcome)
                         or value.task != task):
                     raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
-                if type(value) is PrivateTaskSnapshot:
-                    PrivateTaskSnapshot.model_validate(value.model_dump())
+                if type(value) in (PrivateTaskSnapshot, PrivateChatHistory):
+                    type(value).model_validate(value.model_dump())
                 else:
                     value.__post_init__()
             context = authorize_task(self._actor, task, self._decision)
@@ -411,9 +416,12 @@ class _WorkRequestBindings:
             require_private_schema(self.transport)
             if self.transport.has_pending_writes():
                 raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
-            result = WorkCapabilities(chat=False, task_write=True, generate=False, storage=False,
+            from app.services.teacher_work.private_chat import chat_capabilities
+            chat, chat_reason = chat_capabilities()
+            result = WorkCapabilities(chat=chat.send, private_chat=chat, task_write=True, generate=False, storage=False,
                 structural_preview=False, private_tasks=PrivateTaskCapabilities(create=True, read=True, update=True),
-                reason_pairs=tuple((name, "private_teacher_work_only") for name in ("chat", "generate", "storage", "structural_preview"))
+                reason_pairs=tuple((name, "private_teacher_work_only") for name in ("generate", "storage", "structural_preview"))
+                    + (() if chat_reason is None else (("chat", chat_reason),))
                     + (("rendered_preview", "rendered_preview_unsupported"), ("publish", "private_teacher_work_only")))
             self.transport.rollback()
             self.transport.close()
@@ -425,10 +433,10 @@ class _WorkRequestBindings:
     def finish_chat_outcome(self, value, *, mode):
         """Finalize only exact scope-bound chat candidates on this fresh root.
 
-        No assembly, provider, recovery authorizer or generic value finalizer is
-        installed. The candidate itself is never a committed/authorization flag.
+        Only the separately gated private chat assembly selects these operations.
+        The candidate itself is never a committed/authorization flag.
         """
-        if self.operation is not None:
+        if self.operation not in (None, "private_chat_read", "private_chat_write"):
             self._cleanup()
             raise WorkAuthorizationError("TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503)
         if self._finished:
@@ -449,3 +457,9 @@ class _WorkRequestBindings:
             self._cleanup()
             raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503) from None
         return self._finish(value.task, mode, value=value)
+
+    def finish_private_history(self, value):
+        if type(value) is not PrivateChatHistory or self.operation != "private_chat_read":
+            self._cleanup()
+            raise WorkAuthorizationError("REQUEST_BINDING_CHANGED", 503)
+        return self._finish(value.task, "read", value=value)

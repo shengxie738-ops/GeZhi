@@ -128,6 +128,8 @@ class ChatRows(Protocol):
     def lease(self, owner: str) -> OwnerLeaseFacts: ...
     def find_run_by_key(self, owner: str, task_id: UUID, kind: str, encoded_key: bytes) -> StoredRunState | None: ...
     def lock_run(self, owner: str, task_id: UUID, run_id: UUID) -> StoredRunState | None: ...
+    def bounded_history(self, owner: str, task_id: UUID, *, limit: int, before: UUID | None = None,
+                        exclude: UUID | None = None) -> tuple[tuple[WorkMessageDTO, ...], bool]: ...
     def find_user_message(self, owner: str, task_id: UUID, encoded_key: bytes) -> WorkMessageDTO | None: ...
     def find_completion(self, owner: str, task_id: UUID, run_id: UUID) -> tuple[ChatCompletionReceipt, WorkMessageDTO] | None: ...
     def insert_run(self, state: StoredRunState) -> None: ...
@@ -533,6 +535,20 @@ class TeacherWorkRepository:
         if pair is not None and lease.active_run_id == run_id:
             raise WorkRunError("INVALID_CHAT_COMPLETION", 503)
         return ChatRunOutcome(task, state, lease, pair[0] if pair is not None else None)
+
+    def get_private_chat_history(self, owner, task_id, *, limit=20, before=None, exclude=None):
+        from app.schemas.teacher_work import BODY_LIMIT, PrivateChatHistory
+        from app.services.teacher_work.types import canonical_json_bytes
+        task, ctx = self._chat_task(owner, task_id)
+        messages, has_more = self._chat_rows().bounded_history(owner, task_id, limit=limit, before=before, exclude=exclude)
+        while True:
+            result = PrivateChatHistory(task=task, messages=messages, has_more=has_more,
+                next_before=messages[0].message_id if has_more and messages else None)
+            if len(canonical_json_bytes(result.public_data())) <= BODY_LIMIT - 1024:
+                return result
+            if len(messages) <= 1:
+                raise WorkRepositoryError("CHAT_HISTORY_UNAVAILABLE", 503)
+            messages, has_more = messages[1:], True
 
     @staticmethod
     def _chat_linked_lease(ctx: WorkContext, state: StoredRunState, lease: OwnerLeaseFacts, process_instance: UUID) -> None:

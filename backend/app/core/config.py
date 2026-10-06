@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     # These declarations do not activate deployment or certify readiness.
     TEACHER_WORK_ENABLED: bool = False
     TEACHER_WORK_PRIVATE_TASKS_ENABLED: bool = False
+    TEACHER_WORK_PRIVATE_CHAT_ENABLED: bool = False
     TEACHER_WORK_STORAGE_ROOT: str = ""
     TEACHER_WORK_MAX_ACTIVE_RUNS: int = 4
     TEACHER_WORK_PACKAGE_TIMEOUT_SECONDS: int = 300

@@ -1,4 +1,4 @@
-"""Detached first-call chat integration with deliberately uninstalled assembly.
+"""Detached first-call chat integration with explicit trusted server assembly.
 
 All transaction operations are trusted server construction dependencies. They
 must finalize through the existing request owner and close their fresh root
@@ -15,7 +15,7 @@ from typing import Callable, Protocol
 from uuid import UUID
 
 from app.repositories.teacher_work import WorkRepositoryError
-from app.schemas.teacher_work import ChatCommand, EvidenceSnapshotDTO, RunDTO, WorkMessageDTO
+from app.schemas.teacher_work import ChatCommand, ChatTaskBrief, EvidenceSnapshotDTO, RunDTO, WorkMessageDTO
 from app.services.teacher_work.authorization import WorkAuthorizationError
 from app.services.teacher_work.chat import ChatPreparationError, prepare_chat_prompt, parse_chat_result
 from app.services.teacher_work.run_persistence import (
@@ -61,9 +61,10 @@ class ChatExecutionContext:
     _command_bytes: bytes
     history: tuple[WorkMessageDTO, ...]
     evidence: tuple[EvidenceSnapshotDTO, ...]
+    task_brief: ChatTaskBrief | None
 
     def __init__(self, *, command: ChatCommand, history: tuple[WorkMessageDTO, ...],
-                 evidence: tuple[EvidenceSnapshotDTO, ...]):
+                 evidence: tuple[EvidenceSnapshotDTO, ...], task_brief: ChatTaskBrief | None = None):
         try:
             if (type(command) is not ChatCommand or type(history) is not tuple or type(evidence) is not tuple
                     or any(type(item) is not WorkMessageDTO for item in history)
@@ -73,6 +74,9 @@ class ChatExecutionContext:
             object.__setattr__(self, "_command_bytes", canonical_json_bytes(strict.model_dump(mode="json")))
             object.__setattr__(self, "history", tuple(WorkMessageDTO.model_validate(item.model_dump()) for item in history))
             object.__setattr__(self, "evidence", tuple(EvidenceSnapshotDTO.model_validate(item.model_dump()) for item in evidence))
+            if task_brief is not None and type(task_brief) is not ChatTaskBrief:
+                raise ValueError("exact brief required")
+            object.__setattr__(self, "task_brief", None if task_brief is None else ChatTaskBrief.model_validate(task_brief.model_dump()))
         except (ValueError, TypeError, AttributeError, UnicodeError):
             raise WorkRunError("INVALID_CHAT_INPUT", 422) from None
 
@@ -475,7 +479,7 @@ class TeacherChatExecution:
                     or command.payload.text != admission.user_message.plain_text
                     or command.payload.client_message_key != admission.user_message.client_message_key):
                 raise ChatExecutionError("WORK_EXECUTION_UNAVAILABLE")
-            prompt = prepare_chat_prompt(admission.context, command, snapshots.history, snapshots.evidence)
+            prompt = prepare_chat_prompt(admission.context, command, snapshots.history, snapshots.evidence, task_brief=snapshots.task_brief)
             local.claim_attempted = True
             reservation = self._transaction("reserve_chat_call", ChatCallReservation, original.run.owner,
                 original.run.task_id, original.run.run_id, process_instance=self.process_instance,

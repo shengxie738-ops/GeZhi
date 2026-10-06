@@ -166,10 +166,11 @@ def test_private_capabilities_and_get_are_read_only_and_default_closed(http_db, 
             response = request(db, "GET", "/api/teacher/work/capabilities", owner=owner)
             assert response.status_code == 200, response.text
             caps = response.json()["data"]
-            assert set(caps) == {"chat", "task_write", "generate", "storage", "structural_preview", "rendered_preview", "publish", "reasons", "private_tasks"}
+            assert set(caps) == {"chat", "task_write", "generate", "storage", "structural_preview", "rendered_preview", "publish", "reasons", "private_tasks", "private_chat"}
             assert caps["private_tasks"] == {"create": True, "read": True, "update": True}
             assert caps["task_write"] is True
-            assert caps["reasons"] == {**{name: "private_teacher_work_only" for name in ("chat", "generate", "storage", "structural_preview")},
+            assert caps["private_chat"] == dict.fromkeys(("send", "history", "read_run", "cancel", "provider_configured", "external_provider_verified"), False)
+            assert caps["reasons"] == {**{name: "private_teacher_work_only" for name in ("generate", "storage", "structural_preview")}, "chat": "private_chat_disabled",
                 "rendered_preview": "rendered_preview_unsupported", "publish": "private_teacher_work_only"}
             assert all(caps[name] is False for name in ("chat", "generate", "storage",
                 "structural_preview", "rendered_preview", "publish"))

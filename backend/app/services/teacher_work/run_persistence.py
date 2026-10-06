@@ -202,7 +202,8 @@ def validate_chat_completion(run: RunDTO, message: WorkMessageDTO, completion_ru
     """Validate one proposed receipt; this does not certify a committed row."""
     _validate_run(run)
     _validate_message(message)
-    if (run.kind != "chat" or type(completion_run_id) is not UUID or completion_run_id != run.run_id
+    if (run.kind != "chat" or run.provider_call_count < 1
+            or type(completion_run_id) is not UUID or completion_run_id != run.run_id
             or message.owner != run.owner or message.task_id != run.task_id or message.run_id != run.run_id
             or message.role != "assistant" or chat_result_from_message(message) is None):
         raise WorkRunError("INVALID_CHAT_COMPLETION", 503)

@@ -13,7 +13,7 @@ import json
 from typing import Callable, Literal
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, update, and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import SessionTransactionOrigin
 
@@ -570,6 +570,46 @@ class SqlChatRows:
             raise _unavailable()
         receipt = validate_chat_completion(state.run, message, completion)
         return receipt, message
+
+    def bounded_history(self, owner, task_id, *, limit, before=None, exclude=None):
+        """Owned stable keyset window; at most limit + 1 rows are decoded."""
+        self._task(owner, task_id)
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise WorkRepositoryError("INVALID_HISTORY_LIMIT", 422)
+        model = self.run_models.message
+        predicates = [model.owner == owner, model.task_id == str(task_id)]
+        if before is not None:
+            if type(before) is not UUID:
+                raise WorkRepositoryError("INVALID_MESSAGE_ID", 422)
+            cursor = _one(self._read(select(model).where(*predicates, model.message_id == str(before)).limit(2)))
+            if cursor is None:
+                raise WorkRepositoryError("NOT_FOUND", 404)
+            decoded, _ = decode_stored_message(cursor)
+            if (decoded.owner, decoded.task_id, decoded.message_id) != (owner, task_id, before):
+                raise _unavailable()
+            predicates.append(or_(model.created_at < cursor.created_at,
+                and_(model.created_at == cursor.created_at, model.message_id < str(before))))
+        if exclude is not None:
+            if type(exclude) is not UUID:
+                raise _unavailable()
+            predicates.append(model.message_id != str(exclude))
+        rows = self._read(select(model).where(*predicates).order_by(model.created_at.desc(), model.message_id.desc()).limit(limit + 1))
+        decoded = []
+        for row in rows:
+            message, completion = decode_stored_message(row)
+            if (message.owner, message.task_id) != (owner, task_id):
+                raise _unavailable()
+            if message.result_type is not None:
+                state = self.lock_run(owner, task_id, message.run_id)
+                if (state is None or state.run.stage != "COMPLETE" or state.active_call is not None
+                        or completion != message.run_id or message.client_message_key is not None
+                        or self.lease(owner).active_run_id == message.run_id):
+                    raise _unavailable()
+                validate_chat_completion(state.run, message, completion)
+            elif completion is not None:
+                raise _unavailable()
+            decoded.append(message)
+        return tuple(reversed(decoded[:limit])), len(decoded) > limit
 
     @staticmethod
     def _run_values(state: StoredRunState) -> dict:

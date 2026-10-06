@@ -353,6 +353,41 @@ class WorkMessageDTO(FrozenDTO):
         return self
 
 
+class ChatTaskBrief(FrozenDTO):
+    task_id: UUID
+    input_revision: Revision
+    title: ShortText
+    topic: ShortText
+    audience: ShortText
+    requirements: Annotated[str, Field(max_length=4000)]
+
+
+class PrivateChatHistory(FrozenDTO):
+    """Detached bounded rows with a full request-owner authorization anchor."""
+    task: WorkTaskDTO
+    messages: Annotated[tuple[WorkMessageDTO, ...], BeforeValidator(_array), Field(max_length=50)]
+    has_more: bool
+    next_before: UUID | None
+
+    @model_validator(mode="after")
+    def coherent(self):
+        if self.task.offering_id is not None or self.task.institution_id is not None:
+            raise ValueError("private history required")
+        if any((m.owner, m.task_id) != (self.task.owner_subject, self.task.task_id) for m in self.messages):
+            raise ValueError("history scope mismatch")
+        order = [(m.created_at, str(m.message_id)) for m in self.messages]
+        if order != sorted(set(order)):
+            raise ValueError("distinct stable chronological history required")
+        cursor = self.messages[0].message_id if self.has_more and self.messages else None
+        if self.next_before != cursor or self.has_more and not self.messages:
+            raise ValueError("exact older cursor required")
+        return self
+
+    def public_data(self):
+        return {"task_id": str(self.task.task_id), "messages": [m.model_dump(mode="json", exclude={"owner"}) for m in self.messages],
+                "has_more": self.has_more, "next_before": str(self.next_before) if self.next_before else None}
+
+
 class OutlineSnapshotDTO(FrozenDTO):
     outline_id: UUID
     task_id: UUID
@@ -541,6 +576,15 @@ class PrivateTaskCapabilities(FrozenDTO):
     update: bool = False
 
 
+class PrivateChatCapabilities(FrozenDTO):
+    send: bool = False
+    history: bool = False
+    read_run: bool = False
+    cancel: bool = False
+    provider_configured: bool = False
+    external_provider_verified: Literal[False] = False
+
+
 class WorkCapabilities(FrozenDTO):
     chat: bool
     task_write: bool
@@ -550,6 +594,7 @@ class WorkCapabilities(FrozenDTO):
     rendered_preview: Literal[False] = False
     publish: Literal[False] = False
     private_tasks: PrivateTaskCapabilities = Field(default_factory=PrivateTaskCapabilities)
+    private_chat: PrivateChatCapabilities = Field(default_factory=PrivateChatCapabilities)
     reason_pairs: tuple[tuple[str, str], ...] = Field(default=(), exclude=True, repr=False)
 
     @computed_field
