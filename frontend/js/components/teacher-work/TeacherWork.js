@@ -1,11 +1,12 @@
 import { computed } from 'vue';
 import TeacherWorkMaterials from './TeacherWorkMaterials.js';
+import TeacherWorkMaterialProposals from './TeacherWorkMaterialProposals.js';
 import TeacherWorkPackages from './TeacherWorkPackages.js';
 import { teacherWorkReasonText } from '../../controllers/teacherWorkState.js';
 
 export default {
     name: 'TeacherWork',
-    components: { TeacherWorkMaterials, TeacherWorkPackages },
+    components: { TeacherWorkMaterials, TeacherWorkPackages, TeacherWorkMaterialProposals },
     props: { state: { type: Object, required: true }, menus: { type: Array, default: () => [] },
         currentUser: { type: Object, default: () => ({}) } },
     emits: ['navigate', 'logout', 'open-user-center', 'retry-capabilities', 'toggle-navigation', 'toggle-taskrail',
@@ -15,7 +16,11 @@ export default {
         'reload-chat-history', 'load-older-chat', 'refresh-chat-run', 'cancel-chat', 'update-materials-draft', 'save-materials',
         'reload-materials', 'replace-materials-draft', 'cancel-materials-replace', 'approve-materials', 'retry-materials', 'retry-materials-capabilities',
         'retry-packages-capabilities', 'reload-packages', 'load-older-packages', 'open-package', 'create-package',
-        'replay-package', 'retry-package', 'download-package-artifact', 'refresh-package'],
+        'replay-package', 'retry-package', 'download-package-artifact', 'refresh-package',
+        'select-material-proposal-source', 'generate-material-proposal', 'retry-material-proposal', 'refresh-material-proposal',
+        'cancel-material-proposal', 'adopt-material-proposal', 'confirm-material-proposal-replace',
+        'cancel-material-proposal-replace', 'retry-material-proposals-capabilities',
+        'open-material-proposal-run', 'reload-material-proposal-history'],
     setup(props, { emit }) {
         const privateTaskAvailability = computed(() => props.state.privateTaskAvailability || { create: false, read: false, update: false });
         const privateTasksConnected = computed(() => Object.values(privateTaskAvailability.value).some(value => value === true));
@@ -25,7 +30,7 @@ export default {
             props.state.createStatus !== 'loading' && !packageWriteBusy.value));
         const chatBusy = computed(() => ['sending', 'cancelling', 'queued', 'running', 'checking'].includes(props.state.chatStatus));
         const canSendChat = computed(() => Boolean(props.state.task && !props.state.createOpen && privateChatAvailability.value.send &&
-            props.state.taskReadStatus === 'ready' && !props.state.taskConflict && !chatBusy.value && !packageWriteBusy.value &&
+            props.state.taskReadStatus === 'ready' && !props.state.taskConflict && !chatBusy.value && !packageWriteBusy.value && !props.state.materialProposalBusy &&
             !(props.state.chatRun && (!props.state.chatRun.stage || ['PENDING', 'CHAT_RUNNING'].includes(props.state.chatRun.stage))) &&
             typeof props.state.chatText === 'string' && props.state.chatText.trim()));
         const cancelChatVisible = computed(() => Boolean(privateChatAvailability.value.cancel && props.state.chatRun &&
@@ -47,9 +52,16 @@ export default {
             duration_minutes: 45, target_slide_count: 8, resource_ids: [] });
         const resources = computed(() => props.state.resourceCatalog || []);
         const selectedTask = computed(() => props.state.task || null);
+        const materialProposalSourceCandidate = message => message.role === 'assistant' && Boolean(message.run_id);
+        const canSelectMaterialProposalSource = computed(() => Boolean(selectedTask.value && !props.state.createOpen &&
+            props.state.materialProposals?.canSelect === true && !packageWriteBusy.value));
+        function selectMaterialProposalSource(messageId) {
+            if (canSelectMaterialProposalSource.value && props.state.messages.some(message =>
+                message.message_id === messageId && materialProposalSourceCandidate(message))) emit('select-material-proposal-source', messageId);
+        }
         const canEditTask = computed(() => Boolean(selectedTask.value && !props.state.createOpen && privateTaskAvailability.value.update));
         const canSave = computed(() => canEditTask.value && !props.state.createOpen && props.state.taskReadStatus === 'ready' &&
-            !props.state.taskConflict && props.state.composerStatus === 'unsaved' && !packageWriteBusy.value);
+            !props.state.taskConflict && props.state.composerStatus === 'unsaved' && !packageWriteBusy.value && !props.state.materialProposalBusy);
         const composerNote = computed(() => props.state.createOpen ? '新建任务信息尚未提交 · 当前教学需求仍保留在页面' :
             !selectedTask.value ? '未发送 · 仅保留在当前页面' :
             props.state.taskConflict ? '未保存 · 版本已变更，重新读取后可继续保存；当前编辑可复制' :
@@ -94,7 +106,8 @@ export default {
         return { dialogOpen, capabilityTitle, capabilityReason, teacherWorkReasonText, handleDialogKey, handleArtifactTabKey,
             privateTaskAvailability, privateTasksConnected, privateChatAvailability, packageWriteBusy, canCreateTask,
             chatBusy, canSendChat, canCancelChat, cancelChatVisible,
-            chatStatusText, chatReasonText, resultLabel, createForm, resources, selectedTask, canEditTask, canSave, composerNote };
+            chatStatusText, chatReasonText, resultLabel, createForm, resources, selectedTask, canEditTask, canSave, composerNote,
+            materialProposalSourceCandidate, canSelectMaterialProposalSource, selectMaterialProposalSource };
     },
     template: `
     <div class="teacher-work" :class="{
@@ -182,7 +195,7 @@ export default {
                             <p>私人任务按当前教师身份保存，教学需求需手动保存</p>
                             <p class="teacher-work-muted">{{ privateChatAvailability.send ? '私人教学对话已接通' : privateChatAvailability.provider_configured ?
                                 '私人教学对话暂不可发送' : 'AI 尚未配置，教学问题暂不可发送' }} · 外部模型尚未验证</p>
-                            <p class="teacher-work-muted">AI 自动生成尚未接通；手动文件导出能力单独检查</p>
+                            <p class="teacher-work-muted">大纲建议与手动文件导出能力单独检查</p>
                         </template>
                         <template v-else-if="state.capabilities.status !== 'loading'">
                             <p>{{ teacherWorkReasonText(capabilityReason) }}</p><p class="teacher-work-reason-code">{{ capabilityReason }}</p>
@@ -195,6 +208,14 @@ export default {
                                 @click="$emit('retry-capabilities')"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i>重新检查</button>
                         </div>
                     </section>
+                    <teacher-work-material-proposals v-if="selectedTask && !state.createOpen" :state="state"
+                        @generate-material-proposal="$emit('generate-material-proposal')" @retry-material-proposal="$emit('retry-material-proposal')"
+                        @refresh-material-proposal="$emit('refresh-material-proposal')" @cancel-material-proposal="$emit('cancel-material-proposal')"
+                        @adopt-material-proposal="$emit('adopt-material-proposal')" @confirm-material-proposal-replace="$emit('confirm-material-proposal-replace')"
+                        @cancel-material-proposal-replace="$emit('cancel-material-proposal-replace')"
+                        @retry-material-proposals-capabilities="$emit('retry-material-proposals-capabilities')"
+                        @open-material-proposal-run="$emit('open-material-proposal-run', $event)"
+                        @reload-material-proposal-history="$emit('reload-material-proposal-history')"></teacher-work-material-proposals>
                     <teacher-work-materials v-if="selectedTask && !state.createOpen" :state="state"
                         @update-materials-draft="$emit('update-materials-draft', $event)" @save-materials="$emit('save-materials')"
                         @reload-materials="$emit('reload-materials')" @replace-materials-draft="$emit('replace-materials-draft')"
@@ -278,6 +299,13 @@ export default {
                                     <time :datetime="message.created_at">{{ message.created_at }}</time></div>
                                 <p class="teacher-work-chat-plain-text">{{ message.plain_text }}</p>
                                 <small v-if="message.omitted_context === true" class="teacher-work-muted">部分历史上下文已省略</small>
+                                <div v-if="materialProposalSourceCandidate(message)" class="teacher-work-chat-source-action">
+                                    <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="!canSelectMaterialProposalSource"
+                                        :data-material-proposal-source="message.message_id"
+                                        :aria-pressed="Boolean(state.materialProposals && state.materialProposals.sourceMessageId === message.message_id)"
+                                        aria-describedby="teacher-work-proposal-source-note" @click="selectMaterialProposalSource(message.message_id)">选为建议来源</button>
+                                    <span v-if="state.materialProposals && state.materialProposals.sourceMessageId === message.message_id" class="teacher-work-muted">已选来源</span>
+                                </div>
                             </li>
                         </ol>
                         <p v-if="!state.messages.length && state.chatHistoryStatus !== 'loading'" class="teacher-work-muted">当前没有已读取的持久对话记录</p>
@@ -291,7 +319,7 @@ export default {
                         rows="3" aria-describedby="teacher-work-composer-note" placeholder="输入教学需求（尚未发送）"
                         @input="$emit('update-input', $event.target.value)"></textarea>
                     <div class="teacher-work-composer-controls">
-                        <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="true" title="受控 Skills 目录尚未接通">
+                        <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="true" title="lesson_outline@1 请从大纲建议入口使用；其他 Skills 暂未开放">
                             <i class="ph ph-stack" aria-hidden="true"></i>选择 Skill<i class="ph ph-caret-down" aria-hidden="true"></i></button>
                         <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="true"
                             :title="selectedTask ? '请在产物的来源页选择已有资料' : '请先创建或读取私人任务'">
@@ -397,8 +425,15 @@ export default {
                 <header><h2 id="teacher-work-catalog-heading" tabindex="-1" data-teacher-work-catalog-heading>{{ state.presentation.catalogOpen === 'skills' ? 'Skills' : '插件商店' }}</h2>
                     <button type="button" class="teacher-work-icon-button" aria-label="关闭目录" @click="$emit('close-catalog')"><i class="ph ph-x" aria-hidden="true"></i></button></header>
                 <div class="teacher-work-catalog-content"><i class="ph" :class="state.presentation.catalogOpen === 'skills' ? 'ph-cube' : 'ph-puzzle-piece'" aria-hidden="true"></i>
-                    <h3>教师 Work 目录暂不可用</h3><p>{{ state.presentation.catalogOpen === 'skills' ? '此页面尚未接通受控 Skills 目录' : '此页面尚未接通教师插件目录' }}</p>
-                    <p class="teacher-work-muted">添加不等于连接或可执行</p><p class="teacher-work-reason-code">TEACHER_WORK_OPERATIONS_UNWIRED</p>
+                    <template v-if="state.presentation.catalogOpen === 'skills'">
+                        <h3>受控 Skill</h3><div class="teacher-work-curated-skill"><strong>lesson_outline@1</strong>
+                            <p>教案与幻灯片结构建议</p><p class="teacher-work-muted">在已保存对话中选择来源回复，再从大纲建议入口生成；执行能力以服务端检查为准</p>
+                            <p class="teacher-work-muted">外部模型尚未验证</p></div>
+                        <p class="teacher-work-muted">其他 Skills 暂未开放</p>
+                        <button type="button" class="teacher-work-button teacher-work-button--quiet" :disabled="true">其他 Skills</button>
+                    </template>
+                    <template v-else><h3>教师 Work 插件目录暂不可用</h3><p>此页面尚未接通教师插件目录</p>
+                        <p class="teacher-work-muted">添加不等于连接或可执行</p><p class="teacher-work-reason-code">TEACHER_WORK_OPERATIONS_UNWIRED</p></template>
                     <button type="button" class="teacher-work-button teacher-work-button--quiet" @click="$emit('close-catalog')">返回备课</button></div>
             </section>
         </div>

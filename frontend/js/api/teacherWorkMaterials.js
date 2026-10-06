@@ -69,11 +69,15 @@ export function validateSlideSnapshot(value) {
 }
 
 export function validateMaterialsSaveBody(body) {
-    if (!exact(body, ['expected_revision', 'input_revision', 'expected_outline_revision', 'lesson', 'slides']) || !integer(body.expected_revision, 1) ||
+    const hasOrigin = object(body) && Object.hasOwn(body, 'origin_proposal_run_id');
+    if (!exact(body, ['expected_revision', 'input_revision', 'expected_outline_revision', 'lesson', 'slides', ...(hasOrigin ? ['origin_proposal_run_id'] : [])]) || !integer(body.expected_revision, 1) ||
         !integer(body.input_revision, 1) || !integer(body.expected_outline_revision, 0) || !array(body.slides) || !integer(body.slides.length, 6, 12)) throw fail();
+    if (hasOrigin && body.origin_proposal_run_id !== null && (!uuid(body.origin_proposal_run_id) ||
+        body.origin_proposal_run_id !== body.origin_proposal_run_id.toLowerCase())) throw fail();
     const lesson = validateLessonSnapshot(body.lesson), slides = body.slides.map(validateSlideSnapshot);
     const result = { expected_revision: body.expected_revision, input_revision: body.input_revision,
-        expected_outline_revision: body.expected_outline_revision, lesson, slides };
+        expected_outline_revision: body.expected_outline_revision, lesson, slides,
+        ...(hasOrigin ? { origin_proposal_run_id: body.origin_proposal_run_id } : {}) };
     if (jsonBytes(result) > materialsBodyMaximumBytes || frozenBytes(lesson, slides) > materialsFrozenMaximumBytes) throw fail('request_too_large');
     return result;
 }

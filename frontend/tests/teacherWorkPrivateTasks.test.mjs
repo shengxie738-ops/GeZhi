@@ -198,7 +198,8 @@ test('four-zone UI exposes only real private create/read/edit-save, keeps confli
             assert.equal(button(savedHost.root, '保存需求').props.disabled, true);
             h.hook.state.createOpen = true; await settle(); assert.doesNotMatch(textOf(savedHost.root), /已保存/);
             h.hook.state.createOpen = false; h.hook.state.taskReadStatus = 'loading'; await settle();
-            assert.equal(button(savedHost.root, '保存需求').props.disabled, true); assert.doesNotMatch(textOf(savedHost.root), /已保存/);
+            assert.equal(button(savedHost.root, '保存需求').props.disabled, true);
+            assert.doesNotMatch(textOf(find(savedHost.root, node => node.props.id === 'teacher-work-composer-note')), /已保存/);
             h.hook.state.taskReadStatus = 'ready'; h.hook.state.composerStatus = 'saving'; await settle();
             assert.equal(button(savedHost.root, '保存需求').props.disabled, true);
             h.hook.state.composerStatus = 'unsaved'; await settle();

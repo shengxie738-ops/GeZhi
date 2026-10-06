@@ -5,7 +5,7 @@ import { validateMaterialsSaveBody, validateMaterialsApprovalBody, validateMater
 const copy = value => value === null ? null : JSON.parse(JSON.stringify(value));
 const emptyState = () => ({ capabilities: { status: 'idle', data: null, reason: null }, snapshot: null, draft: null,
     dirty: false, status: 'idle', error: null, conflict: false, retryAvailable: false, canSave: false, canApprove: false,
-    validationErrors: [], pendingReplace: false, lastReceipt: null });
+    validationErrors: [], pendingReplace: false, lastReceipt: null, proposalOrigin: null, draftEpoch: 0 });
 const blankDraft = task => ({ lesson: { title: '', topic: '', course_name: '', audience: '', duration_minutes: task.duration_minutes,
     objectives: [], key_points: [], difficulties: [], questions: [], exercises: [], homework: [], summary: '',
     teaching_flow: [{ stage: '', minutes: task.duration_minutes, content: '' }], citations: [] },
@@ -14,10 +14,10 @@ const blankDraft = task => ({ lesson: { title: '', topic: '', course_name: '', a
 const safeReasons = new Set(['network_error', 'request_failed', 'invalid_response', 'auth_required', 'teacher_required', 'request_aborted',
     'invalid_input', 'revision_conflict', 'outline_revision_conflict', 'outline_approval_conflict', 'idempotency_conflict', 'source_changed',
     'owner_busy', 'normalization_required', 'material_text_unrepresentable', 'material_receipt_limit', 'material_sources_unavailable', 'sources_unavailable',
-    'task_not_found', 'private_draft_too_large', 'request_too_large', 'capacity_unavailable', 'TEACHER_WORK_UNAVAILABLE']);
+    'task_not_found', 'private_draft_too_large', 'request_too_large', 'capacity_unavailable', 'TEACHER_WORK_UNAVAILABLE', 'source_message_ineligible', 'proposal_not_ready']);
 const uncertainReasons = new Set(['network_error', 'request_failed', 'invalid_response', 'TEACHER_WORK_UNAVAILABLE']);
 
-// Manual private materials. Only same-session in-memory drafts are retained; no AI, files or local storage.
+// Private materials remain explicit local edits/manual saves. Only same-session in-memory drafts are retained.
 export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskRevisionChange = () => {}, reconcileTask = async () => false } = {}) {
     state.materials = emptyState();
     let disposed = false, applying = false, capabilityFlight = null, readFlight = null, writeFlight = null,
@@ -44,7 +44,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
     const stash = token => {
         if (!token || !state.materials.draft) return;
         drafts.set(cacheKey(token), { draft: copy(state.materials.draft), dirty: state.materials.dirty, snapshot: copy(state.materials.snapshot),
-            lastReceipt: copy(state.materials.lastReceipt), operation: copy(operation), editEpoch });
+            lastReceipt: copy(state.materials.lastReceipt), proposalOrigin: copy(state.materials.proposalOrigin), operation: copy(operation), editEpoch });
     };
     const abortRead = () => { const old = readFlight; readFlight = null; old?.controller.abort();
         if (old && state.materials.status === 'loading') state.materials.status = operation ? 'uncertain' : state.materials.snapshot ? 'ready' : 'idle'; };
@@ -55,11 +55,15 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
     const validateDraft = () => {
         if (!state.materials.draft || !state.task) return null;
         const errors = [];
+        const origin = state.materials.proposalOrigin;
+        if (origin && (origin.input_revision !== state.input_revision || origin.working_revision !== state.working_revision ||
+            origin.source_digest !== state.materials.snapshot?.current_source_digest)) errors.push('AI 建议对应的任务或来源已变化，请重新生成后再填入');
         if (state.materials.draft.lesson?.duration_minutes !== state.task.duration_minutes) errors.push('教案课时须与任务一致');
         if (state.materials.draft.slides?.length !== state.task.target_slide_count) errors.push('幻灯片页数须与已保存目标一致');
         let result = null;
         try { result = validateMaterialsSaveBody({ expected_revision: state.working_revision, input_revision: state.input_revision,
-            expected_outline_revision: state.materials.snapshot?.last_outline_revision ?? 0, ...state.materials.draft }); }
+            expected_outline_revision: state.materials.snapshot?.last_outline_revision ?? 0, ...state.materials.draft,
+            ...(origin ? { origin_proposal_run_id: origin.run_id } : {}) }); }
         catch (caught) { errors.push(caught?.reason === 'request_too_large' ? '材料内容超过保存上限' : '请检查教案必填项、阶段时长和幻灯片内容限制'); }
         state.materials.validationErrors = errors; return errors.length ? null : result;
     };
@@ -67,7 +71,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         const current = state.materials, snapshot = current.snapshot, outline = snapshot?.outline;
         const valid = validateDraft(), taskReady = state.taskReadStatus === 'ready' && !state.taskConflict &&
             !Object.keys(teacherWorkingChanges(state)).length && state.composerStatus !== 'saving';
-        const busy = Boolean(readFlight || writeFlight || operation || state.packageWriteBusy);
+        const busy = Boolean(readFlight || writeFlight || operation || state.packageWriteBusy || state.materialProposalBusy);
         const revisions = snapshot && snapshot.input_revision === state.input_revision && snapshot.working_revision === state.working_revision;
         current.canSave = Boolean(usable('save') && valid && taskReady && !busy && !current.conflict && revisions &&
             snapshot.source_status !== 'unavailable' && snapshot.current_source_digest !== null);
@@ -100,7 +104,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
             if (receipt) state.materials.lastReceipt = copy(data.receipt);
             if (!keepDraft) {
                 state.materials.draft = data.outline ? { lesson: copy(data.outline.lesson), slides: copy(data.outline.slides) } : blankDraft(state.task);
-                state.materials.dirty = false; editEpoch++;
+                state.materials.dirty = false; state.materials.proposalOrigin = null; state.materials.draftEpoch = ++editEpoch;
             }
             state.materials.status = 'ready';
         } finally { applying = false; }
@@ -144,20 +148,37 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
     function updateMaterialsDraft(draft) {
         if (!taskScope() || !draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.lesson || !Array.isArray(draft.slides)) return false;
         try { state.materials.draft = copy(draft); } catch { return false; }
-        state.materials.dirty = true; state.materials.pendingReplace = false; editEpoch++;
+        state.materials.dirty = true; state.materials.pendingReplace = false; state.materials.draftEpoch = ++editEpoch;
         if (!operation) { state.materials.error = null; if (state.materials.status === 'error') state.materials.status = 'ready'; }
         stash(scopeToken); flags(); return true;
+    }
+    function adoptMaterialsProposal(proposal, runId) {
+        if (!usable('read') || !usable('save') || !proposal || writeFlight || readFlight || operation || state.packageWriteBusy ||
+            state.taskReadStatus !== 'ready' || state.taskConflict || state.composerStatus === 'saving' ||
+            Object.keys(teacherWorkingChanges(state)).length || !state.materials.snapshot || state.materials.conflict ||
+            state.materials.snapshot.input_revision !== state.input_revision || state.materials.snapshot.working_revision !== state.working_revision ||
+            proposal.input_revision !== state.input_revision || proposal.source_digest !== state.materials.snapshot.current_source_digest ||
+            state.materials.snapshot.source_status === 'unavailable') return false;
+        let draft;
+        try { draft = validateMaterialsSaveBody({ expected_revision: state.working_revision, input_revision: state.input_revision,
+            expected_outline_revision: state.materials.snapshot.last_outline_revision, lesson: proposal.lesson, slides: proposal.slides,
+            origin_proposal_run_id: runId }); } catch { return false; }
+        if (draft.lesson.duration_minutes !== state.task.duration_minutes || draft.slides.length !== state.task.target_slide_count) return false;
+        state.materials.proposalOrigin = { run_id: runId, input_revision: state.input_revision, working_revision: state.working_revision,
+            source_digest: proposal.source_digest };
+        return updateMaterialsDraft({ lesson: draft.lesson, slides: draft.slides });
     }
     function replaceMaterialsDraft() {
         if (!taskScope() || !state.materials.pendingReplace || operation || writeFlight || !state.materials.snapshot) return false;
         const outline = state.materials.snapshot.outline;
         state.materials.draft = outline ? { lesson: copy(outline.lesson), slides: copy(outline.slides) } : blankDraft(state.task);
-        state.materials.dirty = false; state.materials.pendingReplace = false; editEpoch++; stash(scopeToken); flags(); return true;
+        state.materials.dirty = false; state.materials.proposalOrigin = null; state.materials.pendingReplace = false;
+        state.materials.draftEpoch = ++editEpoch; stash(scopeToken); flags(); return true;
     }
     function cancelMaterialsReplace() { state.materials.pendingReplace = false; return true; }
     async function submit(kind, retry = false) {
         flags();
-        if (state.packageWriteBusy || !usable(kind === 'save' ? 'save' : 'approve') || writeFlight || readFlight || typeof api[kind === 'save' ? 'saveMaterials' : 'approveMaterials'] !== 'function') return false;
+        if (state.packageWriteBusy || state.materialProposalBusy || !usable(kind === 'save' ? 'save' : 'approve') || writeFlight || readFlight || typeof api[kind === 'save' ? 'saveMaterials' : 'approveMaterials'] !== 'function') return false;
         if (retry) { if (!operation || operation.kind !== kind || !state.materials.retryAvailable || operation.task_id !== state.task_id) return false; }
         else {
             if (operation || !(kind === 'save' ? state.materials.canSave : state.materials.canApprove)) return false;
@@ -193,6 +214,8 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
             const ownDelta = data.working_revision === value.working + 1 && data.input_revision === value.input + (kind === 'save' ? 1 : 0) &&
                 receipt.working_revision === data.working_revision && receipt.input_revision === data.input_revision && originalIsCurrent;
             adopt(data, { keepDraft, receipt: true, ownDelta });
+            if (kind === 'save' && state.materials.proposalOrigin?.run_id === body.origin_proposal_run_id)
+                state.materials.proposalOrigin = null;
             if (!originalIsCurrent) { state.materials.dirty = true; state.materials.pendingReplace = true; }
             operation = null; state.materials.retryAvailable = false; stash(scopeToken); return true;
         } catch (caught) {
@@ -221,7 +244,9 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         const retained = drafts.get(cacheKey(scopeToken));
         if (retained) { state.materials.draft = copy(retained.draft); state.materials.dirty = retained.dirty;
             state.materials.snapshot = copy(retained.snapshot); state.materials.lastReceipt = copy(retained.lastReceipt);
+            state.materials.proposalOrigin = copy(retained.proposalOrigin);
             operation = copy(retained.operation); editEpoch = retained.editEpoch;
+            state.materials.draftEpoch = editEpoch;
             if (operation) { state.materials.status = 'uncertain'; state.materials.retryAvailable = true; } }
         else state.materials.draft = blankDraft(state.task);
         flags(); if (usable('read')) void Promise.resolve().then(reloadMaterials);
@@ -233,7 +258,7 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         stash(scopeToken); flags();
     }, { flush: 'sync' });
     watch(() => [state.taskReadStatus, state.taskConflict, state.createOpen, state.composerStatus, state.composerText,
-        state.draftTargetSlideCount, JSON.stringify(state.draftResourceIds), state.packageWriteBusy], () => {
+        state.draftTargetSlideCount, JSON.stringify(state.draftResourceIds), state.packageWriteBusy, state.materialProposalBusy], () => {
         if (state.createOpen) { abortRead(); abortWrite(); stash(scopeToken); }
         flags();
     }, { flush: 'sync' });
@@ -243,10 +268,11 @@ export function useTeacherWorkMaterials(state, { api, newIdempotencyKey, onTaskR
         if (operation && !usable(operation.kind === 'save' ? 'save' : 'approve')) { abortWrite(); stash(scopeToken); }
         flags();
     }, { flush: 'sync' });
+    watch(() => state.materials.snapshot?.current_source_digest, flags, { flush: 'sync' });
     watch(() => [state.actor, state.role, state.authEpoch, state.authVerified], () => {
         if (!state.authVerified || state.role !== 'teacher') drafts.clear();
     }, { flush: 'sync' });
     if (getCurrentScope()) onScopeDispose(() => { disposed = true; capabilityFlight?.controller.abort(); abortRead(); abortWrite(); drafts.clear(); });
-    return { retryMaterialsCapabilities, updateMaterialsDraft, reloadMaterials, replaceMaterialsDraft, cancelMaterialsReplace,
+    return { retryMaterialsCapabilities, updateMaterialsDraft, adoptMaterialsProposal, reloadMaterials, replaceMaterialsDraft, cancelMaterialsReplace,
         saveMaterials: () => submit('save'), approveMaterials: () => submit('approve'), retryMaterials: () => operation ? submit(operation.kind, true) : false };
 }

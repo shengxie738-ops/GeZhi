@@ -320,3 +320,51 @@
 .teacher-work-packages--sidebar { margin-top: 0; padding: 0; border: 0; border-radius: 0; }
 .teacher-work-packages--sidebar .teacher-work-packages-heading h2 { font-size: 17px; }
 .teacher-work-packages--sidebar .teacher-work-package-artifacts { grid-template-columns: minmax(0, 1fr); }
+
+/* Curated material suggestions remain read-only until explicitly filled into the manual draft. */
+.teacher-work-material-proposals { min-width: 0; margin-top: 26px; padding: 18px 20px; border: 1px solid var(--tw-line);
+    border-radius: 8px; background: #fff; color: var(--tw-ink); font-size: 13px; }
+.teacher-work-proposal-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.teacher-work-proposal-heading h2 { font-size: 21px; line-height: 1.5; }
+.teacher-work-proposal-heading h3 { font-size: 17px; font-weight: 600; }
+.teacher-work-proposal-heading + p, .teacher-work-proposal-status { margin-top: 8px; }
+.teacher-work-proposal-source { margin-top: 12px; padding: 12px; border: 1px solid var(--tw-line); border-radius: 5px; background: #f8fafc; }
+.teacher-work-proposal-source details { margin-top: 8px; }
+.teacher-work-material-proposals summary { color: var(--tw-ink); cursor: pointer; }
+.teacher-work-material-proposals summary:focus-visible { outline: 2px solid var(--tw-accent); outline-offset: 3px; }
+.teacher-work-proposal-actions, .teacher-work-chat-source-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.teacher-work-proposal-actions .teacher-work-button, .teacher-work-chat-source-action .teacher-work-button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.teacher-work-chat-source-action .teacher-work-button[aria-pressed="true"] { border-color: var(--tw-accent); color: var(--tw-accent); background: #fff8f8; }
+.teacher-work-chat-source-action span { font-size: 12px; }
+.teacher-work-proposal-note { margin-top: 10px !important; font-size: 12px; }
+.teacher-work-proposal-warning { margin-top: 12px; padding: 10px 12px; border: 1px solid #e6c7cd; border-radius: 5px;
+    background: #fff8f8; color: #862331; font-size: 13px; overflow-wrap: anywhere; }
+.teacher-work-proposal-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--tw-line); }
+.teacher-work-proposal-preview > p { margin-top: 8px; }
+.teacher-work-proposal-content, .teacher-work-proposal-technical { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--tw-line); }
+.teacher-work-proposal-content h4 { margin: 14px 0 6px; font-size: 14px; font-weight: 600; }
+.teacher-work-proposal-content h5 { margin: 10px 0 5px; font-size: 13px; font-weight: 600; }
+.teacher-work-proposal-content ul, .teacher-work-proposal-content ol { margin: 6px 0; padding-left: 22px; }
+.teacher-work-proposal-content li + li { margin-top: 5px; }
+.teacher-work-proposal-content p, .teacher-work-proposal-content li, .teacher-work-proposal-source details p,
+.teacher-work-proposal-metadata dd { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.teacher-work-proposal-metadata { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 6px 10px; margin: 10px 0; font-size: 12px; }
+.teacher-work-proposal-metadata dt { color: var(--tw-muted); }
+.teacher-work-proposal-metadata dd { min-width: 0; margin: 0; }
+.teacher-work-proposal-slide { min-width: 0; padding: 10px 0; border-top: 1px solid var(--tw-line); }
+.teacher-work-proposal-slide:first-of-type { border-top: 0; }
+.teacher-work-proposal-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.teacher-work-proposal-columns > section { min-width: 0; }
+.teacher-work-proposal-technical { color: var(--tw-muted); font-size: 12px; }
+.teacher-work-curated-skill { margin-top: 14px; padding: 14px; border: 1px solid var(--tw-line); border-radius: 6px; background: #f8fafc; }
+.teacher-work-curated-skill strong { font-size: 15px; }
+.teacher-work-proposal-history { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--tw-line); }
+.teacher-work-proposal-history > .teacher-work-button { min-height: 34px; margin-top: 8px; padding: 6px 10px; font-size: 12px; }
+.teacher-work-proposal-history > p { margin-top: 8px; font-size: 12px; }
+.teacher-work-proposal-runs { max-height: 280px; overflow-y: auto; margin: 10px 0 0; padding: 0; list-style: none; }
+.teacher-work-proposal-runs li + li { margin-top: 6px; }
+.teacher-work-proposal-run { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; padding: 10px 12px;
+    border: 1px solid var(--tw-line); border-radius: 5px; background: #fff; color: var(--tw-ink); text-align: left; }
+.teacher-work-proposal-run[aria-pressed="true"] { border-color: var(--tw-accent); background: #fff8f8; }
+.teacher-work-proposal-run strong { font-size: 13px; }
+.teacher-work-proposal-run span { color: var(--tw-muted); font-size: 11px; overflow-wrap: anywhere; }

@@ -30,14 +30,26 @@ const packageBindings = {
  'replay-package':'teacherWorkReplayPackage', 'retry-package':'teacherWorkRetryPackage',
  'download-package-artifact':'teacherWorkDownloadPackageArtifact', 'refresh-package':'teacherWorkRefreshPackage'
 };
+// The curated proposal stage adds only these eleven reviewed event bindings.
+// Exclude their exact strings from the earlier source-size bound, preserving all auth predicates.
+const proposalBindings = {
+ 'select-material-proposal-source':'teacherWorkSelectMaterialProposalSource',
+ 'generate-material-proposal':'teacherWorkGenerateMaterialProposal', 'retry-material-proposal':'teacherWorkRetryMaterialProposal',
+ 'refresh-material-proposal':'teacherWorkRefreshMaterialProposal', 'cancel-material-proposal':'teacherWorkCancelMaterialProposal',
+ 'adopt-material-proposal':'teacherWorkAdoptMaterialProposal', 'confirm-material-proposal-replace':'teacherWorkConfirmMaterialProposalReplace',
+ 'cancel-material-proposal-replace':'teacherWorkCancelMaterialProposalReplace', 'retry-material-proposals-capabilities':'teacherWorkRetryMaterialProposalsCapabilities',
+ 'open-material-proposal-run':'teacherWorkOpenMaterialProposalRun', 'reload-material-proposal-history':'teacherWorkReloadMaterialProposalHistory'
+};
 let priorGateRegion=gateRegion;
-for(const [event,handler] of Object.entries(packageBindings)) {
+for(const [event,handler] of Object.entries({...packageBindings,...proposalBindings})) {
  const binding='@'+event+'="'+handler+'"';
- assert.equal(gateRegion.split(binding).length-1,1,'exactly one reviewed package binding: '+event);
+ assert.equal(gateRegion.split(binding).length-1,1,'exactly one reviewed Work binding: '+event);
  priorGateRegion=priorGateRegion.replace(binding,'');
 }
 const packageEventNames=[...gateRegion.matchAll(/@([\w-]*(?:package|packages)[\w-]*)="/g)].map(match=>match[1]);
 assert.deepEqual(packageEventNames,Object.keys(packageBindings),'no unexpected package bindings');
+const proposalEventNames=[...gateRegion.matchAll(/@([\w-]*material-proposal[\w-]*)="/g)].map(match=>match[1]);
+assert.deepEqual(proposalEventNames,Object.keys(proposalBindings),'no unexpected proposal bindings');
 assert.ok(priorGateRegion.length<4500);
 const overlay=gateRegion.match(/<div v-if="([^"]+)"/)[1],shellGate=gateRegion.match(/<teaching-workbench-shell v-if="([^"]+)"/)[1],legacyGate=gateRegion.match(/<div v-else-if="([^"]+)"/)[1];
 const stage={configured:true,installed:true,available:true,reason:'read_ready',writes_available:false};

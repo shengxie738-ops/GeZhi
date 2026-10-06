@@ -53,7 +53,7 @@ export function useTeacherWorkPackages(state, { api, newIdempotencyKey, schedule
     const flags = () => {
         const current = state.packages, material = state.materials, snapshot = material?.snapshot, outline = snapshot?.outline, approval = snapshot?.approval;
         const taskReady = state.taskReadStatus === 'ready' && !state.taskConflict && !Object.keys(teacherWorkingChanges(state)).length && state.composerStatus !== 'saving';
-        const otherWrite = state.taskWriteBusy || ['saving', 'approving', 'uncertain'].includes(material?.status) || ['sending', 'cancelling'].includes(state.chatStatus);
+        const otherWrite = state.materialProposalBusy || state.taskWriteBusy || ['saving', 'approving', 'uncertain'].includes(material?.status) || ['sending', 'cancelling'].includes(state.chatStatus);
         const tupleCurrent = snapshot && snapshot.task_id === state.task_id && snapshot.input_revision === state.input_revision && snapshot.working_revision === state.working_revision &&
             snapshot.approval_current && snapshot.approval_eligible && snapshot.approval_blocker === null && snapshot.source_status === 'current' &&
             snapshot.current_outline_id === outline?.outline_id && snapshot.current_source_digest === outline?.source_digest &&
@@ -168,7 +168,7 @@ export function useTeacherWorkPackages(state, { api, newIdempotencyKey, schedule
     }
     async function submit(kind, replay = false) {
         flags();
-        if (flights.write || state.packageWriteBusy || state.taskWriteBusy || ['saving','approving'].includes(state.materials?.status) || state.composerStatus === 'saving' || ['sending','cancelling'].includes(state.chatStatus)) return false;
+        if (flights.write || state.packageWriteBusy || state.materialProposalBusy || state.taskWriteBusy || ['saving','approving'].includes(state.materials?.status) || state.composerStatus === 'saving' || ['sending','cancelling'].includes(state.chatStatus)) return false;
         if (kind === 'create' ? !available('create') || typeof api.createPackage !== 'function' : !available('retry') || typeof api.retryPackage !== 'function') return false;
         if (replay ? !state.packages.canReplay : kind === 'create' ? !state.packages.canCreate : !state.packages.canRetry) return false;
         if (!replay) {
@@ -269,7 +269,7 @@ export function useTeacherWorkPackages(state, { api, newIdempotencyKey, schedule
     }, { flush: 'sync' });
     watch(() => [state.input_revision, state.working_revision, state.taskReadStatus, state.taskConflict, state.composerText, state.composerStatus,
         state.draftTargetSlideCount, JSON.stringify(state.draftResourceIds), state.materials?.dirty, state.materials?.status,
-        state.materials?.conflict, JSON.stringify(state.materials?.snapshot), state.chatStatus, state.taskWriteBusy], flags, { flush: 'sync' });
+        state.materials?.conflict, JSON.stringify(state.materials?.snapshot), state.chatStatus, state.taskWriteBusy, state.materialProposalBusy], flags, { flush: 'sync' });
     if (getCurrentScope()) onScopeDispose(() => { disposed = true; stopTimer(); for (const slot of Object.keys(flights)) abort(slot); pending.clear();
         operation = null; for (const url of [...ownedURLs]) revoke(url); });
     scopeToken = scope(); flags();

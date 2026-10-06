@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/env.js';
 import { createTeacherWorkPackagesApi } from './teacherWorkPackages.js';
+import { createTeacherWorkMaterialProposalsApi } from './teacherWorkMaterialProposals.js';
 import { validateMaterialsCapabilities, validateMaterialsSnapshot, validateMaterialsSaveBody, validateMaterialsApprovalBody,
     materialsBodyMaximumBytes } from './teacherWorkMaterials.js';
 
@@ -39,13 +40,15 @@ const error = (reason, status = 0) => Object.assign(new Error({
     outline_approval_conflict: '教案确认版本已变化，请重新读取后检查', source_changed: '资料内容已变化，请重新读取并保存教案',
     normalization_required: '历史材料需要重新检查并保存', material_text_unrepresentable: '材料含有无法保存的字符，请检查后重试',
     material_receipt_limit: '此任务已达到材料操作上限', material_sources_unavailable: '材料来源暂不可用，请稍后重试',
-    private_draft_too_large: '当前任务的教案存储空间不足，请精简部分内容后重试'
+    private_draft_too_large: '当前任务的教案存储空间不足，请精简部分内容后重试',
+    source_message_ineligible: '建议来源回复已失效，请重新生成并检查', proposal_not_ready: '建议尚未确认可用，请重新查询建议状态'
 }[reason] || '教师 Work 请求失败，请重试'), { name: 'TeacherWorkError', reason, status });
 
 const materialConflictReasons = Object.freeze({ REVISION_CONFLICT: 'revision_conflict', OUTLINE_REVISION_CONFLICT: 'outline_revision_conflict',
     OUTLINE_APPROVAL_CONFLICT: 'outline_approval_conflict', IDEMPOTENCY_CONFLICT: 'idempotency_conflict', SOURCE_CHANGED: 'source_changed',
     OWNER_RUN_BUSY: 'owner_busy', NORMALIZATION_REQUIRED: 'normalization_required', MATERIAL_TEXT_UNREPRESENTABLE: 'material_text_unrepresentable',
-    MATERIAL_RECEIPT_LIMIT: 'material_receipt_limit' });
+    MATERIAL_RECEIPT_LIMIT: 'material_receipt_limit', STALE_INPUT_REVISION: 'revision_conflict',
+    SOURCE_MESSAGE_INELIGIBLE: 'source_message_ineligible', PROPOSAL_NOT_READY: 'proposal_not_ready' });
 
 function capabilities(data) {
     const hasPrivate = object(data) && Object.hasOwn(data, 'private_tasks');
@@ -197,7 +200,12 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
                         typeof failure.message !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(failure.message)) throw error('request_failed', status);
                     if (status === 401) { fence(); dispatchAuthExpired(); throw error('auth_required', status); }
                     if (status === 403) throw error('teacher_required', status);
-                    if (status === 409) throw error(Object.hasOwn(materialConflictReasons, failure.message) ? materialConflictReasons[failure.message] : 'request_failed', status);
+                    if (status === 409) {
+                        const originCode = ['STALE_INPUT_REVISION', 'SOURCE_MESSAGE_INELIGIBLE', 'PROPOSAL_NOT_READY'].includes(failure.message);
+                        const originSave = method === 'POST' && path.endsWith('/materials') && body?.origin_proposal_run_id != null;
+                        throw error(Object.hasOwn(materialConflictReasons, failure.message) && (!originCode || originSave)
+                            ? materialConflictReasons[failure.message] : 'request_failed', status);
+                    }
                     if (status === 404) throw error(path.endsWith('/capabilities') ? 'TEACHER_WORK_UNAVAILABLE' : 'task_not_found', status);
                     if (status === 503) throw error(failure.message === 'MATERIAL_SOURCES_UNAVAILABLE' ? 'material_sources_unavailable' : 'request_failed', status);
                     if (status === 413) throw error('request_too_large', status);
@@ -253,6 +261,7 @@ export function createTeacherWorkApi({ fetchImpl = (...args) => globalThis.fetch
     };
     return Object.freeze({
         ...createTeacherWorkPackagesApi({ fetchImpl, getToken, dispatchAuthExpired }),
+        ...createTeacherWorkMaterialProposalsApi({ fetchImpl, getToken, dispatchAuthExpired }),
         getCapabilities: (options = {}) => send('/teacher/work/capabilities', 'GET', undefined, options, capabilities, 16384),
         getMaterialsCapabilities: (options = {}) => send('/teacher/work/materials/capabilities', 'GET', undefined, options,
             validateMaterialsCapabilities, materialsBodyMaximumBytes, false, false, materialsBodyMaximumBytes, true),

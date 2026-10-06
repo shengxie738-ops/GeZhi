@@ -32,6 +32,8 @@ const reasonText = reason => ({
     material_sources_unavailable: '资料来源不可用，暂时不能确认审阅',
     stale_input_revision: '任务版本已变更，请重新保存大纲后审阅',
     source_changed: '引用资料已变更，请重新保存大纲后审阅',
+    source_message_ineligible: '建议来源回复已失效，请重新生成并检查；当前编辑仍保留',
+    proposal_not_ready: '建议尚未确认可用，请重新查询建议状态；当前编辑仍保留',
     owner_run_busy: '当前任务仍在处理中，请等待处理完成后重试',
     owner_busy: '当前任务仍在处理中，请等待处理完成后重试',
     normalization_required: '原任务内容需要先手动整理并保存',

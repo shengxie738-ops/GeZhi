@@ -127,7 +127,7 @@ export function useTeacherWorkChat(state, { api, newIdempotencyKey, scheduler = 
         state.chatText = text; state.chatError = null; return true;
     }
     async function submit(retry) {
-        if (state.packageWriteBusy || !available('send') || state.taskReadStatus !== 'ready' || state.taskConflict || flights.send || flights.cancel ||
+        if (state.packageWriteBusy || state.materialProposalBusy || !available('send') || state.taskReadStatus !== 'ready' || state.taskConflict || flights.send || flights.cancel ||
             state.chatRun && (!state.chatRun.stage || activeStages.has(state.chatRun.stage)) || typeof api.sendMessage !== 'function') return false;
         if (retry && (!operation || !state.chatRetryAvailable) || !retry && state.chatRetryAvailable) return false;
         if (!retry) {
