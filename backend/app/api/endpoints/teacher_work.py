@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Header, Request
 from fastapi.routing import APIRoute
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,Response
 from pydantic import TypeAdapter, ValidationError
 from starlette.concurrency import run_in_threadpool
 from uuid import UUID
@@ -16,6 +16,7 @@ from app.schemas.teacher_work import (BODY_LIMIT, ChatCommand, CreateTaskRequest
 from app.repositories.teacher_work import WorkRepositoryError
 from app.services.teacher_work.authorization import WorkAuthorizationError
 from app.services.teacher_work.bootstrap import build_request_dependencies, open_teacher_work_request
+from app.schemas.teacher_work_exports import PrivatePackageCreateRequest,PrivatePackageRetryRequest
 
 
 def _response(status, message, data=None):
@@ -258,6 +259,72 @@ def build_teacher_work_router(*, request_owner_factory, dependencies_factory):
         except (ValueError, ValidationError):
             return _response(422, "INVALID_PRIVATE_MATERIAL_APPROVAL_REQUEST")
         return await run_in_threadpool(material_operation, authorization, "private_material_approve", task_id=parsed, body=body, key=key)
+
+    def exports(authorization):
+        from app.services.teacher_work.private_exports import PrivateExportRequests
+        return PrivateExportRequests(authorization,request_owner_factory,dependencies_factory,_clock)
+
+    def package_operation(authorization,operation,*args):
+        try:
+            value=getattr(exports(authorization),operation)(*args)
+            from app.services.teacher_work.private_exports import bounded_package
+            return _response(200,'ok',bounded_package(value))
+        except (WorkAuthorizationError,WorkRepositoryError) as error:
+            return _response(error.status_code,error.code)
+        except Exception:return _response(503,'PACKAGE_STATE_UNAVAILABLE')
+
+    @router.get('/packages/capabilities')
+    def export_capabilities(authorization:str|None=Header(default=None)):
+        try:
+            with request_owner_factory(authorization,mode='read',operation='private_read') as session:
+                binding=dependencies_factory(session,authorization=authorization,mode='read',operation='private_read',clock=_clock,new_uuid=uuid4)
+                return _response(200,'ok',binding.finish_package_capabilities().model_dump(mode='json'))
+        except (WorkAuthorizationError,WorkRepositoryError) as error:return _response(error.status_code,error.code)
+        except Exception:return _response(503,'PACKAGE_STATE_UNAVAILABLE')
+
+    @router.post('/tasks/{task_id}/packages')
+    async def create_package(task_id:str,request:Request,authorization:str|None=Header(default=None),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key')):
+        try:
+            parsed=UUID(task_id);key=TypeAdapter(MessageKey).validate_python(idempotency_key)
+            body=PrivatePackageCreateRequest.model_validate_json(await request.body())
+        except (ValueError,ValidationError):return _response(422,'INVALID_PRIVATE_PACKAGE_REQUEST')
+        return await run_in_threadpool(package_operation,authorization,'create',parsed,body,key)
+
+    @router.get('/tasks/{task_id}/packages')
+    def list_packages(task_id:str,limit:str='20',before:str|None=None,authorization:str|None=Header(default=None)):
+        try:
+            parsed=UUID(task_id);number=int(limit);cursor=UUID(before) if before is not None else None
+            if not 1<=number<=20:raise ValueError()
+        except ValueError:return _response(422,'INVALID_PRIVATE_PACKAGE_LIST_REQUEST')
+        return package_operation(authorization,'list',parsed,number,cursor)
+
+    @router.get('/tasks/{task_id}/packages/{version_id}')
+    def get_package(task_id:str,version_id:str,authorization:str|None=Header(default=None)):
+        try:parsed,version=UUID(task_id),UUID(version_id)
+        except ValueError:return _response(422,'INVALID_PRIVATE_PACKAGE_REQUEST')
+        return package_operation(authorization,'get',parsed,version)
+
+    @router.post('/tasks/{task_id}/runs/{run_id}/retry')
+    async def retry_package(task_id:str,run_id:str,request:Request,authorization:str|None=Header(default=None)):
+        try:
+            parsed,run=UUID(task_id),UUID(run_id)
+            PrivatePackageRetryRequest.model_validate_json(await request.body())
+        except (ValueError,ValidationError):return _response(422,'INVALID_PRIVATE_PACKAGE_RETRY_REQUEST')
+        return await run_in_threadpool(package_operation,authorization,'retry',parsed,run)
+
+    @router.get('/tasks/{task_id}/artifacts/{artifact_id}/download')
+    def download_artifact(task_id:str,artifact_id:str,authorization:str|None=Header(default=None)):
+        from urllib.parse import quote
+        try:
+            parsed,artifact=UUID(task_id),UUID(artifact_id)
+        except ValueError:return _response(422,'INVALID_PRIVATE_PACKAGE_REQUEST')
+        try:
+            raw,value=exports(authorization).download(parsed,artifact)
+            disposition=f'attachment; filename="GeZhi-{value.artifact_id}.{value.kind}"; filename*=UTF-8\'\'{quote(value.download_name,safe="")}'
+            return Response(content=raw,media_type=value.mime,headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+                'Content-Disposition':disposition,'Content-Length':str(len(raw))})
+        except (WorkAuthorizationError,WorkRepositoryError) as error:return _response(error.status_code,error.code)
+        except Exception:return _response(503,'PACKAGE_STATE_UNAVAILABLE')
 
     return router
 

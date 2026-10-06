@@ -85,6 +85,7 @@ class MysqlSchemaReport:
     observation: dict
     ledger_present: bool
     ledger_valid: bool
+    contract_ready: bool | None = None
 
     @property
     def physical_valid(self):
@@ -92,7 +93,7 @@ class MysqlSchemaReport:
 
     @property
     def ready(self):
-        return self.physical_valid and self.ledger_valid and inspect_teacher_work_schema(self.observation).ready
+        return self.physical_valid and self.ledger_valid and (inspect_teacher_work_schema(self.observation).ready if self.contract_ready is None else self.contract_ready)
 
 
 def _check(expression, *, catalog=False):
@@ -102,7 +103,7 @@ def _check(expression, *, catalog=False):
         # MySQL 8.4 CHECK_CLAUSE exposes introduced, escaped delimiters.
         # Only the plain enum literals in the pinned v2 contract are supported;
         # embedded escapes/quotes and other introducers remain unequal.
-        value = re.sub(r"\b_utf8mb4\\'([A-Za-z_]+)\\'", lambda m: "'" + m[1] + "'", value)
+        value = re.sub(r"\b_utf8mb4\\'([A-Za-z0-9_@.$-]+)\\'", lambda m: "'" + m[1] + "'", value)
     literals = []
     def protect(match):
         literals.append(match.group(0))
@@ -166,12 +167,12 @@ def _ordered(rows, ordinal, column):
     return tuple(r.get(column) for r in sorted(rows, key=lambda r: r[ordinal]))
 
 
-def _keys_valid(table, shape, raw, schema_name):
+def _keys_valid(table, shape, raw, schema_name, *, unique_constraints=None):
     constraints = raw["constraints"]
     names = [r.get("constraint_name") for r in constraints]
     if len(set(names)) != len(names) or any(r.get("enforced") != "YES" for r in constraints): return False
     named = {r["constraint_name"]: r["constraint_type"] for r in constraints}
-    expected_uniques = UNIQUE_CONSTRAINTS.get(table, {})
+    expected_uniques = (UNIQUE_CONSTRAINTS if unique_constraints is None else unique_constraints).get(table, {})
     if {n for n, kind in named.items() if kind == "PRIMARY KEY"} != {"PRIMARY"}: return False
     if {n for n, kind in named.items() if kind == "UNIQUE"} != set(expected_uniques): return False
     if {n for n, kind in named.items() if kind == "CHECK"} != set(shape["checks"]): return False
@@ -189,16 +190,30 @@ def _keys_valid(table, shape, raw, schema_name):
     references = {r.get("constraint_name"): r for r in raw["references"]}
     if len(references) != len(raw["references"]) or set(references) != fk_names: return False
     fks = {}
+    composites = shape.get('composite_foreign_keys', {})
+    seen_composites = set()
     for name in fk_names:
         rows = key_groups[name]
-        if len(rows) != 1: return False
+        if len(rows) != 1:
+            expected = composites.get(name)
+            reference = references[name]
+            if (expected is None or column_keys[name] != expected['columns']
+                    or _ordered(rows, 'ordinal_position', 'referenced_column_name') != expected['target_columns']
+                    or any(r.get('referenced_table_schema') != schema_name or r.get('referenced_table_name') != expected['target_table'] for r in rows)
+                    or reference.get('unique_constraint_schema') != schema_name
+                    or reference.get('delete_rule') not in {'RESTRICT','NO ACTION'}
+                    or reference.get('update_rule') not in {'RESTRICT','NO ACTION'} or reference.get('match_option') != 'NONE'):
+                return False
+            seen_composites.add(name)
+            continue
         row, reference = rows[0], references[name]
         if row.get("referenced_table_schema") != schema_name or reference.get("unique_constraint_schema") != schema_name: return False
         if reference.get("delete_rule") not in {"RESTRICT", "NO ACTION"} or reference.get("update_rule") not in {"RESTRICT", "NO ACTION"} or reference.get("match_option") != "NONE": return False
         column = row.get("column_name")
         if column in fks: return False
         fks[column] = str(row.get("referenced_table_name")) + "." + str(row.get("referenced_column_name"))
-    if fks != shape["foreign_keys"]: return False
+    if fks != shape["foreign_keys"] or seen_composites != set(composites): return False
+    support_columns = {(column,) for column in fks} | {value['columns'] for value in composites.values()}
     indexes = {}
     for row in raw["indexes"]:
         if row.get("sub_part") is not None or row.get("expression") is not None or row.get("index_type") != "BTREE" or row.get("collation") != "A" or row.get("is_visible") != "YES" or type(row.get("non_unique")) is not int or row["non_unique"] not in {0, 1}: return False
@@ -213,14 +228,14 @@ def _keys_valid(table, shape, raw, schema_name):
         else:
             # Only full one-column indexes supporting declared FKs are implicit
             # MySQL additions. Prefix, expression and unreviewed indexes fail.
-            if len(columns) != 1 or columns[0] not in fks: return False
+            if columns not in support_columns: return False
             nonunique_columns.append(columns)
     if actual_unique_indexes != expected_unique_indexes or len(set(nonunique_columns)) != len(nonunique_columns): return False
     full_indexes = list(actual_unique_indexes.values()) + nonunique_columns
-    return all(any(columns[0] == column for columns in full_indexes) for column in fks)
+    return all(any(columns[:len(support)] == support for columns in full_indexes) for support in support_columns)
 
 
-def _table_issues(table, shape, raw, schema_name):
+def _table_issues(table, shape, raw, schema_name, *, unique_constraints=None):
     issues = []
     options = raw["tables"]
     if len(options) != 1 or any(options[0].get(k) != v for k, v in {"table_type": "BASE TABLE", "engine": "InnoDB", "table_collation": "utf8mb4_bin", "character_set_name": "utf8mb4"}.items()):
@@ -232,7 +247,7 @@ def _table_issues(table, shape, raw, schema_name):
     for name, expected in shape["columns"].items():
         if name in columns and not _column_valid(columns[name], expected, repair_default=(table, name) == ("teacher_work_runs", "repair_count")):
             issues.append(MysqlSchemaIssue(table, "column", "physical type/nullability/default/charset differs: " + name))
-    try: keys_valid = _keys_valid(table, shape, raw, schema_name)
+    try: keys_valid = _keys_valid(table, shape, raw, schema_name, unique_constraints=unique_constraints)
     except (KeyError, TypeError, ValueError): keys_valid = False
     if not keys_valid: issues.append(MysqlSchemaIssue(table, "keys", "exact PK/FK/named unique/full binary index facts required"))
     checks = {r.get("constraint_name"): r for r in raw["checks"]}
@@ -273,14 +288,19 @@ def _resolved_table_issues(connection, schema_name, names, present):
 
 
 def observe_teacher_work_mysql(connection) -> MysqlSchemaReport:
+    return observe_teacher_work_mysql_contract(connection, TEACHER_WORK_SCHEMA_CONTRACT,
+        TEACHER_WORK_CONTRACT_HASH, TEACHER_WORK_SCHEMA_VERSION, UNIQUE_CONSTRAINTS, inspect_teacher_work_schema)
+
+
+def observe_teacher_work_mysql_contract(connection, contract, contract_hash, version_number, unique_constraints, inspect_contract) -> MysqlSchemaReport:
     """Read only schema-scoped catalogs and the verified target ledger shape."""
     dialect = getattr(getattr(connection, "dialect", None), "name", "unknown")
-    expected = TEACHER_WORK_SCHEMA_CONTRACT["tables"]
+    expected = contract["tables"]
     observation = {"dialect": dialect, "tables": {}}
     issues = []
     if dialect != "mysql":
         return MysqlSchemaReport(dialect, tuple(expected), (MysqlSchemaIssue("database", "dialect", "MySQL required"),), observation, False, False)
-    if canonical_digest(TEACHER_WORK_SCHEMA_CONTRACT) != TEACHER_WORK_CONTRACT_HASH:
+    if canonical_digest(contract) != contract_hash:
         return MysqlSchemaReport(dialect, tuple(expected), (MysqlSchemaIssue("teacher_work", "contract", "reviewed v2 contract changed"),), observation, False, False)
     try:
         enforcement = connection.execute(text("SELECT @@session.foreign_key_checks AS foreign_key_checks, @@session.unique_checks AS unique_checks")).mappings().first()
@@ -307,7 +327,7 @@ def observe_teacher_work_mysql(connection) -> MysqlSchemaReport:
         for table, shape in expected.items():
             if table not in present: continue
             table_raw = {family: [r for r in rows if r.get("table_name") == table] for family, rows in raw.items()}
-            table_issues = _table_issues(table, shape, table_raw, schema_name)
+            table_issues = _table_issues(table, shape, table_raw, schema_name, unique_constraints=unique_constraints)
             issues.extend(table_issues)
             if not table_issues:
                 # Serialize the existing hash vocabulary only after the actual
@@ -322,8 +342,8 @@ def observe_teacher_work_mysql(connection) -> MysqlSchemaReport:
                 receipt = rows[0]
                 version, digest = receipt.get("version"), receipt.get("contract_hash")
                 observation.update(version=version, contract_hash=digest)
-                ledger_valid = (receipt.get("component") == TEACHER_WORK_COMPONENT and type(version) is int and version == TEACHER_WORK_SCHEMA_VERSION and type(digest) is str and digest == TEACHER_WORK_CONTRACT_HASH and type(receipt.get("completed_at")) is datetime)
-        return MysqlSchemaReport(dialect, missing, tuple(issues), observation, ledger_present, ledger_valid)
+                ledger_valid = (receipt.get("component") == TEACHER_WORK_COMPONENT and type(version) is int and version == version_number and type(digest) is str and digest == contract_hash and type(receipt.get("completed_at")) is datetime)
+        return MysqlSchemaReport(dialect, missing, tuple(issues), observation, ledger_present, ledger_valid, inspect_contract(observation).ready)
     except Exception:
         # No raw driver text, identifiers, credentials or partial certification.
         return MysqlSchemaReport(dialect, tuple(expected), (MysqlSchemaIssue("teacher_work", "observation", "physical MySQL inspection unavailable"),), {"dialect": dialect, "tables": {}}, False, False)

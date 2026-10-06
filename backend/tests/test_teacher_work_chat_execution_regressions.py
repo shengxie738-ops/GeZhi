@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Only the source-only bootstrap guard contract was updated for private CRU.
 # The original four selectors and every runtime fixture remain pinned below.
-SUPPORT_SHA = "cd625a4246275be68c14902b5c176f6c1c397a8bc8f845727b0e22310553922a"
+SUPPORT_SHA = "67917ee4e2190ff28031c41512df14bfc967eabd61006ebaf80a023fcf68af5f"
 RUNTIME_AST_SHA = "3d345760c79c1ae7b35f68b8742c5d6208ada68b7ecdb903e2578c5975530209"
 
 
@@ -29,6 +29,12 @@ def _support():
     path = Path(__file__).with_name("test_teacher_work_chat_execution.py")
     assert path.is_file(), "Task4b2B frozen execution fixture is missing"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == SUPPORT_SHA, "Task4b2B original four-selector fixture changed"
+    # Only the exact named admission guard expanded; all four original
+    # behavioral fixtures and remaining support bytes stay independently pinned.
+    raw=path.read_bytes(); lines=raw.splitlines(keepends=True)
+    guard=next(n for n in ast.parse(raw).body if isinstance(n,ast.FunctionDef) and n.name=='_bootstrap_source_contract')
+    behavior=b''.join(lines[:guard.lineno-1]+lines[guard.end_lineno:])
+    assert hashlib.sha256(behavior).hexdigest() == "8af43eda07dd8e618bb7e1b884934f789adf1cc46a5ef77e6bd4967efce64de7"
     tree = ast.parse(path.read_bytes())
     tree.body = [n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) or n.name != "_bootstrap_source_contract"]
     assert hashlib.sha256(ast.dump(tree, include_attributes=False).encode()).hexdigest() == RUNTIME_AST_SHA

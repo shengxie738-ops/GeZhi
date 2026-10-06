@@ -75,9 +75,9 @@ def test_bootstrap_source_guard_rejects_removed_or_misdirected_admission(mutatio
     if mutation == "private_chat_pass":
         _body(_function(binding, "finish_chat_outcome"))[0].body = [ast.Pass()]
     elif mutation == "flag_pass":
-        _body(guard)[-2].body = [ast.Pass()]
+        _body(guard)[-3].body = [ast.Pass()]
     elif mutation == "materials_flag_pass":
-        _body(guard)[-1].body = [ast.Pass()]
+        _body(guard)[-2].body = [ast.Pass()]
     elif mutation == "ordinary_pass":
         _body(guard)[1].body = [ast.Pass()]
     else:
@@ -102,7 +102,8 @@ def test_t3_bootstrap_is_lazy_request_scoped_and_closed():
     body = _body(guard)
     assert ast.literal_eval(body[0].value) == {"private_create": "write", "private_read": "read", "private_update": "write",
         "private_chat_read": "read", "private_chat_write": "write",
-        "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write"}
+        "private_material_read": "read", "private_material_save": "write", "private_material_approve": "write",
+        'private_package_read':'read','private_package_create':'write','private_package_retry':'write','private_package_file':'write'}
     assert ast.unparse(body[1].test) == "operation not in expected or mode != expected[operation]"
     assert isinstance(body[1].body[0], ast.Raise)
     assert [value.value for value in body[1].body[0].exc.args] == ["TEACHER_WORK_LIVE_GATES_UNVERIFIED", 503]
@@ -110,9 +111,10 @@ def test_t3_bootstrap_is_lazy_request_scoped_and_closed():
     assert "settings.TEACHER_WORK_PRIVATE_TASKS_ENABLED is not True" in ast.unparse(guard)
     assert isinstance(body[-1], ast.If) and not body[-1].orelse and len(body[-1].body) == 1
     assert isinstance(body[-1].body[0], ast.Raise)
-    assert ast.unparse(body[-1].body[0]) == "raise WorkAuthorizationError('PRIVATE_MATERIALS_DISABLED', 503)"
-    assert ast.unparse(body[-2].body[0]) == "raise WorkAuthorizationError('PRIVATE_CHAT_DISABLED', 503)"
-    assert ast.unparse(body[-3].body[0]) == "raise WorkAuthorizationError('TEACHER_WORK_LIVE_GATES_UNVERIFIED', 503)"
+    assert ast.unparse(body[-1].body[0]) == "raise WorkAuthorizationError('PRIVATE_EXPORTS_DISABLED', 503)"
+    assert ast.unparse(body[-2].body[0]) == "raise WorkAuthorizationError('PRIVATE_MATERIALS_DISABLED', 503)"
+    assert ast.unparse(body[-3].body[0]) == "raise WorkAuthorizationError('PRIVATE_CHAT_DISABLED', 503)"
+    assert ast.unparse(body[-4].body[0]) == "raise WorkAuthorizationError('TEACHER_WORK_LIVE_GATES_UNVERIFIED', 503)"
     config = _class(_tree("app/core/config.py"), "Settings")
     switch = next(n for n in config.body if isinstance(n, ast.AnnAssign) and n.target.id == "TEACHER_WORK_PRIVATE_TASKS_ENABLED")
     assert switch.value.value is False
@@ -120,6 +122,8 @@ def test_t3_bootstrap_is_lazy_request_scoped_and_closed():
     assert chat_switch.value.value is False
     material_switch = next(n for n in config.body if isinstance(n, ast.AnnAssign) and n.target.id == "TEACHER_WORK_PRIVATE_MATERIALS_ENABLED")
     assert material_switch.value.value is False
+    export_switch=next(n for n in config.body if isinstance(n,ast.AnnAssign) and n.target.id=='TEACHER_WORK_PRIVATE_EXPORTS_ENABLED')
+    assert export_switch.value.value is False
     for name in ("open_teacher_work_request", "build_request_dependencies"):
         _first_guard(_function(tree, name))
     imports = {item.module for item in ast.walk(tree) if isinstance(item, ast.ImportFrom)}
@@ -227,7 +231,10 @@ def test_t3_router_registration_has_no_startup_or_student_mutation():
         ("router.post", "/tasks/{task_id}/messages"), ("router.get", "/tasks/{task_id}/messages"),
         ("router.get", "/tasks/{task_id}/runs/{run_id}"), ("router.post", "/tasks/{task_id}/runs/{run_id}/cancel"),
         ("router.get", "/materials/capabilities"), ("router.get", "/tasks/{task_id}/materials"),
-        ("router.post", "/tasks/{task_id}/materials"), ("router.post", "/tasks/{task_id}/materials/approve")}
+        ("router.post", "/tasks/{task_id}/materials"), ("router.post", "/tasks/{task_id}/materials/approve"),
+        ('router.get','/packages/capabilities'),('router.post','/tasks/{task_id}/packages'),('router.get','/tasks/{task_id}/packages'),
+        ('router.get','/tasks/{task_id}/packages/{version_id}'),('router.post','/tasks/{task_id}/runs/{run_id}/retry'),
+        ('router.get','/tasks/{task_id}/artifacts/{artifact_id}/download')}
     assert "TEACHER_WORK_UNAVAILABLE" in ast.unparse(factory) and "503" in ast.unparse(factory)
     assert "Cache-Control" in ast.unparse(tree) and "no-store" in ast.unparse(tree)
     assignments = [item for item in tree.body if isinstance(item, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "router" for target in item.targets)]

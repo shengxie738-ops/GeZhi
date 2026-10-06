@@ -26,12 +26,14 @@ def _require_transactional_participants(connection):
 def require_private_schema(transport):
     from sqlalchemy import text
     from app.services.teacher_work.authorization import WorkAuthorizationError
-    from app.services.teacher_work.schema_mysql import require_teacher_work_mysql
+    from app.services.teacher_work.schema_mysql import observe_teacher_work_mysql
+    from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
     from pymysql.constants.SERVER_STATUS import SERVER_STATUS_IN_TRANS
     transport._verify()
     connection = transport.connection
     try:
-        require_teacher_work_mysql(connection)
+        if not observe_teacher_work_mysql(connection).ready and not observe_teacher_work_mysql_v3(connection).ready:
+            raise ValueError('exact completed private schema required')
         _require_transactional_participants(connection)
         isolation, autocommit = connection.execute(text(
             "SELECT @@session.transaction_isolation, @@session.autocommit")).one()
@@ -69,6 +71,9 @@ def prepare_legacy_save(session, subject, draft_id):
                 and set(report.missing_tables) == set(TEACHER_WORK_SCHEMA_CONTRACT["tables"])
                 and not report.observation.get("tables") and not report.ledger_present):
             return  # Proven entirely absent, preserving the original legacy behavior.
+        if not report.ready:
+            from app.services.teacher_work.schema_mysql_v3 import observe_teacher_work_mysql_v3
+            report=observe_teacher_work_mysql_v3(connection)
         if not report.ready or connection.execute(text("SELECT @@session.autocommit")).scalar_one() != 0:
             raise ValueError("complete verified registry required")
         _require_transactional_participants(connection)

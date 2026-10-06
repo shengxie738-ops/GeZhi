@@ -143,14 +143,19 @@ class SchemaReport:
 
 
 def inspect_teacher_work_schema(observation: dict | None) -> SchemaReport:
+    return inspect_teacher_work_schema_contract(observation, TEACHER_WORK_SCHEMA_CONTRACT,
+        TEACHER_WORK_CONTRACT_HASH, TEACHER_WORK_SCHEMA_VERSION)
+
+
+def inspect_teacher_work_schema_contract(observation, contract, contract_hash, version_number) -> SchemaReport:
     """Compare supplied physical/ledger facts without reading or changing state."""
-    expected = TEACHER_WORK_SCHEMA_CONTRACT["tables"]
+    expected = contract["tables"]
     if observation is None or type(observation) is not dict:
         return SchemaReport(False, tuple(expected), (), ("schema_observation_required",), None, None)
     reasons = []
     if observation.get("dialect") != "mysql":
         reasons.append("mysql_schema_required")
-    if canonical_digest(TEACHER_WORK_SCHEMA_CONTRACT) != TEACHER_WORK_CONTRACT_HASH:
+    if canonical_digest(contract) != contract_hash:
         reasons.append("internal_contract_changed")
     tables = observation.get("tables")
     if type(tables) is not dict:
@@ -171,14 +176,14 @@ def inspect_teacher_work_schema(observation: dict | None) -> SchemaReport:
     if incompatible:
         reasons.append("schema_shape_incompatible")
     version = observation.get("version")
-    if type(version) is not int or version != TEACHER_WORK_SCHEMA_VERSION:
+    if type(version) is not int or version != version_number:
         reasons.append("schema_version_unverified")
     contract_hash = observation.get("contract_hash")
-    if type(contract_hash) is not str or contract_hash != TEACHER_WORK_CONTRACT_HASH:
+    if type(contract_hash) is not str or contract_hash != canonical_digest(contract):
         reasons.append("schema_hash_unverified")
     ledger_present = "version" in observation or "contract_hash" in observation
-    ledger_valid = (ledger_present and type(version) is int and version == TEACHER_WORK_SCHEMA_VERSION
-                    and type(contract_hash) is str and contract_hash == TEACHER_WORK_CONTRACT_HASH)
+    ledger_valid = (ledger_present and type(version) is int and version == version_number
+                    and type(contract_hash) is str and contract_hash == canonical_digest(contract))
     return SchemaReport(not reasons, missing, tuple(incompatible), tuple(reasons), version if type(version) is int else None, contract_hash if type(contract_hash) is str else None, ledger_present, ledger_valid)
 
 

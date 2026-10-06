@@ -1,0 +1,1063 @@
+{
+  "format": "gezhi-private-exports-evidence-v1",
+  "integration_base": "c2161427ce0a5f898c089daa802d3a2cc753ca74",
+  "branch": "102V12",
+  "mysql_image": "mysql:8.4.10@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6",
+  "versions": {
+    "SQLAlchemy": "2.1.3",
+    "PyMySQL": "1.2.3",
+    "pytest": "9.1.1",
+    "pydantic": "2.13.5",
+    "fastapi": "0.142.2",
+    "httpx": "0.28.1",
+    "python-pptx": "1.0.2",
+    "python-docx": "1.2.0",
+    "Pillow": "11.3.0",
+    "lxml": "6.1.3",
+    "XlsxWriter": "3.2.9"
+  },
+  "synthetic_only": true,
+  "no_external_ai": true,
+  "no_app_main": true,
+  "verification": [
+    {
+      "command": "PYTHONPATH=backend:backend/tests /tmp/gezhi-mysql-venv/bin/python -m pytest -q backend/tests/test_teacher_work*.py",
+      "log": "/tmp/gezhi-exports-all-work-unit-final.log",
+      "result": "184 passed, 1 warning in 18.25s",
+      "passed": 184
+    },
+    {
+      "command": "PYTHONPATH=backend:backend/tests /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_mysql.py backend/tests/native_teacher_work_repository.py backend/tests/native_teacher_work_private_http.py backend/tests/native_teacher_work_private_chat_http.py backend/tests/native_teacher_work_private_materials.py backend/tests/native_teacher_work_private_exports.py",
+      "log": "/tmp/gezhi-exports-native-final-batch.log",
+      "result": "144 passed, 1 warning in 491.20s (0:08:11)",
+      "passed": 144,
+      "exports": 48,
+      "same_migrated_v3_included": true
+    },
+    {
+      "command": "PYTHONPATH=backend:backend/tests /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_private_exports.py::test_migrated_v3_preserves_authenticated_cru_materials_and_chat",
+      "log": "/tmp/gezhi-exports-native-same-v3.log",
+      "result": "1 passed, 1 warning in 30.72s",
+      "passed": 1
+    },
+    {
+      "command": "PYTHONPATH=backend:backend/tests /tmp/gezhi-mysql-venv/bin/python -m pytest -q -s backend/tests/native_teacher_work_private_exports.py::test_commit_unknown_reconciles_without_blind_rebuild backend/tests/native_teacher_work_private_exports.py::test_final_flush_revalidates_recovered_complete",
+      "log": "/tmp/gezhi-exports-native-retention-rollback.log",
+      "result": "9 passed, 1 warning in 76.04s (0:01:16)",
+      "passed": 9,
+      "repeated_cases": true
+    }
+  ],
+  "fixtures": {
+    "file": "backend/tests/fixtures/teacher_work_private_exports_http_contract.native.json",
+    "sha256": "fb9d5699b5795699399719df7a0d1f02959737578be0be9cb735afebebc0b71a",
+    "examples": 137
+  },
+  "source_sha256": {
+    "backend/app/api/endpoints/teacher_work.py": "a8689809b1a20fbda1b4027fdedbeb7ed8e5878596fa32aa131fa505d928a97f",
+    "backend/app/core/config.py": "8a6a2ee7962d1301757266af8c38fede23826be84458d982caac57043fa8627b",
+    "backend/app/models/teacher_work_v3.py": "149f0e9c30148d1337922c5ca9286f31097e6520ee2ff07e9d4dce382a32549b",
+    "backend/app/repositories/teacher_work_exports.py": "9fda75eb937fe620e8e984088259d0eb2fb6a64c965c0e399d2e05d6e50d5ec6",
+    "backend/app/schemas/teacher_work_exports.py": "42bf7b85f85dfa2c81f603237dfc2de11f6018ff9f3f28870398b45c7915318c",
+    "backend/app/services/teacher_work/bootstrap.py": "8db3d8b2ae02dff290662282af910a79460dce617263b70762e484322e8f9ba0",
+    "backend/app/services/teacher_work/office_execution.py": "e2292a0ad16aa28f9d0b56cfb93dbb2b653afee460c71ef8c9844bd6b7b0cc42",
+    "backend/app/services/teacher_work/private_exports.py": "084b143ef3ca598481fa14243ac26e818baee8043ac19ed98b9c34ce932cc2cf",
+    "backend/app/services/teacher_work/private_storage.py": "8117d3f0cea1658bf43dde46fe7699b70a7dbc75bd9d1eebae33672e674a42b7",
+    "backend/app/services/teacher_work/private_tasks.py": "94ead39214e908c281e2cc5937fa0283c59bf3b9396b7163d29fd9256b9dfd93",
+    "backend/app/services/teacher_work/schema.py": "8f1ad905379d0f42fffc5b824368e7e8ca44f130cb76384a0b26aebf9993b157",
+    "backend/app/services/teacher_work/schema_mysql.py": "2b9412d99d43515d7f6f25b809f21c9cd324f8b88f1aeaa8da6b76ddf386e623",
+    "backend/app/services/teacher_work/schema_mysql_v3.py": "0011e43d01a62b55f087ace0286dd383c83d2a976637289a6f470504eb4feed5",
+    "backend/app/services/teacher_work/schema_v3.py": "efba134bc611542ddd4cedaba8024cfb842fbee05f352502a9b5217f608c0ede",
+    "backend/migrations/v20261006_teacher_work_exports_mysql.py": "d04ed65ac2c8c79e651d2d2b7a964d4342a2c353c10a9c147dcfa6faed9fbd36",
+    "backend/tests/native_teacher_work_private_exports.py": "dffdbd7f5d304d42aee7ebf9120b52a82980f63dd6ab58d2708a5cd421cc5633",
+    "backend/tests/requirements-native-teacher-work.txt": "9ee99090cb24165662e013cca4372e6f5543f3a26b89b321a9d4ddd898a5ba11",
+    "backend/tests/test_teacher_work_chat_execution.py": "67917ee4e2190ff28031c41512df14bfc967eabd61006ebaf80a023fcf68af5f",
+    "backend/tests/test_teacher_work_chat_execution_regressions.py": "532281d03c3ea9f069e042f08b0230d77660ad939febca7405852d29e84451d1",
+    "backend/tests/test_teacher_work_private_exports.py": "cee477a9add6936f22e047917320cd9ebb64af6a984d0f6e49028191b317aae3",
+    "backend/tests/test_teacher_work_run_persistence.py": "f4e55052bbad763630db3d14cebcd54e6b5474479ccda67c9b5144ad5641e232",
+    "backend/tests/test_teacher_work_wiring.py": "4643bae32baeaf2b40990c186b1ef7342df2b4f39b4bce8899dfcad7c6205148"
+  },
+  "log_sha256": {
+    "/tmp/gezhi-exports-all-work-unit-before-alias-179.log": "b027a4d8f6390c265aa4a9c6f300a9f9de9372cbffd761aba8104d5b5bed7328",
+    "/tmp/gezhi-exports-all-work-unit-final.log": "d1f907759bbb8a7950abe60dd5d3cd1b20fd1175036686a30f8a9e0901a64b16",
+    "/tmp/gezhi-exports-all-work-unit1.log": "d4be7b255708783f87033f943abc4c9107315e971a1da59e17175b572163c4a2",
+    "/tmp/gezhi-exports-all-work-unit2.log": "8efc16cbe15aa6781ac24290e6517d03bc26d7d9b08b200a688f0ea8601e5a25",
+    "/tmp/gezhi-exports-dependency-check.log": "35bb3d1e4d1d0091788acae77c6d707f1dfb81d2384e34fd54a205f9497ce313",
+    "/tmp/gezhi-exports-final-collection.log": "e3f6681d33679753a5ec2a5fa2af18d4c262110df20387172bf92e4bdfef9074",
+    "/tmp/gezhi-exports-fixture-integrity.log": "7e141be75adb91b69d737e54a3b38401db7668bac6fae2cfffebdb1d831d6626",
+    "/tmp/gezhi-exports-focused1.log": "64ad0ea8960e75cf2224798aed9dfb1280f27420b73c84e2b6a29472a9343999",
+    "/tmp/gezhi-exports-focused2.log": "4927b8c0b2bbed80bf468dd201191a4e9d54c3260a384f3b279f32368dd5819f",
+    "/tmp/gezhi-exports-focused3.log": "a4e3332ae8888dd6c79d8b72d1ce60e2de14c826925cf5befc191de715b962f7",
+    "/tmp/gezhi-exports-green-history-isolation.log": "b0e374b5e40683408bc32efa41e61a47fc54f98693072a6626977589810e9cbf",
+    "/tmp/gezhi-exports-green-history-pure-final.log": "8492cf416dfd069ef2e41931b87f9d41aa38ee690407170776edb2a9328f1117",
+    "/tmp/gezhi-exports-green-history-pure.log": "581c3f592d968e9f91267a73965d4708b1d25583ff49a5c9b84b3c4cf8e2ac99",
+    "/tmp/gezhi-exports-green-office.log": "3656f0011565bb37122a277b5e00aa26695ec34962d97227f5025ae9222e35df",
+    "/tmp/gezhi-exports-green-public-alias-parent.log": "c477153249bf6a363c78d4f95df36dc4ec1e050c783b6070402c77862be9ad2b",
+    "/tmp/gezhi-exports-green-public-alias.log": "f183a4cbd072b74d57f094f15c91df226435e04c9e225f9ac3637b633b69ed29",
+    "/tmp/gezhi-exports-green-pure.log": "459704e01c5ba78495e9fc0a5754309e1e3048a1331b94f1274c0f8309ff11af",
+    "/tmp/gezhi-exports-green-storage-office.log": "91f7c111aaa7d5514214bcde1b9bc1f41967272bb27a702708f0b9162e579f8c",
+    "/tmp/gezhi-exports-native-before-alias-138.log": "6d6f5478b4e0643eecc93d3b06754062a7cd2652bade688dd90cbba3a7645c71",
+    "/tmp/gezhi-exports-native-download-green.log": "7e26a43ff6260da5d8a2ed147c5a4ee9c0917a548aaa0e3a54b2de364dfa56b9",
+    "/tmp/gezhi-exports-native-final-batch.log": "5dbc9c365c8b4e4a667a0c2783dcd3a49237694e1189e40f67c652fe5af90bb1",
+    "/tmp/gezhi-exports-native-http-green1.log": "0231b9aa6eac2c6fc750afd86eb379c880e2604b4f273dbf7ba0610feeb8d780",
+    "/tmp/gezhi-exports-native-interrupted-before-final-alias.log": "c4d69157f34ef38c464e2661c6a2ccb8fdc4f69ae5df23fb8da74d0dc5519160",
+    "/tmp/gezhi-exports-native-interrupted-for-history-correction.log": "d8a996aa77dd32b102afc14b5f2f3d9fb79944234c91dc74f84792e40e08408c",
+    "/tmp/gezhi-exports-native-matrix1.log": "556159113e24dc362c1b90ee73738209cdf08636b1111c50cc164055efb3a97e",
+    "/tmp/gezhi-exports-native-matrix2.log": "8fa0a6e1ae5c2a45d80c55992db3367709f2705c8a21df2c5b718d8f3ef66040",
+    "/tmp/gezhi-exports-native-matrix3.log": "3f37d176da79bd597eeccd7c8c11dec9406a5ffe1dd04e7f6f95bb286a8e4955",
+    "/tmp/gezhi-exports-native-matrix4.log": "bd2091babcbd7493861f126054614906e1f00641f3eacdc62170679286611fd8",
+    "/tmp/gezhi-exports-native-migration.log": "0036126a1a490d5384855f18551e1b9e78f2486e4772a80853d7fec96109e3d2",
+    "/tmp/gezhi-exports-native-retention-rollback-assertion-failure.log": "17aba5fa2a3fd3484af6a4856b8ae24621dda7a86633ec48987fd7ee2255ee3c",
+    "/tmp/gezhi-exports-native-retention-rollback.log": "63f10257b7b8fc1777b77209428e6e6e5a4e388f983b9ae08b1b3a4d3c01f71f",
+    "/tmp/gezhi-exports-native-same-v3-assumption-failure.log": "690cb387deac19f0d20763477ae9aa949f92da1cadb931d5c18166ed9584988a",
+    "/tmp/gezhi-exports-native-same-v3.log": "a39b67ebf6ddb356dc9373727ba45b6731dd21c7873427970e4eda161b1e682d",
+    "/tmp/gezhi-exports-native-v3-diagnostic.log": "322cefae1c1345b40ad8c1226eac773c6f94585d71717683245561eb096614d1",
+    "/tmp/gezhi-exports-native-v3-diagnostic2.log": "65227b1a55f360864d877b32600be0e25a9e3cd36f3a9fa3220f48443a4ead23",
+    "/tmp/gezhi-exports-native-v3-green.log": "c877afd187458c637adde3327de10d2291cbe5295de5e8321136dc8a5534a251",
+    "/tmp/gezhi-exports-pinned-dependencies.log": "392c5153b31b7596164579ca6d7f2a64db498779dc49420013876c72ec471479",
+    "/tmp/gezhi-exports-red-cleanup.log": "2677309e7681e83b8420ba6dd41ca0e939cfcda4424fc98aaeed56a9593820b3",
+    "/tmp/gezhi-exports-red-fifo.log": "ec9221d36d8c1abcba5dd50e02eb3be282ab983ef28af1f77819f2794c90212b",
+    "/tmp/gezhi-exports-red-history-isolation.log": "8b9ae02e7373d9c48a3b46bdac2525f5cddcb110297ae44cba7b7257edb9040f",
+    "/tmp/gezhi-exports-red-http.log": "495d47053ef5978a4087a3c38946e0fb3a0822b737d45c9a020331d7b8dcfaad",
+    "/tmp/gezhi-exports-red-list.log": "3971224abb9277bb44b7ae89502c8a61de265cc9320ddc9d1357e7ec366a1162",
+    "/tmp/gezhi-exports-red-migration.log": "cb432df0a8b2173ba8b6818104fd484423d7bd57480ee030d06dbef76b93a84e",
+    "/tmp/gezhi-exports-red-missing-leaf.log": "524fb122afe86c5d0e53c109442ab42c3defa1909ce858d7c9ad2a953c9ee462",
+    "/tmp/gezhi-exports-red-owner-directory-race.log": "742dcce1e212915662b45ff7717dbbc81a50953a317b40b60f779f7d2aa4aea9",
+    "/tmp/gezhi-exports-red-public-alias-parent.log": "a746fbb7fac600a49909f1f7a4f5faa2eeeb40b334ed0cfd7c52d0f40ba5d4e5",
+    "/tmp/gezhi-exports-red-public-alias.log": "28dbedd9f0747d0fd0cd9b112207f4ce4fdc08d8d88dc9e0f2664c24db01787a",
+    "/tmp/gezhi-exports-red-pure.log": "640fc7762eab5b0c850416219db800404f3a568e3fbe4c6616cb19adb21a49a5",
+    "/tmp/gezhi-exports-red-spawn.log": "0cda38fae8fa56a000953d2ff5517993b9b4ad7793cee87b6ec9c58c82e40828",
+    "/tmp/gezhi-exports-red-summary-unavailable.log": "bc68a9c7519f589da9f0a4c270b22e40d28005b0a1230f555ef0d5e5e80fc50b",
+    "/tmp/gezhi-exports-unit-before-final-alias.log": "24e2680804530e0043a351e4d172d2fd147db333e16f0140ed5665196017871e",
+    "/tmp/gezhi-exports-unit-before-history-180.log": "ba572fd148274ce3c47d2b27330c344b77d6aa6d8cb5f11fd5947e46da9846ee",
+    "/tmp/gezhi-exports-v2-regressions.log": "b606a979f3a1a4b0e42b55e078d1315badc81af182e38a4448bd9df398d67965",
+    "/tmp/gezhi-office-dependency-install.log": "3778234dd408f33a2184d32ef7b0a930d6c6568e73065fb592a313f544eab082",
+    "/tmp/gezhi-exports-verified-dependencies.txt": "8c26388d4a82cc06999ddf5a09257eddcb38bae69cde5950a138ffd0affe5a16"
+  },
+  "utility_sha256": {
+    "/tmp/gezhi_export_artifacts.py": "0d6a79240eb7557cc1a83022197bf043756000956610c94e7929f21edc97c470",
+    "/tmp/gezhi_export_fixture_check.py": "74cd81050cd54763c2a9c45eb825a90873575f22d78b8b3d6d79b0bd9f13c5ca"
+  },
+  "servers": [
+    {
+      "root": "/tmp/gezhi-tw-native-0tbvtjcy",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "fe053d93-c136-11f1-85cd-04d214eb6120",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-ef6ba4b3e7e64b2990169122b7b3d008",
+        "container_id": "1c2b86724315e3ce4cc2087d2ea779c7ecc75f988e30d3eb19885fc58a41f0ce",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-3er08d9e",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "50ee78ca-c134-11f1-88f1-29688d8b10b1",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-ff2a4bce72d5493c950a71038eee4f72",
+        "container_id": "d41e173e65d69c8921080e76a41913820ea18fa32cdb229bf01443b2bbfcdffa",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-4yn2dw8a",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "a64e8ddf-c134-11f1-977d-d82738a48eda",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-efc031d2336e483a80fbc6bdaaa39e47",
+        "container_id": "2f5f5178424e10f5286f841e84d7d748dc06763531c2f94495376cd24843b64c",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-5qr9ul9n",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "b003cac8-c135-11f1-b394-29688f953d70",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-96200de50afe44e380eddb4cd30e4c6a",
+        "container_id": "1af6a7241b6c57c32c0fe92958b9254e4f8f165bf90a0986e043d64d46d5e356",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-5qz7co9o",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "48cae738-c133-11f1-9276-9b332d4aebba",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c6f6ade7c7d04b84b85fcd389a084edb",
+        "container_id": "e9ca04da6d8a9f34bf3aad9c630eb0dd42da8e28b35094e7815b082d5ba76d1d",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-5yco9n64",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "e7d2c89c-c137-11f1-a640-89e8eef2f2e7",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-b19b5b7777b84df3a82750aabb7c0f5f",
+        "container_id": "5ca85e983c5093f21c4f53b52a7870f8e3f722d93de037901347ba193509c36b",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-7oox1xxm",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "91312566-c131-11f1-93b0-aa6e298210ca",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-44bb918361b5471c824230de212b97d3",
+        "container_id": "aeecbd4738fdb8de16fe507cca2fdd2e7d69bb305f170d4b5177a09cab1201cf",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-_5611l_w",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "90e3398b-c137-11f1-a698-8df8362209c8",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-1bf5718819a84b6688c4c7782147077f",
+        "container_id": "192f546a1e544007116a9d0c1aff3847759011f7f5f89f6e937bb4f4fea2f503",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-_zuq5625",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "c54ea6d0-c130-11f1-afad-faae784d1da8",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-221859e9a5754701ae2f22ac217e4d7d",
+        "container_id": "693bdb0f9ade4b04df6b0be6e84947089895e649ae74e78ea9290063e91073ff",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-a7lmwhqw",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "7f3d230f-c130-11f1-8f64-77a0bdd1dfeb",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-1420e8fbb72d4c97a98b75595c25f003",
+        "container_id": "cb98d6c1087629c321f52fb58a5c03a98d7391807c2c51bcab78549a8491faad",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-brxkx1da",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "4466f096-c136-11f1-9015-7fc0461dbd5e",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-eccae438c71146bda61278e0168e8568",
+        "container_id": "1e6bcbcbd0869d5c99da6df179f6be116c6d2d932124439035fa155e9618ab6a",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-d_fice14",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "e1dc91d3-c12f-11f1-b79b-5a2bca73e00d",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-4d4c47203836467d98ba7850efbc4ff1",
+        "container_id": "757e4e8036533f567ef3b42e2109525d87be6e1e925eae0f6714ae1e5887061e",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-efyzggw7",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "d60b81b9-c135-11f1-a108-4aebbef48cdf",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-1913fc59be8d41549071a8c7cbbec325",
+        "container_id": "9702ce66f6b79768dad22e9dda2bf01443ab37adf8aaca4e5aea4320752df941",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-equlno4j",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "768d79f0-c134-11f1-8cfd-5a2ccf8b49ce",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-0a40242d1f2d475183cc194755f71a36",
+        "container_id": "7360c32c35e5f8fc42f76d5dc7c32f41308446d591ea30e1d9d64d26fd4cc0ab",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-f8x8mb1o",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "07767f5b-c12e-11f1-8f75-78a4cc1400c0",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-82220970c6094ab5ba22434190d642d2",
+        "container_id": "039622e1c5e3ff2aa22710e1eb0d350b86bde07d9e496022e9878cebe3e00063",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-fcdqkc2c",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "a455711e-c136-11f1-b53e-3cb6d91e0ad7",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-08cba0b56eda47389cea47c863919bfd",
+        "container_id": "a0da285818f7709df98b360464da05de3ce870e9ef1ab737de2b55a87210146a",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-i4ekjnle",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "e9b7ab37-c12e-11f1-ae30-e8674a3d53e9",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-daa013b86ebc49258987b3baa4308dd8",
+        "container_id": "05fdbdbaae43a0915ed91c90f0d4d7ffb9e94de27ff16c987105ecf1979f28ba",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-jtbbpxu2",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "1941473d-c138-11f1-8105-caec438aeaf6",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-b00fb7c110c84420bb358fba68b8d82e",
+        "container_id": "ac34a8ffeb9cf28fa114300f2eaafc34e7480c7f081acc37effd35f372903d34",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-khhh6bv9",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "ea243c41-c130-11f1-b0bf-08e152f5d755",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-1ebb18fd300f488da801bb9bc85707a8",
+        "container_id": "b3444e5deab1b9eeaeaa9255e69244f53209366912c55121faa473abbcb4d5a2",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-lg24pvh2",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "1ba69f4d-c134-11f1-9dfb-265c5bb4742b",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-45c7ed27aa8f48bb871a0bb8cd0e34ba",
+        "container_id": "4ea0ed8cb0cd99e5032e0a4f8985f0a916baa477eae6b8278f0b85b8ef327cfa",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-lp74xmb9",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "c4ed8b9d-c137-11f1-be8d-ac764c1ba2da",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-27326f7b5d2742d7920719f9f0e44b43",
+        "container_id": "fd20a35d43bf4b0fd7af1114c1b44fb21a6d49bb32fecb201b26b372e4175040",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-m3o7nhn2",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "b8e56a71-c136-11f1-b352-265c5ab26b01",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-34db359d04b94de5aa1f0862581e012d",
+        "container_id": "e4da2035e8060610cbd07393fb282446d23d6c8c0456e7de7dcbdebac464bf47",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-mysiljc4",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "31ceddba-c136-11f1-a6e4-910a7c5329d4",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-b48ae91d56a24e96ad4becca22438a54",
+        "container_id": "8f60784e633400d3058c4d1e64c1f35421cba48a7467209bbee411505404e0b9",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-npw1477h",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "851c02f0-c12f-11f1-bc1b-8f0360d91e0a",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-ca18fb8cb13a42faaf4c998b881fe441",
+        "container_id": "18215ceaf2a852493f29ad6e5689d84d9d36eec62a8107e7f1bc6eb6b2bff213",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-pcfmnz8w",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "30776549-c134-11f1-bc23-90066d0f05ea",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-6b67b6951a574afc8b873fa143f5a55c",
+        "container_id": "b4ce5d7c4706fb60ca800e320f88af8cb07508d18c20f769d068590d2ef3c33f",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-ppg8aff1",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "63e1f8b8-c135-11f1-bd28-9c34325f4642",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-6be944a639424f8d8757d8dec44c4ebe",
+        "container_id": "33aefbe11cb95aa0e47635dfae6b14b5ef29db8ef320127e35b255e4be770370",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-ptz_9t5e",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "1f14624c-c12f-11f1-b329-24553f3e7696",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-15f71870053646ffa8c793d8c66d2b60",
+        "container_id": "91b579ea122867c689b634e8d534a0077ea04e661d741a83400e1960bb8ae968",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-q7s1hv67",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "3be4ae3f-c137-11f1-9ef5-328a2002a94a",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-d23e8dd0b99649bdb0b7034e4aa663cc",
+        "container_id": "5995068a554f3628e68a0580f96d32b3569c78a65855938902f1c3e6a7050cba",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-r5o_3m8d",
+      "first_sql": null,
+      "cleanup": {
+        "container": "gezhi-tw-native-fe60177f2535425394bfea316819b379",
+        "container_id": null,
+        "stopped": null,
+        "exit_code": null,
+        "creation_not_observed": true,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-raf7_1mg",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "97676273-c136-11f1-826b-da30625895df",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-e9f67dc8379a4daaa02217a2f307da26",
+        "container_id": "f98c82f790cf0cce114c9c4ae7ed5baaeae58e5ed5b1b272b11a6a97540798ab",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-rb2oh6ok",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "3ef1cbee-c134-11f1-b7dd-5c34f11cb94c",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-029d031572c5433291cbff9e54de60c4",
+        "container_id": "5e53238a119988860008edaef23532ef5fefe6191e94da4d958f0f8b484cae65",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-s0mrsqg8",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "75579525-c132-11f1-b09f-06da3782e702",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-f4e663d55b4c406fb234e47d936beef2",
+        "container_id": "a0c73b3bf1b2200e93eff24bb70569fb96e08d0e5c2a2fd6def9ea302e4de8ab",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-u49y01ka",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "b42f326e-c12f-11f1-87be-1c34afd20fd3",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-cbe2f901523042898bd6062e0fcbda45",
+        "container_id": "441238537b99f89d5f3f37ec0d802add41aba25adb216a56941061f708115acc",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-u94owway",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "a6ae8999-c137-11f1-9881-e352f1c1f27a",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-04244bf1c4e141bcb368005005d54dc8",
+        "container_id": "9bde501da06169d466e314642872a9daae1f81324b03bff38c11c9bd72a297ff",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-xd98n8s_",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "b2ae0ead-c137-11f1-956d-bfc087615276",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-c2f216f6fdbc40b58f4907e39ec9811c",
+        "container_id": "b60633f2a612467abd8184dfa5c373b09070f2c60e3e7d69235f558b50bc87e8",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-xl239hig",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "4554ca97-c135-11f1-8a44-39a9a43a3457",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-e0c2734f254e46fcb629c1b4b4ab0aba",
+        "container_id": "a04c32fc6d1dd874c22d3a36230db2e291d2d06c945e92efdbcbce6aef02feda",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    },
+    {
+      "root": "/tmp/gezhi-tw-native-y2wq7exd",
+      "first_sql": {
+        "first_sql": 1,
+        "version": "8.4.10",
+        "connection_id": 8,
+        "server_uuid": "8076dbec-c136-11f1-933d-a558c9e9364f",
+        "datadir": "/var/lib/mysql/",
+        "socket": "/run/gezhi-native/mysql.sock",
+        "skip_networking": 1,
+        "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+        "isolation": "REPEATABLE-READ",
+        "foreign_key_checks": 1,
+        "unique_checks": 1
+      },
+      "cleanup": {
+        "container": "gezhi-tw-native-088dfefc6c334eafb8eaad418983846b",
+        "container_id": "fa02e808ae9f799ff7b45ce6cf02534f82794aa81f7a7f6fa1e2d0d3aa3ff78e",
+        "stopped": true,
+        "exit_code": 0,
+        "creation_not_observed": false,
+        "removed_with_volumes": true,
+        "baseline_preserved": true
+      }
+    }
+  ],
+  "limitations": {
+    "response_cap_test": "reduced512-byte cap exercises actual precommit refusal, not262144-byte one-byte proof",
+    "commit_ddl_faults": "controlled faults around actual native operations",
+    "ready_list_unavailable_file": "safely resolved owned leaf missing or stable byte mismatch retains READY/download_available=false; unsafe root/path/identity/symlink returns503; GET does not mutate state"
+  },
+  "ci": "Query exact published SHA after push; no workflow/check record must not be described as passed.",
+  "archive": "/workspace/gezhi-native-private-exports-evidence.tar.gz"
+}
