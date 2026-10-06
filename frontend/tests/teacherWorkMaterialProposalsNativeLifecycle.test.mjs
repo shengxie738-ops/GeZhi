@@ -29,7 +29,7 @@ const emptyMaterials = (task, digest) => ({ task_id: task.task_id, input_revisio
 async function harness(group, { loseFirstOriginResponse = false } = {}) {
     const env = globals(), refs = authRefs(), scope = Vue.effectScope(), task = clone(taskOf(group)), actualCalls = [], localSetupReads = [];
     const generations = validGenerations(group), materialPosts = materialsOf(group), capturedReads = proposalReadOf(group);
-    const history = historyOf(group), cap = group.exchanges.find(x => x.request.path.endsWith('/material-proposals/capabilities')) || vertical.exchanges[6];
+    const history = historyOf(group); let cap = group.exchanges.find(x => x.request.path.endsWith('/material-proposals/capabilities')) || vertical.exchanges[6];
     const proposalDigest = capturedReads[0]?.response.body.data.proposal?.source_digest || generations[0]?.response.body.data?.source_digest || '0'.repeat(64);
     let serverTask = task, materialSnapshot = emptyMaterials(task, proposalDigest), materialRead = null, proposalRead = capturedReads[0] || group.exchanges.filter(x => x.request.path.endsWith('/proposal')).at(-1) || null;
     let historyEnabled = false, lookup = null, firstOriginLost = false;
@@ -95,6 +95,7 @@ async function harness(group, { loseFirstOriginResponse = false } = {}) {
     return { hook, transport, scope, refs, actualCalls, localSetupReads, scheduled, taskId: task.task_id, runId, group,
         enableHistory(exchange) { historyEnabled = true; lookup = exchange || group.exchanges.find(x => x.request.path.endsWith('/material-proposals/runs') && x.response.status === 200); },
         setProposalRead(exchange) { proposalRead = exchange; },
+        setProposalCapabilities(exchange) { cap = exchange; },
         setMaterialRead(exchange) { materialRead = exchange; if (exchange.response.status === 200) {
             materialSnapshot = clone(exchange.response.body.data); serverTask = { ...serverTask, input_revision: materialSnapshot.input_revision,
                 working_revision: materialSnapshot.working_revision, working: { ...serverTask.working, needs_normalization_fields: clone(materialSnapshot.needs_normalization_fields) } };
@@ -194,6 +195,34 @@ for (const phase of ['before', 'after']) test('actual proposal ' + phase + '-adm
         assert.equal(h.hook.state.materials.dirty, false); assert.equal(h.hook.state.materialProposals.proposal, null);
     } finally { h.close(); }
 });
+for (const setting of ['TEACHER_WORK_MAX_ACTIVE_RUNS-1', 'TEACHER_WORK_MAX_ACTIVE_RUNS-0', 'AI_LESSON_PREP_TIMEOUT_SECONDS-4', 'AI_LESSON_PREP_MAX_OUTPUT_TOKENS-8191']) {
+    test('archived native unknown admission replay remains available under captured generation gate: ' + setting, async () => {
+        const unknown = bySelector('test_actual_dbapi_unknown_ack_no_redispatch_or_write_retry[after-admission]');
+        const tightened = bySelector('test_existing_runtime_current_config_change_fails_new_post_but_replay_survives[' + setting + ']');
+        const caps = tightened.exchanges.find(x => x.request.path.endsWith('/material-proposals/capabilities'));
+        const h = await harness(unknown);
+        try {
+            assert.equal(await h.generate(), false); h.setProposalCapabilities(caps);
+            assert.equal(await h.hook.retryMaterialProposalsCapabilities(), true);
+            assert.equal(h.hook.state.materialProposals.capabilities.data.generate, false);
+            assert.equal(h.hook.state.materialProposals.capabilities.data.read, true);
+            assert.equal(await h.hook.refreshMaterialProposal(), true);
+            assert.equal(h.hook.state.materialProposals.canAdopt, false);
+            assert.equal(h.hook.state.materialProposals.canRetry, true);
+            assert.equal(await h.hook.generateMaterialProposal(), false);
+            assert.equal(await h.hook.retryMaterialProposal(), true);
+            const calls = mutatingCalls(h); assert.equal(calls.length, 2);
+            assert.equal(calls[0].body, calls[1].body); assert.equal(calls[0].key, calls[1].key);
+            assert.equal(h.hook.state.materialProposals.run.receipt.replayed, true);
+            assert.equal(h.hook.state.materialProposals.retryAvailable, false);
+            assert.equal(h.hook.state.materialProposals.canGenerate, false);
+            assert.equal(h.hook.state.materials.dirty, false);
+            // This combines immutable archived DTOs in a finite frontend replay.
+            // It is not a new configuration transition, provider call or native/MySQL run.
+            assert.ok(h.actualCalls.some(call => call.exchange === caps));
+        } finally { h.close(); }
+    });
+}
 test('actual stale-source and foreign404 observations retain readonly preview without adopting or writing', async () => {
     const group = bySelector('test_current_freshness_authority_and_foreign_ownership[source]'), h = await harness(group);
     try {

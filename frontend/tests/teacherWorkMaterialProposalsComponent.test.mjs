@@ -102,6 +102,40 @@ test('uncertain generation exposes only an explicit original-request retry with 
         assert.equal(host.emitted['retry-material-proposal'].length, 1); assert.equal(host.emitted['generate-material-proposal'], undefined);
     } finally { host.close(); }
 });
+test('COMPLETE preview with an unconfirmed command exposes read-authorized original retry while generation stays disabled', async () => {
+    const current = state({ status: 'complete', run: { run_id: 'run-a', stage: 'COMPLETE' }, proposal: proposal(),
+        freshness: { adoptable: true, reason: null }, retryAvailable: true, canRetry: true, canGenerate: false, canAdopt: false });
+    current.materialProposals.capabilities.data.generate = false;
+    current.materialProposals.capabilities.data.provider_configured = false;
+    const host = await mount(await component(), { state: current });
+    try {
+        assert.equal(button(host.root, generateLabel).props.disabled, true);
+        assert.equal(button(host.root, adoptLabel).props.disabled, true);
+        assert.equal(button(host.root, '用同一请求重试建议').props.disabled, false);
+        click(button(host.root, '用同一请求重试建议')); assert.deepEqual(host.emitted['retry-material-proposal'], [[]]);
+        const gates = [
+            () => { current.materialProposals.canRetry = false; },
+            () => { current.materialProposals.capabilities.data.read = false; },
+            () => { current.materialProposals.capabilities.status = 'loading'; },
+            () => { current.materialProposals.capabilities.data.external_provider_verified = true; },
+            () => { current.materialProposals.capabilities.data.skill_ref = 'other@1'; },
+            () => { current.materialProposals.status = 'generating'; },
+            () => { current.packageWriteBusy = true; },
+            () => { current.createOpen = true; },
+            () => { current.task = null; }
+        ];
+        for (const change of gates) {
+            current.materialProposals.canRetry = true; current.materialProposals.capabilities = capability();
+            current.materialProposals.capabilities.data.generate = false; current.materialProposals.status = 'complete';
+            current.packageWriteBusy = false; current.createOpen = false; current.task = { task_id: 'task-a' };
+            change(); await settle();
+            const control = button(host.root, '用同一请求重试建议');
+            assert.equal(control?.props.disabled ?? true, true);
+            if (control) click(control); assert.equal(host.emitted['retry-material-proposal'].length, 1);
+        }
+        assert.equal(host.emitted['generate-material-proposal'], undefined); assert.equal(host.emitted['adopt-material-proposal'], undefined);
+    } finally { host.close(); }
+});
 
 test('manual refresh and cancel are explicit and independently capability gated', async () => {
     const current = state({ status: 'running', run: { run_id: 'run-a', stage: 'OUTLINE_RUNNING' }, canCancel: true, canRefresh: true }),

@@ -52,7 +52,8 @@ export function useTeacherWorkMaterialProposals(state, { api, newIdempotencyKey,
         state.materialProposalBusy = Boolean(flights.send || flights.cancel || active(current.run));
         current.canSelect = Boolean(available('generate') && taskReady && !otherBusy() && !writing && !reading && !operation && !active(current.run));
         current.canGenerate = Boolean(current.canSelect && current.selectedMessage && current.sourceMessageId === current.selectedMessage.message_id);
-        current.canRetry = Boolean(available('generate') && operation && current.retryAvailable && !otherBusy() && !writing && !reading);
+        // Recover only the frozen command; new-generation availability does not govern historical replay.
+        current.canRetry = Boolean(available('read') && operation && current.retryAvailable && !otherBusy() && !writing && !reading);
         current.canRefresh = Boolean(available('read') && (current.run || queryRunId) && !writing && !reading);
         current.canCancel = Boolean(available('cancel') && active(current.run) && !flights.send && !flights.cancel && !flights.adopt && !state.packageWriteBusy);
         current.canAdopt = Boolean(available('read') && !writing && !reading && !operation && taskReady && !otherBusy() && current.run?.stage === 'COMPLETE' &&
@@ -151,13 +152,14 @@ export function useTeacherWorkMaterialProposals(state, { api, newIdempotencyKey,
                 operation = { body, key };
             } catch (caught) { state.materialProposals.error = failure(caught); state.materialProposals.status = 'error'; return false; }
         }
-        stopRead(); abort('history'); const value = { ...request(), operation: copy(operation) }; flights.send = value;
+        stopRead(); abort('history'); const value = { ...request(), operation: copy(operation), retry }; flights.send = value;
         state.materialProposals.status = 'generating'; state.materialProposals.error = null; state.materialProposals.retryAvailable = false;
         state.materialProposals.pendingReplace = false; stash(); flags();
         try {
             const run = bindRun(await api.generateMaterialProposal(value.token.task_id, copy(value.operation.body),
                 { signal: value.controller.signal, idempotencyKey: value.operation.key }), value.token.task_id, null, value.operation.body);
-            if (!fresh('send', value) || !available('generate')) return false;
+            if (!fresh('send', value) || !available(retry ? 'read' : 'generate')) return false;
+            if (retry && !run.receipt.replayed && !available('generate')) throw { reason: 'invalid_response' };
             operation = null; queryRunId = run.run_id; state.materialProposals.retryAvailable = false; stash(); applyRun(run);
             flights.send = null; if (run.stage === 'COMPLETE') await readSelected(); else schedule(); void reloadMaterialProposalHistory(); return true;
         } catch (caught) {
@@ -243,7 +245,7 @@ export function useTeacherWorkMaterialProposals(state, { api, newIdempotencyKey,
     watch(() => [state.materialProposals.capabilities.status, state.materialProposals.capabilities.data?.read,
         state.materialProposals.capabilities.data?.generate, state.materialProposals.capabilities.data?.cancel], () => {
         if (!available('read')) { stopRead(); abort('history'); }
-        if (!available('generate')) { abort('send'); stash(); }
+        if (!available(flights.send?.retry ? 'read' : 'generate')) { abort('send'); stash(); }
         if (!available('cancel')) abort('cancel'); flags();
     }, { flush: 'sync' });
     watch(() => [state.actor, state.role, state.authEpoch, state.authVerified], () => { if (!state.authVerified || state.role !== 'teacher') pending.clear(); }, { flush: 'sync' });

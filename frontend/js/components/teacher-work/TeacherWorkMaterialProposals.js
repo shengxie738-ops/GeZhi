@@ -67,7 +67,8 @@ export default {
             capabilities.value.data?.provider_configured === true);
         const canGenerate = computed(() => generateCapability.value && sourceSelected.value && proposals.value.canGenerate === true && !busy.value &&
             !proposals.value.retryAvailable && ['idle', 'complete', 'failed', 'cancelled', 'error'].includes(proposals.value.status));
-        const canRetry = computed(() => generateCapability.value && proposals.value.retryAvailable === true && proposals.value.canRetry === true && !busy.value);
+        const canRetry = computed(() => taskSelected.value && confirmed.value && capabilities.value.data?.read === true &&
+            proposals.value.retryAvailable === true && proposals.value.canRetry === true && !busy.value);
         const canRefresh = computed(() => taskSelected.value && confirmed.value && capabilities.value.data?.read === true &&
             Boolean(proposals.value.run || proposals.value.queryRunId) && proposals.value.canRefresh === true && !busy.value);
         const canCancel = computed(() => taskSelected.value && confirmed.value && capabilities.value.data?.cancel === true &&

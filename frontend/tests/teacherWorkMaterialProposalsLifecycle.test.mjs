@@ -66,6 +66,82 @@ test('uncertain submission retries only exact command and key even after task re
         assert.equal(h.hook.state.materialProposals.canAdopt, false); assert.equal(h.hook.state.materials.draft.lesson.title, '');
     } finally { h.scope.stop(); }
 });
+const readOnlyProposals = (reason = 'proposal_runtime_unavailable') => ({ ...proposalCapabilities(), generate: false,
+    provider_configured: reason !== 'provider_unconfigured', reasons: { generate: reason } });
+for (const reason of ['proposal_runtime_unavailable', 'provider_unconfigured']) test('uncertain COMPLETE query recovers original replay with new generation unavailable: ' + reason, async () => {
+    let attempts = 0, capabilities = proposalCapabilities();
+    const h = await harness({ getMaterialProposalsCapabilities: async () => capabilities,
+        generateMaterialProposal: async (...args) => { h.calls.generate.push(args);
+            if (++attempts === 1) throw { reason: 'commit_outcome_unknown', queryRunId: proposalRunId, status: 503 };
+            return proposalRun('COMPLETE', { operation: 'generate', replayed: true }); } });
+    try {
+        h.hook.selectMaterialProposalSource(proposalMessageId); assert.equal(await h.hook.generateMaterialProposal(), false);
+        capabilities = readOnlyProposals(reason); assert.equal(await h.hook.retryMaterialProposalsCapabilities(), true);
+        assert.equal(await h.hook.refreshMaterialProposal(), true);
+        const current = h.hook.state.materialProposals;
+        assert.equal(current.run.stage, 'COMPLETE'); assert.equal(current.freshness.adoptable, true);
+        assert.equal(current.canGenerate, false); assert.equal(current.canAdopt, false, 'query cannot manufacture a command receipt');
+        assert.equal(current.canRetry, true, 'read authorization permits only the retained original request');
+        assert.equal(await h.hook.generateMaterialProposal(), false); assert.equal(h.calls.generate.length, 1);
+        assert.equal(await h.hook.retryMaterialProposal(), true);
+        assert.deepEqual(h.calls.generate[1][1], h.calls.generate[0][1]);
+        assert.equal(h.calls.generate[1][2].idempotencyKey, h.calls.generate[0][2].idempotencyKey);
+        assert.equal(current.retryAvailable, false); assert.equal(current.canRetry, false); assert.equal(current.canGenerate, false);
+        assert.equal(current.canAdopt, true); assert.equal(h.hook.state.materials.dirty, false);
+        assert.equal(await h.hook.adoptMaterialProposal(), true); assert.equal(h.hook.state.materials.dirty, true);
+        assert.equal(h.hook.state.materials.proposalOrigin.run_id, proposalRunId); assert.equal(h.calls.generate.length, 2);
+    } finally { h.scope.stop(); }
+});
+test('original replay survives a new-generation gate tightening during its response', async () => {
+    let attempts = 0; const pending = deferred(), h = await harness({ generateMaterialProposal: (...args) => {
+        h.calls.generate.push(args); return ++attempts === 1 ? Promise.reject({ reason: 'commit_outcome_unknown', queryRunId: proposalRunId, status: 503 }) : pending.promise;
+    } });
+    try {
+        h.hook.selectMaterialProposalSource(proposalMessageId); await h.hook.generateMaterialProposal();
+        const retrying = h.hook.retryMaterialProposal(); assert.equal(h.calls.generate.length, 2);
+        h.hook.state.materialProposals.capabilities.data = readOnlyProposals();
+        assert.equal(h.calls.generate[1][2].signal.aborted, false, 'the old replay still has read authorization');
+        pending.resolve(proposalRun('COMPLETE', { operation: 'generate', replayed: true }));
+        assert.equal(await retrying, true); assert.equal(h.hook.state.materialProposals.canAdopt, true);
+        assert.equal(h.hook.state.materialProposals.canGenerate, false); assert.equal(h.hook.state.materials.dirty, false);
+    } finally { pending.resolve(proposalRun('COMPLETE', { operation: 'generate', replayed: true })); h.scope.stop(); }
+});
+test('read-only recovery rejects a new-admission receipt and retains original uncertain command', async () => {
+    let attempts = 0; const h = await harness({ generateMaterialProposal: async (...args) => { h.calls.generate.push(args);
+        if (++attempts === 1) throw { reason: 'commit_outcome_unknown', queryRunId: proposalRunId, status: 503 };
+        return proposalRun('COMPLETE', { operation: 'generate', replayed: false }); } });
+    try {
+        h.hook.selectMaterialProposalSource(proposalMessageId); await h.hook.generateMaterialProposal();
+        h.hook.state.materialProposals.capabilities.data = readOnlyProposals();
+        assert.equal(h.hook.state.materialProposals.canRetry, true); assert.equal(await h.hook.retryMaterialProposal(), false);
+        assert.equal(h.hook.state.materialProposals.retryAvailable, true); assert.equal(h.hook.state.materialProposals.canAdopt, false);
+        assert.equal(h.hook.state.materialProposals.run, null); assert.equal(h.hook.state.materials.dirty, false);
+    } finally { h.scope.stop(); }
+});
+test('read-only original replay retains identity revision disposal and read-gate fences', async () => {
+    for (const change of ['actor', 'role', 'epoch', 'auth', 'task', 'view', 'revision', 'working', 'dispose', 'read', 'capability', 'create']) {
+        let attempts = 0; const pending = deferred(), h = await harness({ generateMaterialProposal: (...args) => {
+            h.calls.generate.push(args); return ++attempts === 1 ? Promise.reject({ reason: 'commit_outcome_unknown', queryRunId: proposalRunId, status: 503 }) : pending.promise;
+        } });
+        try {
+            h.hook.selectMaterialProposalSource(proposalMessageId); await h.hook.generateMaterialProposal();
+            h.hook.state.materialProposals.capabilities.data = readOnlyProposals();
+            assert.equal(h.hook.state.materialProposals.canRetry, true, change); const retrying = h.hook.retryMaterialProposal();
+            if (change === 'actor') h.refs.actor.value = 'teacher-b'; if (change === 'role') h.refs.role.value = 'student';
+            if (change === 'epoch') h.refs.authEpoch.value++; if (change === 'auth') h.refs.authVerified.value = false;
+            if (change === 'task') h.hook.state.task_id = '11111111-1111-4111-8111-111111111111';
+            if (change === 'view') h.refs.currentView.value = 't_lesson_prep'; if (change === 'revision') h.hook.state.input_revision++;
+            if (change === 'working') h.hook.state.working_revision++; if (change === 'dispose') h.scope.stop();
+            if (change === 'read') h.hook.state.materialProposals.capabilities.data.read = false;
+            if (change === 'capability') h.hook.state.materialProposals.capabilities.status = 'loading';
+            if (change === 'create') h.hook.state.createOpen = true;
+            assert.equal(h.calls.generate[1][2].signal.aborted, true, change);
+            pending.resolve(proposalRun('COMPLETE', { operation: 'generate', replayed: true }));
+            assert.equal(await retrying, false, change); assert.equal(h.hook.state.materialProposals.canAdopt, false, change);
+            assert.equal(h.hook.state.materials.dirty, false, change);
+        } finally { pending.resolve(proposalRun('COMPLETE', { operation: 'generate', replayed: true })); h.scope.stop(); }
+    }
+});
 test('dirty draft replacement requires visible choice and fresh server observation at adoption', async () => {
     let read = proposalRead(); const h = await harness({ getMaterialProposal: async () => read,
         listMaterialProposalRuns: async () => ({ task_id: proposalTaskId, runs: [proposalRun('COMPLETE')] }) });
