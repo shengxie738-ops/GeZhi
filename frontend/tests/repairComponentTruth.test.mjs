@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { ref as vueRef, readonly, isReadonly, isRef } from 'vue';
+import { getTeachingMenuInfo } from '../js/controllers/teachingNavigation.js';
 const vue = {ref:v=>({value:v}), reactive:v=>v, computed:f=>({get value(){return f()}}), watch(){}, onMounted(){}, getCurrentScope(){return null;}, onScopeDispose(){}, onUnmounted(){}, onBeforeUnmount(){}, nextTick:async()=>{}, inject(){}};
 function load(path, deps={}) {
  let source=fs.readFileSync(new URL('../js/'+path,import.meta.url),'utf8').replace(/^import .*?;\r?$/gm,'');
@@ -10,6 +12,8 @@ function load(path, deps={}) {
  const context={...vue, CustomEvent:class {constructor(type){this.type=type}}, console, setTimeout,clearTimeout,confirm:()=>true,localStorage:{getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,''+v),removeItem:k=>values.delete(k)}, window:{location:{},addEventListener:(k,f)=>events.set(k,f),removeEventListener(){},dispatchEvent:e=>events.get(e.type)?.(e)}, ...deps};
  vm.createContext(context);vm.runInContext(source,context);return context;
 }
+// Import stripping must retain the real auth identity and navigation boundaries.
+const loadAuth=(deps={})=>load('hooks/useAuth.js',{ref:vueRef,readonly,getTeachingMenuInfo,...deps});
 const setup=(c,props={})=>{const notices=[];return {state:c.component.setup(props,{emit:(...x)=>notices.push(x)}),notices}};
 test('empty review queue and error never invent students',async()=>{
  let fail=false;const c=load('components/TeacherLearningDiagnosisReview.js',{teacherLearningDiagnosisApi:{listReviews:async()=>{if(fail)throw Error('offline');return []}}});
@@ -29,7 +33,7 @@ test('teacher dashboard starts without fabricated attendance or student alerts',
  const {state:s,notices}=setup(load('components/TeacherDashboard.js',{homeworkApi:{},forumApi:{},formatTime:()=>''}));assert.equal(s.attendanceRate.value,null);assert.equal(s.alertStudents.value.length,0);assert.equal(s.todaySchedule.value.length,0);s.startCheckIn({status:'pending'});s.nudgeAbsentStudents();assert.ok(notices.every(n=>n[2]!=='success'));
 });
 test('logout and expiry clear token and reactive identity; malformed profile safe',()=>{
- const c=load('hooks/useAuth.js');c.localStorage.setItem('token','old');c.localStorage.setItem('currentUser','{broken');assert.doesNotThrow(()=>c.useAuth(()=>{}));c.localStorage.setItem('currentUser','{"id":"A"}');c.localStorage.setItem('isLoggedIn','true');const s=c.useAuth(()=>{});s.handleLogout();assert.equal(c.localStorage.getItem('token'),null);assert.equal(s.currentUser.value,null);
+ const c=loadAuth();c.localStorage.setItem('token','old');c.localStorage.setItem('currentUser','{broken');assert.doesNotThrow(()=>c.useAuth(()=>{}));c.localStorage.setItem('currentUser','{"id":"A"}');c.localStorage.setItem('isLoggedIn','true');const s=c.useAuth(()=>{});s.handleLogout();assert.equal(c.localStorage.getItem('token'),null);assert.equal(s.currentUser.value,null);
  c.localStorage.setItem('token','again');c.window.dispatchEvent({type:'auth-expired'});assert.equal(c.localStorage.getItem('token'),null);
 });
 test('agent save failure preserves local configuration and open draft',async()=>{
@@ -43,7 +47,15 @@ test('analytics dispatch failure does not fabricate record or broadcast',async()
  await assert.rejects(c.analyticsApi.dispatchStudentInteraction({type:'homework',target:{studentIds:['S']}}),/offline/);
 });
 test('auth bootstrap requires server identity and rejects a stale verification after logout',async()=>{
- let resolve;const c=load('hooks/useAuth.js',{request:()=>new Promise(r=>resolve=r)});c.localStorage.setItem('token','token');c.localStorage.setItem('isLoggedIn','true');const s=c.useAuth(()=>{});assert.equal(s.authVerified.value,false);const p=s.verifySession();s.handleLogout();resolve({success:true,data:{username:'old'}});await p;assert.equal(s.currentUser.value,null);assert.equal(s.authVerified.value,false);
+ let resolve;const c=loadAuth({request:()=>new Promise(r=>resolve=r)});c.localStorage.setItem('token','token');c.localStorage.setItem('isLoggedIn','true');const s=c.useAuth(()=>{});assert.equal(s.authVerified.value,false);const p=s.verifySession();s.handleLogout();resolve({success:true,data:{username:'old'}});await p;assert.equal(s.currentUser.value,null);assert.equal(s.authVerified.value,false);
+});
+test('auth epoch stays caller-readonly while server verification and logout advance it',async()=>{
+ const c=loadAuth({request:async()=>({success:true,data:{username:'S',role:'student'}})});c.localStorage.setItem('token','token');c.localStorage.setItem('currentView','teaching-courses');const s=c.useAuth(()=>{});
+ assert.equal(s.currentView.value,'teaching-courses');assert.equal(s.currentMenuInfo.value,getTeachingMenuInfo('teaching-courses'));
+ assert.equal(isRef(s.authEpoch),true);assert.equal(isReadonly(s.authEpoch),true);
+ const initial=s.authEpoch.value,warn=console.warn;try{console.warn=()=>{};s.authEpoch.value=100;}finally{console.warn=warn;}assert.equal(s.authEpoch.value,initial);
+ await s.verifySession();assert.equal(s.authEpoch.value,initial+1);assert.equal(s.authVerified.value,true);
+ s.handleLogout();assert.equal(s.authEpoch.value,initial+2);assert.equal(s.authVerified.value,false);assert.equal(s.currentUser.value,null);
 });
 test('homework submission requires server receipt',async()=>{
  const {state:s,notices}=setup(load('components/StudentHomework.js',{RadarChart:{},mockSubjects:[],homeworkApi:{submitHomework:async()=>({success:true})}}),{currentUser:{username:'S'}});s.selectedHomework.value={id:'H'};s.homeworkList.value=[{id:'H',status:'unsubmitted'}];await s.handleSubmit();assert.equal(s.homeworkList.value[0].status,'unsubmitted');assert.ok(notices.some(n=>n[2]==='error'));
@@ -54,7 +66,7 @@ test('diagnosis unavailable run and submit never claim recorded attempt',async()
 });
 
 test('analytics missing focus measurements remain unknown, and reminders do not improve focus locally',async()=>{
- const c=load('components/TeacherAnalyticsCenter.js',{LineChart:{},RadarChart:{},TeacherLearningDiagnosisReview:{},analyticsApi:{dispatchStudentInteraction:async()=>({record:{id:'R'}}),getStudentDetails:async()=>({})}});const {state:s}=setup(c);s.overviewStats.value={hourlyActiveData:[4]};assert.equal(s.hourlyStats.value[0].focusRate,null);assert.equal(s.hourlyStats.value[0].behaviorDesc,'暂无行为证据');
+ const c=load('components/TeacherAnalyticsCenter.js',{LineChart:{},RadarChart:{},TeacherLearningDiagnosisReview:{},analyticsApi:{dispatchStudentInteraction:async()=>({record:{id:'R'}}),getStudentDetails:async()=>({})}});const {state:s}=setup(c);s.overviewStats.value={hourlyActiveData:[4]};const hour=s.hourlyStats.value[0];assert.equal(hour.activeCount,4);assert.equal(hour.focusRate,null);assert.equal(hour.tasks.length,0);assert.equal(hour.isGolden,false);assert.equal(hour.isConflict,false);assert.match(c.component.template,/专注度：未测量/);
  s.activeStudent.value={username:'S',name:'S',focus:30,alert:true};await s.handleSendNudge();assert.equal(s.activeStudent.value.focus,30);
 });
 test('unavailable agents supply honest display metadata without a pretend configuration',()=>{

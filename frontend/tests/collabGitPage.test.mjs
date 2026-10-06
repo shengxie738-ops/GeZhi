@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { isCopyableGitCommand, normalizeStudentGitReceipt, studentGitPrActionUrl } from '../js/utils/studentGitGuidance.js';
 
 const frontendRoot = new URL('../', import.meta.url);
 const codingSandbox = readFileSync(new URL('js/components/CodingSandbox.js', frontendRoot), 'utf8');
@@ -35,10 +36,16 @@ assert.match(codingSandbox, /TeamCoachFeedback/);
 assert.match(codingSandbox, /member\.prCount/);
 assert.match(codingSandbox, /Git 事件日志/);
 assert.match(codingSandbox, /复制成功，请到终端执行。/);
-assert.doesNotMatch(codingSandbox, /打开 Gitea/);
+assert.match(codingSandbox, /<a\b[^>]*v-if="step\.actionUrl"[^>]*:href="step\.actionUrl"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*>打开 Gitea 创建 PR<\/a>/);
+assert.match(codingSandbox, /const prCreationUrl = computed\(\(\) => studentGitPrActionUrl\(/);
+assert.match(codingSandbox, /<button\b[^>]*@click="openExternalLink\(prCreationUrl\)"[^>]*:disabled="!prCreationUrl"[^>]*aria-label="在 Gitea 创建当前任务 PR"/);
+assert.match(codingSandbox, /copyWorkflowCommand\(step, entry\)/);
+assert.match(codingSandbox, /if \(!entry \|\| !isCopyableGitCommand\(entry\.command, step\)\)/);
 assert.match(codingSandbox, /创建团队仓库/);
 assert.match(codingSandbox, /绑定已有仓库/);
-assert.match(codingSandbox, /等待系统检测/);
+assert.match(codingSandbox, /if \(status === 'unknown'\) return 'border-amber-200 bg-amber-50\/30 text-slate-600'/);
+assert.match(codingSandbox, /role="status" aria-live="polite"[^>]*>\{\{ step\.statusLabel \}\}/);
+assert.match(codingSandbox, /当前任务分配未验证/);
 
 assert.match(codingSandbox, /data-testid="collab-repository-card"/);
 assert.match(codingSandbox, /canManageCollabProject/);
@@ -57,5 +64,60 @@ assert.doesNotMatch(collabSection, />队长<\/button>/);
 assert.doesNotMatch(collabSection, /monaco-editor-container/);
 assert.doesNotMatch(collabSection, /模块编写:/);
 assert.doesNotMatch(collabSection, /测试并提交/);
+
+// Safe browser actions remain distinct from executable commands and evidence.
+const repository = {
+  giteaRepositoryId: 17, giteaOwner: 'campus', giteaRepo: 'team',
+  externalVerified: true, defaultBranch: 'develop',
+  htmlUrl: 'https://git.example.test/campus/team',
+  cloneUrl: 'https://git.example.test/campus/team.git',
+};
+const member = {
+  id: 'synthetic-student', username: 'synthetic-student', branch: 'feature/student-task',
+  taskRevision: 2, taskEvidence: { repositoryKey: 'campus/team#17' },
+  currentTask: { revision: 2, bindingStatus: 'assigned', evidence: [] },
+};
+const receipt = normalizeStudentGitReceipt({ repository, memberProgress: [member] }, member.username);
+const prStep = receipt.workflowSteps.find(step => step.id === 'pull_request');
+const safePrUrl = 'https://git.example.test/campus/team/pulls/new?head=feature%2Fstudent-task&base=develop';
+assert.equal(studentGitPrActionUrl(receipt.workflowSteps, repository, member), safePrUrl);
+assert.equal(prStep.actionUrl, safePrUrl);
+assert.deepEqual(prStep.commands, [], 'PR navigation is never a terminal command');
+assert.equal(isCopyableGitCommand(safePrUrl, prStep), false);
+for (const unsafeUrl of [
+  'javascript:alert(1)',
+  safePrUrl.replace('git.example.test', 'unrelated.example.test'),
+  safePrUrl.replace('/campus/team/', '/campus/other/'),
+  safePrUrl.replace('feature%2Fstudent-task', 'feature%2Fsomeone-else'),
+  safePrUrl.replace('base=develop', 'base=main'),
+  safePrUrl.replace('https://', 'https://user:password@'),
+  `${safePrUrl}&extra=value`,
+]) {
+  assert.equal(studentGitPrActionUrl([{ ...prStep, actionUrl: unsafeUrl }], repository, member), '', unsafeUrl);
+}
+assert.equal(studentGitPrActionUrl(receipt.workflowSteps, { ...repository, externalVerified: false }, member), '');
+assert.equal(studentGitPrActionUrl(receipt.workflowSteps, repository, { ...member, branch: repository.defaultBranch }), '');
+
+const projected = receipt.memberProgress[0].currentTask;
+for (const evidence of ['localSync', 'tests', 'nativeReview']) assert.equal(projected[evidence], 'unknown', evidence);
+assert.equal(projected.pushStatus, 'pending');
+assert.equal(projected.mergeStatus, 'pending');
+for (const id of ['branch', 'push', 'review', 'merge', 'post_merge']) {
+  const step = receipt.workflowSteps.find(item => item.id === id);
+  assert.equal(step.status, 'unknown', id);
+  assert.equal(step.evidenceKind, 'unknown', id);
+}
+assert.match(receipt.workflowSteps.find(step => step.id === 'post_merge').statusLabel, /系统未验证/);
+const commit = receipt.workflowSteps.find(step => step.id === 'commit');
+for (const entry of commit.commandDetails.filter(entry => entry.kind === 'template')) {
+  assert.equal(entry.copyable, false);
+  assert.equal(isCopyableGitCommand(entry.command, commit), false);
+}
+const unverified = normalizeStudentGitReceipt({
+  repository, memberProgress: [{ ...member, taskEvidence: { repositoryKey: 'campus/other#17' }, currentTask: { ...member.currentTask, pushStatus: 'detected', mergeStatus: 'merged', progress: 100 } }],
+}, member.username);
+assert.equal(unverified.memberProgress[0].currentTask.pushStatus, 'pending');
+assert.equal(unverified.memberProgress[0].currentTask.mergeStatus, 'pending');
+assert.equal(unverified.teamSummary.completedMembers, 0);
 
 console.log('collabGitPage static tests passed');

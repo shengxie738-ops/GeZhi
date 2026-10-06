@@ -1,0 +1,2569 @@
+{
+  "action_generation": {
+    "detail": "analytics_generation_unavailable",
+    "request": {
+      "method": "POST",
+      "path": "/analytics/action-queue/generate"
+    },
+    "status": 503
+  },
+  "action_queue": {
+    "code": 200,
+    "data": [
+      {
+        "id": "historical-action",
+        "reason": "Unverified saved explanation",
+        "recordEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "历史记录；依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "historical_basis_unverified",
+          "sampleCount": 0,
+          "source": "analytics/action",
+          "window": null
+        },
+        "studentIds": [
+          "20260002",
+          "20260001"
+        ],
+        "title": "Historical reminder"
+      }
+    ],
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/action-queue"
+    },
+    "status": 200
+  },
+  "advice_generation": {
+    "detail": "analytics_generation_unavailable",
+    "request": {
+      "method": "POST",
+      "path": "/analytics/advices/generate"
+    },
+    "status": 503
+  },
+  "empty_overview": {
+    "code": 200,
+    "data": {
+      "actionQueue": [],
+      "actionQueueEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/action",
+        "window": null
+      },
+      "aiAdvices": [],
+      "aiAdvicesEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/advice",
+        "window": null
+      },
+      "classRadarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint完成率未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度均值未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "代码质量与工程未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "学术论坛活跃度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "理论逻辑完备度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "unavailable",
+          "label": "规划一致性未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        }
+      },
+      "classRadarValues": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveData": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "hourlyActiveEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "hourlyBehaviors": [],
+      "hourlyBehaviorsEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无行为证据",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_behavior_measurement_source",
+        "sampleCount": 0,
+        "source": "behavior",
+        "window": null
+      },
+      "hourlyFocusData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyFocusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "interactionRecords": [],
+      "interactionRecordsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/interaction",
+        "window": null
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "summary": {
+        "activeInterventions": 0,
+        "activeInterventionsEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存记录列表；历史依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "analytics/interaction",
+          "window": null
+        },
+        "averageFocus": null,
+        "averageFocusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "averageProgress": null,
+        "averageProgressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "recordedSubmissionCount": 0,
+        "recordedSubmissionEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "homework/submission+exams/attempt",
+          "window": null
+        },
+        "responseRate": null,
+        "responseRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录交互完成率；账号自报完成",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_valid_completion_denominator",
+          "sampleCount": 0,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "studentCount": 2,
+        "studentCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "当前已分配规范学生账号数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 2,
+          "reason": null,
+          "sampleCount": 2,
+          "source": "current_canonical_roster",
+          "window": null
+        }
+      },
+      "weakPoints": [],
+      "weakPointsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "当前显示的已记录错题数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "window": null
+      },
+      "weeklyActivityCounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "weeklyActivityDates": [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "weeklyActivityEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "weeklyActivityRates": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/overview"
+    },
+    "status": 200
+  },
+  "interactions": {
+    "code": 200,
+    "data": [
+      {
+        "completedCount": 1,
+        "completionEvidence": {
+          "evidenceStatus": "self_reported",
+          "label": "已记录交互完成率；账号自报完成，来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": null,
+          "sampleCount": 1,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "completionRate": 50,
+        "completionRecordCount": 1,
+        "id": "interaction-A",
+        "recipientCount": 2,
+        "status": "running",
+        "studentIds": [
+          "20260001",
+          "20260002"
+        ],
+        "title": "Manual saved interaction"
+      }
+    ],
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/interactions"
+    },
+    "status": 200
+  },
+  "invalid_overview": {
+    "code": 200,
+    "data": {
+      "actionQueue": [],
+      "actionQueueEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/action",
+        "window": null
+      },
+      "aiAdvices": [],
+      "aiAdvicesEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/advice",
+        "window": null
+      },
+      "classRadarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint完成率未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度均值未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "代码质量与工程未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "学术论坛活跃度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "理论逻辑完备度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "unavailable",
+          "label": "规划一致性未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        }
+      },
+      "classRadarValues": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveEvidence": {
+        "coverageComplete": false,
+        "denominatorCount": 2,
+        "evidenceStatus": "unavailable",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 2,
+        "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "invalid_recorded_timezone_declaration",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "hourlyBehaviors": [],
+      "hourlyBehaviorsEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无行为证据",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_behavior_measurement_source",
+        "sampleCount": 0,
+        "source": "behavior",
+        "window": null
+      },
+      "hourlyFocusData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyFocusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "interactionRecords": [],
+      "interactionRecordsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/interaction",
+        "window": null
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "summary": {
+        "activeInterventions": 0,
+        "activeInterventionsEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存记录列表；历史依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "analytics/interaction",
+          "window": null
+        },
+        "averageFocus": null,
+        "averageFocusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "averageProgress": null,
+        "averageProgressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "recordedSubmissionCount": 2,
+        "recordedSubmissionEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 2,
+          "reason": "complete_record_read",
+          "sampleCount": 2,
+          "source": "homework/submission+exams/attempt",
+          "window": null
+        },
+        "responseRate": null,
+        "responseRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录交互完成率；账号自报完成",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_valid_completion_denominator",
+          "sampleCount": 0,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "studentCount": 2,
+        "studentCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "当前已分配规范学生账号数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 2,
+          "reason": null,
+          "sampleCount": 2,
+          "source": "current_canonical_roster",
+          "window": null
+        }
+      },
+      "weakPoints": [],
+      "weakPointsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "当前显示的已记录错题数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "window": null
+      },
+      "weeklyActivityCounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "weeklyActivityDates": [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "weeklyActivityEvidence": {
+        "coverageComplete": false,
+        "denominatorCount": 2,
+        "evidenceStatus": "unavailable",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 2,
+        "label": "按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "invalid_recorded_timezone_declaration",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "weeklyActivityRates": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/overview"
+    },
+    "status": 200
+  },
+  "metadata": {
+    "accounts": "synthetic canonical accounts only",
+    "records": "synthetic in-memory SQLite only",
+    "synthetic": true,
+    "timezoneDeclarations": [
+      "",
+      "UTC",
+      "+08:00",
+      "invalid"
+    ],
+    "windowClock": "2026-10-03T07:11:54Z"
+  },
+  "offset_overview": {
+    "code": 200,
+    "data": {
+      "actionQueue": [],
+      "actionQueueEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/action",
+        "window": null
+      },
+      "aiAdvices": [],
+      "aiAdvicesEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/advice",
+        "window": null
+      },
+      "classRadarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint完成率未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度均值未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "代码质量与工程未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "学术论坛活跃度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "理论逻辑完备度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "unavailable",
+          "label": "规划一致性未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        }
+      },
+      "classRadarValues": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveData": [
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "hourlyActiveEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": "+08:00",
+        "recordedTimezoneSource": "operator_declaration",
+        "sampleCount": 2,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 2,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "hourlyBehaviors": [],
+      "hourlyBehaviorsEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无行为证据",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_behavior_measurement_source",
+        "sampleCount": 0,
+        "source": "behavior",
+        "window": null
+      },
+      "hourlyFocusData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyFocusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "interactionRecords": [],
+      "interactionRecordsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/interaction",
+        "window": null
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "summary": {
+        "activeInterventions": 0,
+        "activeInterventionsEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存记录列表；历史依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "analytics/interaction",
+          "window": null
+        },
+        "averageFocus": null,
+        "averageFocusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "averageProgress": null,
+        "averageProgressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "recordedSubmissionCount": 2,
+        "recordedSubmissionEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 2,
+          "reason": "complete_record_read",
+          "sampleCount": 2,
+          "source": "homework/submission+exams/attempt",
+          "window": null
+        },
+        "responseRate": null,
+        "responseRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录交互完成率；账号自报完成",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_valid_completion_denominator",
+          "sampleCount": 0,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "studentCount": 2,
+        "studentCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "当前已分配规范学生账号数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 2,
+          "reason": null,
+          "sampleCount": 2,
+          "source": "current_canonical_roster",
+          "window": null
+        }
+      },
+      "weakPoints": [],
+      "weakPointsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "当前显示的已记录错题数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "window": null
+      },
+      "weeklyActivityCounts": [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "weeklyActivityDates": [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "weeklyActivityEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": "+08:00",
+        "recordedTimezoneSource": "operator_declaration",
+        "sampleCount": 2,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 2,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "weeklyActivityRates": [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/overview"
+    },
+    "status": 200
+  },
+  "overview": {
+    "code": 200,
+    "data": {
+      "actionQueue": [],
+      "actionQueueEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/action",
+        "window": null
+      },
+      "aiAdvices": [],
+      "aiAdvicesEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/advice",
+        "window": null
+      },
+      "classRadarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint完成率未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度均值未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "代码质量与工程未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "学术论坛活跃度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "理论逻辑完备度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "unavailable",
+          "label": "规划一致性未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        }
+      },
+      "classRadarValues": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveEvidence": {
+        "coverageComplete": false,
+        "denominatorCount": 2,
+        "evidenceStatus": "unavailable",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 2,
+        "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "recorded_timezone_unconfigured",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "hourlyBehaviors": [],
+      "hourlyBehaviorsEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无行为证据",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_behavior_measurement_source",
+        "sampleCount": 0,
+        "source": "behavior",
+        "window": null
+      },
+      "hourlyFocusData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyFocusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "interactionRecords": [],
+      "interactionRecordsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/interaction",
+        "window": null
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "summary": {
+        "activeInterventions": 0,
+        "activeInterventionsEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存记录列表；历史依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "analytics/interaction",
+          "window": null
+        },
+        "averageFocus": null,
+        "averageFocusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "averageProgress": null,
+        "averageProgressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "recordedSubmissionCount": 2,
+        "recordedSubmissionEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 2,
+          "reason": "complete_record_read",
+          "sampleCount": 2,
+          "source": "homework/submission+exams/attempt",
+          "window": null
+        },
+        "responseRate": null,
+        "responseRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录交互完成率；账号自报完成",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_valid_completion_denominator",
+          "sampleCount": 0,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "studentCount": 2,
+        "studentCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "当前已分配规范学生账号数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 2,
+          "reason": null,
+          "sampleCount": 2,
+          "source": "current_canonical_roster",
+          "window": null
+        }
+      },
+      "weakPoints": [],
+      "weakPointsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "当前显示的已记录错题数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "window": null
+      },
+      "weeklyActivityCounts": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "weeklyActivityDates": [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "weeklyActivityEvidence": {
+        "coverageComplete": false,
+        "denominatorCount": 2,
+        "evidenceStatus": "unavailable",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 2,
+        "label": "按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "recorded_timezone_unconfigured",
+        "recordedTimezone": null,
+        "recordedTimezoneSource": null,
+        "sampleCount": 0,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 0,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "weeklyActivityRates": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/overview"
+    },
+    "status": 200
+  },
+  "student_detail": {
+    "code": 200,
+    "data": {
+      "activeRate": null,
+      "activeRateEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "专注度未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "agentName": null,
+      "alert": null,
+      "alertEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "风险评估未启用",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "risk_model_not_defined",
+        "sampleCount": 0,
+        "source": "risk",
+        "window": null
+      },
+      "checkpointRate": null,
+      "className": "",
+      "currentAgent": null,
+      "errorCount": 0,
+      "errorCountEvidence": {
+        "evidenceStatus": "measured",
+        "factCoverageComplete": true,
+        "label": "已保存错题记录数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "unreadableRecordCount": 0,
+        "window": null
+      },
+      "errors": [],
+      "focus": null,
+      "focusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "专注度未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "forumCount": 0,
+      "forumCountEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存且作者身份核验的论坛发帖数",
+        "provenanceStatus": "verified_server",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "forum/post+reply_identity",
+        "window": null
+      },
+      "goal": "掌握核心数据结构与算法",
+      "goalEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "已保存画像文本",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "profile_text_not_measurement",
+        "sampleCount": 0,
+        "source": "profile.goal",
+        "window": null
+      },
+      "id": "20260001",
+      "name": "Duplicate name",
+      "progress": null,
+      "progressEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "进度未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "assignment_denominator_unavailable",
+        "sampleCount": 0,
+        "source": "progress",
+        "window": null
+      },
+      "radarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "checkpoint",
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录诊断分数；推断，来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_diagnostic_measurement",
+          "sampleCount": 0,
+          "source": "diagnosis.scores.codeninja",
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "推断贡献指数（发帖×10+回帖×5，最高100）；不是学术能力测量",
+          "provenanceStatus": "verified_server",
+          "rawMean": null,
+          "reason": "no_contribution_index_observations",
+          "sampleCount": 0,
+          "source": "forum/post+reply_identity",
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录诊断分数；推断，来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_diagnostic_measurement",
+          "sampleCount": 0,
+          "source": "diagnosis.scores.profx",
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "inferred",
+          "label": "已记录诊断分数；推断，来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 0,
+          "reason": null,
+          "sampleCount": 1,
+          "source": "diagnosis.scores.alina",
+          "window": null
+        }
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "radarValues": [
+        0,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "recordedGrades": [
+        {
+          "kind": "letter_grade",
+          "maximum": null,
+          "recordEvidence": {
+            "evidenceStatus": "measured",
+            "label": "已保存等级文本（未转换为百分数）；来源未核验，不构成进度或掌握度测量",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": null,
+            "sampleCount": 1,
+            "source": "homework/submission.grade",
+            "window": null
+          },
+          "value": "A"
+        }
+      ],
+      "replyCount": 0,
+      "replyCountEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存且作者身份核验的论坛回复数",
+        "provenanceStatus": "verified_server",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "forum/post+reply_identity",
+        "window": null
+      },
+      "status": "unknown",
+      "studentId": "20260001",
+      "timeline": [],
+      "timelineEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无可展示的已记录时间线",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "verified_chronology_unavailable",
+        "sampleCount": 0,
+        "source": "timeline",
+        "window": null
+      },
+      "unmasteredCount": null,
+      "userId": "20260001",
+      "username": "20260001"
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/students/20260001"
+    },
+    "status": 200
+  },
+  "students": {
+    "code": 200,
+    "data": [
+      {
+        "activeRate": null,
+        "activeRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "agentName": null,
+        "alert": null,
+        "alertEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "风险评估未启用",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "risk_model_not_defined",
+          "sampleCount": 0,
+          "source": "risk",
+          "window": null
+        },
+        "checkpointRate": null,
+        "className": "",
+        "currentAgent": null,
+        "errorCount": 0,
+        "errorCountEvidence": {
+          "evidenceStatus": "measured",
+          "factCoverageComplete": true,
+          "label": "已保存错题记录数；来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "exams/mistake",
+          "unreadableRecordCount": 0,
+          "window": null
+        },
+        "focus": null,
+        "focusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "forumCount": 0,
+        "forumCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存且作者身份核验的论坛发帖数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "forum/post+reply_identity",
+          "window": null
+        },
+        "goal": "掌握核心数据结构与算法",
+        "goalEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已保存画像文本",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "profile_text_not_measurement",
+          "sampleCount": 0,
+          "source": "profile.goal",
+          "window": null
+        },
+        "id": "20260001",
+        "name": "Duplicate name",
+        "progress": null,
+        "progressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "radarEvidence": {
+          "Checkpoint完成率": {
+            "evidenceStatus": "unavailable",
+            "label": "Checkpoint未测量",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "assignment_denominator_unavailable",
+            "sampleCount": 0,
+            "source": "checkpoint",
+            "window": null
+          },
+          "专注度均值": {
+            "evidenceStatus": "unavailable",
+            "label": "专注度未测量",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_focus_measurement_source",
+            "sampleCount": 0,
+            "source": "focus",
+            "window": null
+          },
+          "代码质量与工程": {
+            "evidenceStatus": "unavailable",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_verified_diagnostic_measurement",
+            "sampleCount": 0,
+            "source": "diagnosis.scores.codeninja",
+            "window": null
+          },
+          "学术论坛活跃度": {
+            "evidenceStatus": "unavailable",
+            "label": "推断贡献指数（发帖×10+回帖×5，最高100）；不是学术能力测量",
+            "provenanceStatus": "verified_server",
+            "rawMean": null,
+            "reason": "no_contribution_index_observations",
+            "sampleCount": 0,
+            "source": "forum/post+reply_identity",
+            "window": null
+          },
+          "理论逻辑完备度": {
+            "evidenceStatus": "unavailable",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_verified_diagnostic_measurement",
+            "sampleCount": 0,
+            "source": "diagnosis.scores.profx",
+            "window": null
+          },
+          "规划一致性": {
+            "evidenceStatus": "inferred",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": 0,
+            "reason": null,
+            "sampleCount": 1,
+            "source": "diagnosis.scores.alina",
+            "window": null
+          }
+        },
+        "radarValues": [
+          0,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "recordedGrades": [
+          {
+            "kind": "letter_grade",
+            "maximum": null,
+            "recordEvidence": {
+              "evidenceStatus": "measured",
+              "label": "已保存等级文本（未转换为百分数）；来源未核验，不构成进度或掌握度测量",
+              "provenanceStatus": "legacy_unknown",
+              "rawMean": null,
+              "reason": null,
+              "sampleCount": 1,
+              "source": "homework/submission.grade",
+              "window": null
+            },
+            "value": "A"
+          }
+        ],
+        "replyCount": 0,
+        "replyCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存且作者身份核验的论坛回复数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "forum/post+reply_identity",
+          "window": null
+        },
+        "status": "unknown",
+        "unmasteredCount": null,
+        "userId": "20260001",
+        "username": "20260001"
+      },
+      {
+        "activeRate": null,
+        "activeRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "agentName": null,
+        "alert": null,
+        "alertEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "风险评估未启用",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "risk_model_not_defined",
+          "sampleCount": 0,
+          "source": "risk",
+          "window": null
+        },
+        "checkpointRate": null,
+        "className": "",
+        "currentAgent": null,
+        "errorCount": 0,
+        "errorCountEvidence": {
+          "evidenceStatus": "measured",
+          "factCoverageComplete": true,
+          "label": "已保存错题记录数；来源未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "exams/mistake",
+          "unreadableRecordCount": 0,
+          "window": null
+        },
+        "focus": null,
+        "focusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "forumCount": 0,
+        "forumCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存且作者身份核验的论坛发帖数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "forum/post+reply_identity",
+          "window": null
+        },
+        "goal": "",
+        "goalEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已保存画像文本",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "profile_text_not_measurement",
+          "sampleCount": 0,
+          "source": "profile.goal",
+          "window": null
+        },
+        "id": "20260002",
+        "name": "Duplicate name",
+        "progress": null,
+        "progressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "radarEvidence": {
+          "Checkpoint完成率": {
+            "evidenceStatus": "unavailable",
+            "label": "Checkpoint未测量",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "assignment_denominator_unavailable",
+            "sampleCount": 0,
+            "source": "checkpoint",
+            "window": null
+          },
+          "专注度均值": {
+            "evidenceStatus": "unavailable",
+            "label": "专注度未测量",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_focus_measurement_source",
+            "sampleCount": 0,
+            "source": "focus",
+            "window": null
+          },
+          "代码质量与工程": {
+            "evidenceStatus": "unavailable",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_verified_diagnostic_measurement",
+            "sampleCount": 0,
+            "source": "diagnosis.scores.codeninja",
+            "window": null
+          },
+          "学术论坛活跃度": {
+            "evidenceStatus": "unavailable",
+            "label": "推断贡献指数（发帖×10+回帖×5，最高100）；不是学术能力测量",
+            "provenanceStatus": "verified_server",
+            "rawMean": null,
+            "reason": "no_contribution_index_observations",
+            "sampleCount": 0,
+            "source": "forum/post+reply_identity",
+            "window": null
+          },
+          "理论逻辑完备度": {
+            "evidenceStatus": "unavailable",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_verified_diagnostic_measurement",
+            "sampleCount": 0,
+            "source": "diagnosis.scores.profx",
+            "window": null
+          },
+          "规划一致性": {
+            "evidenceStatus": "unavailable",
+            "label": "已记录诊断分数；推断，来源未核验",
+            "provenanceStatus": "legacy_unknown",
+            "rawMean": null,
+            "reason": "no_verified_diagnostic_measurement",
+            "sampleCount": 0,
+            "source": "diagnosis.scores.alina",
+            "window": null
+          }
+        },
+        "radarValues": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "recordedGrades": [],
+        "replyCount": 0,
+        "replyCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存且作者身份核验的论坛回复数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 0,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "forum/post+reply_identity",
+          "window": null
+        },
+        "status": "unknown",
+        "unmasteredCount": null,
+        "userId": "20260002",
+        "username": "20260002"
+      }
+    ],
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/students"
+    },
+    "status": 200
+  },
+  "utc_overview": {
+    "code": 200,
+    "data": {
+      "actionQueue": [],
+      "actionQueueEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/action",
+        "window": null
+      },
+      "aiAdvices": [],
+      "aiAdvicesEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/advice",
+        "window": null
+      },
+      "classRadarEvidence": {
+        "Checkpoint完成率": {
+          "evidenceStatus": "unavailable",
+          "label": "Checkpoint完成率未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "专注度均值": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度均值未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "代码质量与工程": {
+          "evidenceStatus": "unavailable",
+          "label": "代码质量与工程未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "学术论坛活跃度": {
+          "evidenceStatus": "unavailable",
+          "label": "学术论坛活跃度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "理论逻辑完备度": {
+          "evidenceStatus": "unavailable",
+          "label": "理论逻辑完备度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        },
+        "规划一致性": {
+          "evidenceStatus": "unavailable",
+          "label": "规划一致性未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_verified_dimension_measurement",
+          "sampleCount": 0,
+          "source": "class_radar",
+          "studentCount": 2,
+          "window": null
+        }
+      },
+      "classRadarValues": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyActiveData": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "hourlyActiveEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "近七个完整 UTC 日：该小时首次保存提交类记录的账号数；历史来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": "UTC",
+        "recordedTimezoneSource": "operator_declaration",
+        "sampleCount": 2,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 2,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "hourlyBehaviors": [],
+      "hourlyBehaviorsEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "暂无行为证据",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_behavior_measurement_source",
+        "sampleCount": 0,
+        "source": "behavior",
+        "window": null
+      },
+      "hourlyFocusData": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "hourlyFocusEvidence": {
+        "evidenceStatus": "unavailable",
+        "label": "未测量",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "no_focus_measurement_source",
+        "sampleCount": 0,
+        "source": "focus",
+        "window": null
+      },
+      "interactionRecords": [],
+      "interactionRecordsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "已保存记录列表；历史依据未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "analytics/interaction",
+        "window": null
+      },
+      "radarIndicators": [
+        {
+          "max": 100,
+          "name": "规划一致性"
+        },
+        {
+          "max": 100,
+          "name": "代码质量与工程"
+        },
+        {
+          "max": 100,
+          "name": "理论逻辑完备度"
+        },
+        {
+          "max": 100,
+          "name": "学术论坛活跃度"
+        },
+        {
+          "max": 100,
+          "name": "专注度均值"
+        },
+        {
+          "max": 100,
+          "name": "Checkpoint完成率"
+        }
+      ],
+      "summary": {
+        "activeInterventions": 0,
+        "activeInterventionsEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存记录列表；历史依据未核验",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "complete_record_read",
+          "sampleCount": 0,
+          "source": "analytics/interaction",
+          "window": null
+        },
+        "averageFocus": null,
+        "averageFocusEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "专注度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_focus_measurement_source",
+          "sampleCount": 0,
+          "source": "focus",
+          "window": null
+        },
+        "averageProgress": null,
+        "averageProgressEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "进度未测量",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "assignment_denominator_unavailable",
+          "sampleCount": 0,
+          "source": "progress",
+          "window": null
+        },
+        "recordedSubmissionCount": 2,
+        "recordedSubmissionEvidence": {
+          "evidenceStatus": "measured",
+          "label": "已保存提交类记录；历史来源未核验，可能包含演示或导入记录及未确认完成状态",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": 2,
+          "reason": "complete_record_read",
+          "sampleCount": 2,
+          "source": "homework/submission+exams/attempt",
+          "window": null
+        },
+        "responseRate": null,
+        "responseRateEvidence": {
+          "evidenceStatus": "unavailable",
+          "label": "已记录交互完成率；账号自报完成",
+          "provenanceStatus": "legacy_unknown",
+          "rawMean": null,
+          "reason": "no_valid_completion_denominator",
+          "sampleCount": 0,
+          "source": "analytics/interaction_completion",
+          "window": null
+        },
+        "studentCount": 2,
+        "studentCountEvidence": {
+          "evidenceStatus": "measured",
+          "label": "当前已分配规范学生账号数",
+          "provenanceStatus": "verified_server",
+          "rawMean": 2,
+          "reason": null,
+          "sampleCount": 2,
+          "source": "current_canonical_roster",
+          "window": null
+        }
+      },
+      "weakPoints": [],
+      "weakPointsEvidence": {
+        "evidenceStatus": "measured",
+        "label": "当前显示的已记录错题数；来源未核验",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": 0,
+        "reason": "complete_record_read",
+        "sampleCount": 0,
+        "source": "exams/mistake",
+        "window": null
+      },
+      "weeklyActivityCounts": [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "weeklyActivityDates": [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "weeklyActivityEvidence": {
+        "coverageComplete": true,
+        "denominatorCount": 2,
+        "evidenceStatus": "measured",
+        "excludedRecordCount": 0,
+        "invalidTimestampCount": 0,
+        "label": "按首次保存时间；历史来源未核验，可能包含演示或导入记录",
+        "provenanceStatus": "legacy_unknown",
+        "rawMean": null,
+        "reason": "complete_record_read",
+        "recordedTimezone": "UTC",
+        "recordedTimezoneSource": "operator_declaration",
+        "sampleCount": 2,
+        "source": "homework/submission+exams/attempt",
+        "timeBasis": "DomainRecord.created_at",
+        "validRecordCount": 2,
+        "verifiedSampleCount": 0,
+        "window": {
+          "asOf": "2026-10-03T07:11:54Z",
+          "endExclusive": "2026-10-03T00:00:00Z",
+          "startInclusive": "2026-09-26T00:00:00Z",
+          "timezone": "UTC"
+        }
+      },
+      "weeklyActivityRates": [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "message": "ok",
+    "request": {
+      "method": "GET",
+      "path": "/analytics/overview"
+    },
+    "status": 200
+  }
+}

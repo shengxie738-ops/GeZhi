@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import { installEnvironment, post, reply, context, envelope, http, scenarios, compactUnanswered, minimalLegacy, announcement } from './fixtures/rebuildForumFixtures.mjs';
+const mockDataUrl=new URL('../js/data/mockData.js',import.meta.url).href;
+const syntheticMockDataUrl=new URL('./fixtures/rebuildForumMockData.mjs',import.meta.url).href;
+// Resolve first, then replace only this exact leaf before loading the actual API.
+// API imports and test snapshots therefore observe the same writable module.
+registerHooks({resolve(specifier,context,nextResolve){const resolved=nextResolve(specifier,context);return resolved.url===mockDataUrl?{...resolved,url:syntheticMockDataUrl,shortCircuit:true}:resolved;}});
+const syntheticMocks=await import('../js/data/mockData.js');
 installEnvironment();
 const {forumApi} = await import('../js/api/forum.js');
 const {API_ORIGIN} = await import('../js/config/env.js');
 const loadIdentity = async () => { const module = await import('../js/utils/forumIdentity.js').catch(error => { if(error.code !== 'ERR_MODULE_NOT_FOUND')throw error; return null; }); assert.ok(module, 'Missing local forum identity boundary'); return module; };
+const syntheticMockNames=['mockPosts','mockAnnouncements','mockHotTopics','mockAiReplyLogs'];
+const snapshotMocks=mocks=>syntheticMockNames.map(name=>JSON.stringify(mocks[name].value));
+const assertMocksUnchanged=(mocks,before)=>assert.deepEqual(snapshotMocks(mocks),before);
 
 for(const status of [401,403,404,500]) test(`actual API preserves HTTP ${status}, even with forumMockFirst`,async()=>{
  installEnvironment();localStorage.setItem('forumMockFirst','true');
@@ -80,16 +90,39 @@ test('failed server avatar retries local default once, then hides without an ass
 
 test('failed actual API mutations leave all four approved synthetic mock arrays unchanged',async()=>{
  installEnvironment();const mocks=await import('../js/data/mockData.js');
- const names=['mockPosts','mockAnnouncements','mockHotTopics','mockAiReplyLogs'];
+ const names=syntheticMockNames;
  // This module is supplied only as an approved inert harness leaf, never real mockData.
  for(const name of names)assert.ok(Array.isArray(mocks[name].value),`Synthetic dependency ${name}.value must be an array`);
- const before=names.map(name=>JSON.stringify(mocks[name].value));
+ const before=snapshotMocks(mocks);
  globalThis.fetch=async()=>{throw new Error('Synthetic failed mutation');};
  const actions=[()=>forumApi.createPost({title:'T',content:'C',category:'qna',tags:[]}),()=>forumApi.publishAnnouncement({title:'T',content:'C'}),()=>forumApi.addHotTopic('topic'),()=>forumApi.createReply('missing',{content:'R',isAi:true}),()=>forumApi.auditAiReply('missing',{content:'C',status:'approved'})];
  // Snapshot before asserting the failures: baseline fallback is allowed to finish,
  // so a masking failure cannot hide its independently forbidden mock mutation.
- for(const action of actions)await action().catch(()=>{});
- assert.deepEqual(names.map(name=>JSON.stringify(mocks[name].value)),before);
+ const failures=[];for(const action of actions)await action().catch(error=>failures.push(error));
+ assertMocksUnchanged(mocks,before);
+ assert.equal(failures.length,actions.length,'All five failed writes must reject without a fallback success');
+});
+
+test('forum mockData imports share an inert synthetic leaf before and after the actual API loads',async()=>{
+ const mocks=await import('../js/data/mockData.js');
+ assert.equal(mocks.FORUM_SYNTHETIC_MOCK_DATA,true);
+ assert.equal(mocks,syntheticMocks);assert.equal(mocks,await import('./fixtures/rebuildForumMockData.mjs'));
+ const viaApiPath=await import(new URL('../js/api/../data/mockData.js',import.meta.url).href);
+ const consumer=await import('data:text/javascript,'+encodeURIComponent(`import * as mocks from ${JSON.stringify(mockDataUrl)};export {mocks};`));
+ for(const name of syntheticMockNames){assert.equal(viaApiPath[name],mocks[name]);assert.equal(consumer.mocks[name],mocks[name]);}
+});
+
+test('four-array snapshot guard detects awaited fallback mutations even when they reject',async()=>{
+ const mocks=await import('../js/data/mockData.js');
+ const names=syntheticMockNames;
+ const original=names.map(name=>JSON.parse(JSON.stringify(mocks[name].value)));
+ try{
+  for(const name of names){
+   const before=snapshotMocks(mocks);
+   await (async()=>{await Promise.resolve();mocks[name].value.push({id:'synthetic-forbidden-fallback'});throw new Error('Synthetic fallback still failed');})().catch(()=>{});
+   assert.throws(()=>assertMocksUnchanged(mocks,before),assert.AssertionError,`Must detect forbidden ${name} mutation`);
+  }
+ }finally{names.forEach((name,index)=>mocks[name].value.splice(0,mocks[name].value.length,...original[index]));}
 });
 
 test('old actual transport 401 after token replacement never expires the replacement actor',async()=>{

@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const useChat = readFileSync(new URL('../js/hooks/useChat.js', import.meta.url), 'utf8');
 
-// 确认工作台采用全新 一站式 Work 架构
-assert.match(html, /格至 Work/);
-assert.match(html, /新建任务/);
+// The desktop task rail keeps its task identity and guarded new-task control.
+const taskRail = html.match(/<aside\b[^>]*id="work-taskrail"[^>]*>([\s\S]*?)<\/aside>/)?.[1];
+assert.ok(taskRail, 'Work task rail should exist');
+assert.match(taskRail, /<span\b[^>]*>任务<\/span>/);
+assert.match(taskRail, /<button\b[^>]*@click="startNewConversation\(\)"[^>]*:disabled="thinkingAgent !== null"[^>]*>[\s\S]*?<span\b[^>]*>新建任务<\/span>/);
 assert.match(html, /AI 对话/);
 assert.match(html, /知识库检索/);
 assert.match(html, /引导式学习/);

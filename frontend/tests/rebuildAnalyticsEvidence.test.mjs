@@ -5,6 +5,7 @@ import * as Vue from 'vue';
 import {compile} from '@vue/compiler-dom';
 import {renderToString} from '@vue/server-renderer';
 import {readFileSync,existsSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 
 const storage=new Map(),listeners=new Map();
 globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
@@ -21,6 +22,7 @@ const labels=['规划一致性','代码质量与工程','理论逻辑完备度',
 const fixtureOverview=()=>({radarIndicators:labels.map(name=>({name,max:100})),classRadarValues:Array(6).fill(null),classRadarEvidence:Object.fromEntries(labels.map(l=>[l,ev()])),weeklyActivityDates:['2026-09-26','2026-09-27','2026-09-28','2026-09-29','2026-09-30','2026-10-01','2026-10-02'],weeklyActivityRates:Array(7).fill(null),weeklyActivityCounts:Array(7).fill(null),weeklyActivityEvidence:ev('unavailable','legacy_unknown',{coverageComplete:false,window:{timezone:'UTC',startInclusive:'2026-09-26T00:00:00Z',endExclusive:'2026-10-03T00:00:00Z'},timeBasis:'DomainRecord.created_at'}),hourlyActiveData:Array(24).fill(null),hourlyActiveEvidence:ev(),hourlyFocusData:Array(24).fill(null),weakPoints:[],weakPointsEvidence:ev(),summary:{studentCount:2,averageProgress:null,averageFocus:null,recordedSubmissionCount:2,recordedSubmissionEvidence:ev('measured','legacy_unknown',{sampleCount:2})},aiAdvices:[],actionQueue:[],interactionRecords:[]});
 const contractPath=new URL('./fixtures/analytics-http-fixtures.json',import.meta.url);
 const captured=existsSync(contractPath)?JSON.parse(readFileSync(contractPath,'utf8')):null;
+const captureProvenancePath=new URL('./fixtures/analytics-http-fixtures.provenance.json',import.meta.url);
 const overview=()=>clone(captured?.overview?.data||fixtureOverview());
 const student=(id='20260001',extra={})=>({id,username:id,name:'Duplicate name',progress:null,focus:null,alert:null,status:'unknown',currentAgent:null,radarValues:Array(6).fill(null),radarEvidence:Object.fromEntries(labels.map(l=>[l,ev()])),...extra});
 const detail=(id='20260001',extra={})=>({...student(id),studentId:id,errors:[],timeline:[],goal:'Saved profile text',...extra});
@@ -98,6 +100,20 @@ test('Dashboard independently renders server action evidence and preserves full 
  const item={id:'old',title:'Historical',studentId:'20260002',studentIds:['20260001','20260002'],studentName:'Duplicate name',reason:'Old explanation',recordEvidence:ev('unavailable','legacy_unknown',{label:'历史记录；依据未核验'})};
  const h=await mount(Dashboard,{api:{getActionQueue:async()=>[item]}});
  try{assert.deepEqual(h.vm.alertStudents[0].targetStudentIds,item.studentIds);assert.match(textOf(h.root),/历史记录；依据未核验/);assert.match(await h.ssr(),/历史记录；依据未核验/);}finally{h.close();}
+});
+
+test('new synthetic ASGI capture is hash-pinned to explicit producer and generation provenance',()=>{
+ assert.ok(captured,'New synthetic ASGI capture must exist');
+ assert.ok(existsSync(captureProvenancePath),'Capture provenance must exist');
+ const provenance=JSON.parse(readFileSync(captureProvenancePath,'utf8'));
+ assert.equal(provenance.schema_version,1);
+ assert.equal(provenance.fixture_path,'frontend/tests/fixtures/analytics-http-fixtures.json');
+ assert.equal(provenance.fixture_sha256,createHash('sha256').update(readFileSync(contractPath)).digest('hex'));
+ assert.match(provenance.producer_commit,/^[a-f0-9]{40}$/);
+ assert.match(provenance.generation_utc,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/);
+ assert.equal(provenance.synthetic_contract,'analytics_http_synthetic_sqlite_inprocess_asgi');
+ assert.match(provenance.source_sha256['backend/tests/test_rebuild_analytics_evidence.py'],/^[a-f0-9]{64}$/);
+ assert.equal(captured.metadata.synthetic,true);
 });
 
 test('frozen actual ASGI fixtures retain null zero positive UTC and offset inventory in real components',async()=>{

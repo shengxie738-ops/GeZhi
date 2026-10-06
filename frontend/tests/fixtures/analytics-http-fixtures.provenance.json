@@ -1,0 +1,165 @@
+{
+  "capture_runner_evidence_path": "analytics-capture/run-analytics-export.py",
+  "capture_runner_sha256": "9b7eb9eae7c03b8e0aff483f48764447730e086c4624c893b54d5e1eb5f970f5",
+  "command": "python analytics-capture/run-analytics-export.py --repo /workspace/scratch/4a75d1c2769c/gezhi-restored-20261005/GeZhi --stage /workspace/scratch/4a75d1c2769c/frontend-baseline-repair-stage-20261006/analytics-capture",
+  "command_cwd": "/workspace/scratch/4a75d1c2769c/frontend-baseline-repair-stage-20261006",
+  "dependency_versions": {
+    "PyMySQL": "1.2.3",
+    "SQLAlchemy": "2.0.29",
+    "annotated-types": "0.8.0",
+    "anyio": "4.14.2",
+    "fastapi": "0.141.1",
+    "greenlet": "3.5.5",
+    "h11": "0.16.0",
+    "httpx": "0.28.1",
+    "iniconfig": "2.3.0",
+    "packaging": "26.3",
+    "pluggy": "1.6.0",
+    "pydantic": "2.13.4",
+    "pydantic-core": "2.46.4",
+    "pydantic-settings": "2.15.0",
+    "pygments": "2.21.0",
+    "pytest": "8.4.2",
+    "python-dotenv": "1.2.2",
+    "starlette": "1.6.0",
+    "typing-extensions": "4.16.0",
+    "typing-inspection": "0.4.3"
+  },
+  "existing_dependency_reuse": {
+    "SQLAlchemy": {
+      "materialized_path": "/workspace/scratch/4a75d1c2769c/gezhi-teacher-t2b-runtime-20261005/materialized",
+      "materialized_source_files_matching_wheel": 263,
+      "official_pypi_metadata_url": "https://pypi.org/pypi/SQLAlchemy/2.0.29/json",
+      "source_wheel_sha256": "dc4ee2d4ee43251905f88637d5281a8d52e916a021384ec10758826f5cbae305",
+      "version": "2.0.29"
+    },
+    "pytest": {
+      "existing_site_packages_path": "/workspace/scratch/4a75d1c2769c/gezhi-teacher-offline-runtime-20261005/venv/lib/python3.12/site-packages",
+      "version": "8.4.2"
+    }
+  },
+  "fixture_bytes": 76269,
+  "fixture_filename": "analytics-http-fixtures.json",
+  "fixture_path": "frontend/tests/fixtures/analytics-http-fixtures.json",
+  "fixture_sha256": "ac7ec60287a15241c546bdb987d6c8fe288e57af5e8ee5b3feb4fed081a42ed0",
+  "generation_finished_utc": "2026-10-06T02:50:22.867520Z",
+  "generation_started_utc": "2026-10-06T02:50:21.095024Z",
+  "generation_utc": "2026-10-06T02:50:22.720968Z",
+  "guard_verification": {
+    "blocked_controls": [
+      "socket.connect",
+      "socket.bind",
+      "socket.getaddrinfo",
+      "subprocess.Popen",
+      "sqlite3.connect"
+    ],
+    "sqlite_memory_connections": 1,
+    "unexpected_denials": []
+  },
+  "prerequisite_artifacts": [
+    {
+      "artifact_bytes": 46740,
+      "artifact_filename": "pymysql-1.2.3-py3-none-any.whl",
+      "artifact_sha256": "14f1c68e2ed859243ae5ca41ffbe677027fc46bc136a9f0be8a4e928e5e7415a",
+      "artifact_source_url": "https://files.pythonhosted.org/packages/a9/4b/0a906d8184f011ff8dbd4722743783867589b33269d2c5fff238d636fdcb/pymysql-1.2.3-py3-none-any.whl",
+      "distribution": "PyMySQL",
+      "installed_version": "1.2.3",
+      "metadata_source_url": "https://pypi.org/pypi/PyMySQL/1.2.3/json",
+      "repository_declared_requirement": "pymysql>=1.1.0",
+      "scope": "task-local dependency directory; no global installation",
+      "verification_utc": "2026-10-06T02:48:31.303317+00:00"
+    }
+  ],
+  "producer_commit": "bd452b16c20e64c6cea5387dd9c9ae5c7aae2fb8",
+  "producer_test_selector": "backend/tests/test_rebuild_analytics_evidence.py::test_http_contract_fixture_export",
+  "pytest_arguments": [
+    "/workspace/scratch/4a75d1c2769c/gezhi-restored-20261005/GeZhi/backend/tests/test_rebuild_analytics_evidence.py::test_http_contract_fixture_export",
+    "-q",
+    "-s",
+    "-ra",
+    "--rootdir=/workspace/scratch/4a75d1c2769c/gezhi-restored-20261005/GeZhi",
+    "--noconftest",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/workspace/scratch/4a75d1c2769c/frontend-baseline-repair-stage-20261006/analytics-capture/pytest-temp",
+    "--junitxml=/workspace/scratch/4a75d1c2769c/frontend-baseline-repair-stage-20261006/analytics-capture/backend-export.junit.xml"
+  ],
+  "python_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+  "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "schema_version": 1,
+  "scope": {
+    "accounts_and_records": "original exporter synthetic canonical accounts and in-memory records only",
+    "application_database_module": "unchanged native mysql+pymysql engine initialization; zero MySQL connections; no database shim",
+    "capture_origin": "newly_generated_capture",
+    "database": "original test harness sqlite:///:memory: with StaticPool",
+    "http_transport": "httpx.ASGITransport against minimal FastAPI app containing the actual analytics router",
+    "limitations": [
+      "New capture at the specified producer commit; does not recover or establish byte identity with the missing older fixture",
+      "Synthetic analytics SQLite and in-process ASGI contract only; no teacher Work native MySQL, deployed application, real network HTTP, browser, live external service, or production-data coverage",
+      "Fixed analytics window clock is historical test input, distinct from actual generation UTC"
+    ],
+    "live_service_coverage": false,
+    "recovered_older_artifact": false,
+    "teacher_work_native_mysql_acceptance_coverage": false,
+    "test_execution_network_or_services": false
+  },
+  "source_sha256": {
+    "backend/app/api/deps.py": "3f3cfe5ae1d093624e7ccdaf6bd4379df5458ea95b0f86810e670f6481ca8503",
+    "backend/app/api/endpoints/analytics.py": "b61cb4383b5ed172eb9e8324dc1e4f1179da081a779218a4b59ae922002dd2b8",
+    "backend/app/core/config.py": "bf3ad837151fad6273bc248b47e30e9ef9d5eb1b674215589da5561096033aa3",
+    "backend/app/core/database.py": "2f1f99450353a245b198282ee2541e5dd84e891462db41d218ff691d8e41ae18",
+    "backend/app/core/miniprogram_response.py": "e95aaf124b8a5bd903da8de892d54caa22a16911e921b2e3a68c509ccae5c2a9",
+    "backend/app/core/responses.py": "0e8df15b12b538894e0ac7a88fbe0d6a991f93a4e5f9efbd5c7428a452f5b893",
+    "backend/app/core/security.py": "9e2e19b6b30f78f9198b988a18f81495345f59901aececfd21a0212bf86597f3",
+    "backend/app/core/username_policy.py": "5e00b47bc97bf72f52f140f896ce4e4b40973c7c5ad6a62f19e2ddb7a427dbb0",
+    "backend/app/models/domain_record.py": "0211fdb4bb54d2b1ce81f99ab4440a3d44f5982797bf0380e7de18047b25b88f",
+    "backend/app/models/student_profile.py": "d832d20d440d583b23c9fa9b20279ceedafeda78ee724a6f3b0369807c394e93",
+    "backend/app/models/user_account.py": "7c5542abfa43e8e8d451354c7b4ead4bdbc92d4adc1d5fc6179324a5f2649c98",
+    "backend/app/repositories/json_store.py": "bba8a5159870bcffcf1b7970770f64d3691388aa9d326585edbed311c2dde602",
+    "backend/app/services/current_identity.py": "18fbd13380d0d87771e1a11b7b531473d095177562de7abf71480a3dbdb30ff5",
+    "backend/app/utils/datetime.py": "55888961b7b42cd42371efd2db607d08ca5134dad6827f59dbc4c40a7c6df1b0",
+    "backend/tests/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "backend/tests/test_rebuild_analytics_evidence.py": "72b2012239be79e28f900576e85b00c2d6eaa8148a17ad642924d1392ef707d6"
+  },
+  "sqlite_version": "3.53.1",
+  "synthetic_content_verification": {
+    "all_backend_imported_sources_match_producer_commit": true,
+    "all_unique_string_leaf_values_reviewed": 117,
+    "forbidden_credential_and_personal_contact_keys_found": [],
+    "metadata_synthetic": true,
+    "observed_response_account_identifiers": [
+      "20260001",
+      "20260002"
+    ],
+    "production_account_or_database_access": false,
+    "request_headers_and_bearer_tokens_exported": false,
+    "secret_pattern_checks": {
+      "bearer_authorization": "no match",
+      "email_address": "no match",
+      "production_key_prefix": "no match",
+      "telephone_like": "no match",
+      "token_like_base64_segments": "no match"
+    },
+    "synthetic_accounts_created_by_original_harness": [
+      "20260001",
+      "20260002",
+      "20269999",
+      "teacher"
+    ],
+    "test_source_unchanged": true,
+    "verified_utc": "2026-10-06T02:51:50.836820+00:00"
+  },
+  "synthetic_contract": "analytics_http_synthetic_sqlite_inprocess_asgi",
+  "test_result": {
+    "exit_code": 0,
+    "failed": 0,
+    "http_exchanges": 11,
+    "passed": 1,
+    "selected": 1,
+    "skipped": 0,
+    "warnings": [
+      "Two pre-existing Pydantic class-based Config deprecation warnings"
+    ]
+  },
+  "window_clock_utc": "2026-10-03T07:11:54Z"
+}

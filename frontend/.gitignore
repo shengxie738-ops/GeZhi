@@ -1,0 +1,2 @@
+# Retain the reproducible official test dependency lock despite the root default.
+!package-lock.json
