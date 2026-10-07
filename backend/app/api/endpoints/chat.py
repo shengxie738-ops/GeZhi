@@ -57,6 +57,7 @@ from app.services.student_work_skills import (
     classify_student_skill_completion,
     resolve_student_work_skill,
 )
+from app.services.chat_batch_receipts import ChatBatchUnavailable
 from app.services.student_paper_reading import (
     current_paper_state, paper_deadline, paper_request_scope,
     paper_remaining_seconds, paper_timeout_scope, remember_paper_origin, mark_paper_write,
@@ -919,15 +920,20 @@ async def create_chat_history_batch(
 ):
     _ensure_self(payload.user_id, auth)
     try:
-        records = save_chat_messages_batch(
-            db,
-            user_id=payload.user_id,
-            agent_mode=payload.agent_mode,
-            items=payload.messages,
-            client_request_id=payload.client_request_id,
-            conversation_id=payload.conversation_id,
-            project_id=payload.project_id,
-        )
+        arguments = dict(user_id=payload.user_id, agent_mode=payload.agent_mode,
+            items=payload.messages, client_request_id=payload.client_request_id,
+            conversation_id=payload.conversation_id, project_id=payload.project_id)
+        if payload.client_request_id and payload.agent_mode == "paper":
+            from sqlalchemy.engine import Engine
+            engine = db.get_bind()
+            if not isinstance(engine, Engine):
+                raise ChatBatchUnavailable("CHAT_BATCH_SESSION_NOT_CLEAN")
+            # get_auth_payload already owns a read transaction on db. Do not
+            # adopt, commit or roll it back to save this independent paper pair.
+            with Session(bind=engine, autoflush=False, expire_on_commit=False) as owned_db:
+                records = save_chat_messages_batch(owned_db, **arguments)
+        else:
+            records = save_chat_messages_batch(db, **arguments)
         saved_records = [
             {
                 "id": record.id,
@@ -950,6 +956,8 @@ async def create_chat_history_batch(
         }
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except ChatBatchUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.code) from e
     except Exception as e:
         logger.error(f"[Chat History] Batch save error: {e}", exc_info=True)
         return {"status": "error", "message": "保存历史工作记录失败，请稍后重试"}
@@ -994,6 +1002,8 @@ async def remove_chat_history_message(
         if not deleted:
             return {"status": "error", "message": "历史记录不存在或无权删除"}
         return {"status": "success", "message": "历史记录已删除", "data": {"id": message_id}}
+    except ChatBatchUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.code) from e
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1013,6 +1023,8 @@ async def clear_chat_history_endpoint(
             "message": "历史记录已清空",
             "data": {"deleted_count": deleted_count},
         }
+    except ChatBatchUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.code) from e
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

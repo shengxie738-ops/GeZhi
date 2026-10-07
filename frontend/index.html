@@ -3497,7 +3497,7 @@
                                             <div v-if="paperWorkSyncStatus" role="status" class="p-3 rounded-xl border border-slate-200 bg-white text-xs flex items-center justify-between gap-3">
                                                 <span v-if="paperWorkSyncStatus.state === 'pending'" class="text-sky-700">工作记录已保存在本地，正在同步云端...</span>
                                                 <span v-else-if="paperWorkSyncStatus.state === 'saved'" class="text-emerald-700">工作记录已收到云端保存回执</span>
-                                                <span v-else-if="paperWorkSyncStatus.state === 'failed'" class="text-amber-700">仅本地保存；云端同步失败 {{ paperWorkSyncStatus.error }}</span>
+                                                <span v-else-if="paperWorkSyncStatus.state === 'failed'" class="text-amber-700">当前显示本地副本；云端保存结果尚未确认 {{ paperWorkSyncStatus.error }}。可重试同步或刷新历史记录核对</span>
                                                 <button v-if="paperWorkSyncStatus.state === 'failed'" type="button" @click="retryPaperWorkSync(paperWorkSyncStatus.conversationId)" class="shrink-0 text-sky-700 font-bold">重试同步</button>
                                             </div>
                                             <p class="text-[11px] text-slate-500">来源可核验表示书目记录有来源；主题相关度和全文内容仍需核对。未读取全文时只基于元数据及摘要研读。</p>

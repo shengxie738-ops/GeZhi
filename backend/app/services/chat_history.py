@@ -12,6 +12,7 @@ from weakref import WeakSet
 from threading import RLock
 
 from app.models.chat_message import ChatMessage
+from app.services.chat_identity import exact_owner_predicate
 
 
 VALID_AGENT_MODES = {"tutor", "rag", "chat", "paper"}
@@ -150,6 +151,10 @@ def save_chat_messages_batch(
 ) -> list[ChatMessage]:
     norm_user = normalize_user_id(user_id)
     norm_mode = normalize_agent_mode(agent_mode)
+    if client_request_id and norm_mode == "paper":
+        from app.services.chat_batch_receipts import save_paper_pair
+        return save_paper_pair(db, user_id=user_id, items=items, conversation_id=conversation_id,
+            project_id=project_id, client_request_id=client_request_id)
     records = []
     request_digest = None
     if client_request_id:
@@ -215,7 +220,7 @@ def _after_or_at_record(timestamp, message_id):
 def scoped_chat_query(db: Session, *, user_id: str, agent_mode: str,
                       conversation_id: str | None = None, exact_conversation: bool = False):
     mode = normalize_agent_mode(agent_mode)
-    query = db.query(ChatMessage).filter(ChatMessage.user_id == normalize_user_id(user_id),
+    query = db.query(ChatMessage).filter(exact_owner_predicate(ChatMessage.user_id, user_id),
                                         ChatMessage.agent_mode == mode)
     if exact_conversation or conversation_id is not None:
         normalized = normalize_conversation_id(conversation_id)
@@ -321,14 +326,25 @@ def serialize_chat_message(record: ChatMessage) -> dict:
 
 
 def delete_chat_message(db: Session, *, user_id: str, message_id: int) -> bool:
-    record = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.id == message_id,
-            ChatMessage.user_id == normalize_user_id(user_id),
-        )
-        .first()
-    )
+    from app.services.chat_batch_receipts import lock_receipts_for_deletion, mark_deleted
+    try:
+        query = db.query(ChatMessage).filter(ChatMessage.id == message_id,
+            ChatMessage.user_id == normalize_user_id(user_id))
+        observed = query.first()
+        if not observed:
+            return False
+        if observed.agent_mode == "paper":
+            if observed.user_id != user_id:
+                return False
+            query = query.filter(exact_owner_predicate(ChatMessage.user_id, user_id))
+        # The initial read only identifies an immutable mode; acquire receipt
+        # locks before the actual message lock for the bounded paper protocol.
+        receipts = (lock_receipts_for_deletion(db, user_id=user_id, message_id=message_id)
+            if observed.agent_mode == "paper" else [])
+        record = query.populate_existing().with_for_update().first()
+    except Exception:
+        db.rollback()
+        raise
     if not record:
         return False
     try:
@@ -342,6 +358,7 @@ def delete_chat_message(db: Session, *, user_id: str, message_id: int) -> bool:
                               conversation_id=legacy_id).update(
                                   {ChatMessage.conversation_id:legacy_id}, synchronize_session=False)
         scope = (record.user_id, record.agent_mode, record.conversation_id)
+        mark_deleted(receipts)
         db.delete(record)
         db.commit()
         invalidate_admissions(scope[0], scope[1], conversation_id=scope[2])
@@ -354,15 +371,21 @@ def delete_chat_message(db: Session, *, user_id: str, message_id: int) -> bool:
 
 
 def clear_chat_history(db: Session, *, user_id: str, agent_mode: str) -> int:
+    from app.services.chat_batch_receipts import lock_receipts_for_deletion, mark_deleted
     try:
-        deleted = (
-            db.query(ChatMessage)
-            .filter(
-                ChatMessage.user_id == normalize_user_id(user_id),
-                ChatMessage.agent_mode == normalize_agent_mode(agent_mode),
-            )
-            .delete(synchronize_session=False)
-        )
+        receipts = lock_receipts_for_deletion(db, user_id=user_id, agent_mode=normalize_agent_mode(agent_mode))
+        mark_deleted(receipts)
+        if normalize_agent_mode(agent_mode) == "paper":
+            # Lock exact owned rows, then delete only their verified primary IDs.
+            # A CI text comparison alone must never determine mutation targets.
+            owned = db.query(ChatMessage).filter(exact_owner_predicate(ChatMessage.user_id, user_id),
+                ChatMessage.agent_mode == "paper").populate_existing().with_for_update().all()
+            ids = [row.id for row in owned if row.user_id == user_id]
+            deleted = db.query(ChatMessage).filter(ChatMessage.id.in_(ids),
+                exact_owner_predicate(ChatMessage.user_id, user_id)).delete(synchronize_session=False)
+        else:
+            deleted = (db.query(ChatMessage).filter(ChatMessage.user_id == normalize_user_id(user_id),
+                ChatMessage.agent_mode == normalize_agent_mode(agent_mode)).delete(synchronize_session=False))
         db.commit()
         invalidate_admissions(user_id, agent_mode, all_tasks=True)
         return int(deleted or 0)

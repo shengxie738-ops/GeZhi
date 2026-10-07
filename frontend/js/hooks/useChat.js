@@ -414,7 +414,7 @@ export function useChat(currentUser, showToast, agentResolver = null) {
             } catch (error) {
                 if (!isSessionCurrent(owner, generation)) return false;
                 rows.forEach(row => { row.syncState = 'failed'; row.syncError = error.message || '云端同步失败'; });
-                historyError.value = `工作记录仅保存在本地，云端同步失败：${error.message || '请重试'}`;
+                historyError.value = `当前显示本地副本，云端保存结果尚未确认：${error.message || '请重试'}。可重试同步或刷新历史记录核对`;
                 return false;
             } finally {
                 task.promise = null;
