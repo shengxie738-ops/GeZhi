@@ -30,7 +30,11 @@ def mysql_ddl():
 
 def _normalized_check(value):
     from app.services.teacher_work.schema_mysql import _check
-    return _check(value)
+    normalized = _check(value)
+    # MySQL serializes SQL != as <>. Canonicalize only operator tokens;
+    # Quoted text is never changed by this operator-token replacement.
+    return re.sub(r"('(?:''|\\.|[^'])*'|\"(?:\"\"|\\.|[^\"])*\")|<>",
+        lambda match: match.group(1) if match.group(1) is not None else "!=", normalized)
 
 
 def inspect_receipt_schema(connection):

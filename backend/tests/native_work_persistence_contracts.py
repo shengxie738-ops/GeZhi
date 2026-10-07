@@ -750,7 +750,7 @@ def test_commit_unknown_is_not_masked_by_cleanup_failure(world,monkeypatch):
     assert count(world)==2
 
 
-@pytest.mark.parametrize('defect',[None,'fixed-width-key','prefix-primary-key','latin1-column','wrong-table-collation','column-default','generated-column','unsigned-integer'])
+@pytest.mark.parametrize('defect',[None,'mysql8039-reflection','mysql8039-weaker-check','fixed-width-key','prefix-primary-key','latin1-column','wrong-table-collation','column-default','generated-column','unsigned-integer'])
 def test_mysql_schema_adapter_rejects_non_exact_identity_keys(world,monkeypatch,defect):
     """Supplied MySQL observations only, not a native MySQL execution claim."""
     from types import SimpleNamespace
@@ -769,7 +769,13 @@ def test_mysql_schema_adapter_rejects_non_exact_identity_keys(world,monkeypatch,
         def get_unique_constraints(self,name): return []
         def get_foreign_keys(self,name): return []
         def get_indexes(self,name): return []
-        def get_check_constraints(self,name): return [{'name':k,'sqltext':v} for k,v in schema.CONTRACT['checks'].items()]
+        def get_check_constraints(self,name):
+            values=schema.CONTRACT['checks']
+            if defect in ('mysql8039-reflection','mysql8039-weaker-check'):
+                values=json.loads((ROOT/'tests/fixtures/chat_batch_mysql8039_checks.json').read_text())['reflection']
+                if defect=='mysql8039-weaker-check':
+                    values={**values,'ck_chat_batch_pair':values['ck_chat_batch_pair'].replace('`user_message_id` > 0','`user_message_id` >= 0')}
+            return [{'name':k,'sqltext':v} for k,v in values.items()]
         def get_table_options(self,name): return {'mysql_engine':'InnoDB'}
     class Result:
         def __init__(self,value): self.value=value
@@ -806,7 +812,7 @@ def test_mysql_schema_adapter_rejects_non_exact_identity_keys(world,monkeypatch,
             return Result([])
     monkeypatch.setattr(schema,'inspect',lambda _:Observer())
     monkeypatch.setattr(schema_mysql,'_resolved_table_issues',lambda *args:[])
-    assert schema.inspect_receipt_schema(Connection())==('ready' if defect is None else 'incompatible')
+    assert schema.inspect_receipt_schema(Connection())==('ready' if defect in (None,'mysql8039-reflection') else 'incompatible')
 
 
 def test_keyed_paper_never_commits_flushed_caller_write(world):
@@ -925,3 +931,38 @@ def test_owned_history_page_excludes_nocase_peer_rows_ids_counts_and_cursors(wor
     combined=first['data']+next_page['data']
     assert {row['id'] for row in combined}=={row['id'] for row in own}
     assert {row['id'] for row in combined}.isdisjoint({row['id'] for row in foreign})
+
+
+def test_native_mysql8039_reflection_matches_pinned_receipt_constraints():
+    """Captured native syntax, not a dot/MySQL execution claim."""
+    from app.services.chat_batch_schema import CONTRACT, _normalized_check
+    captured=json.loads((ROOT/'tests/fixtures/chat_batch_mysql8039_checks.json').read_text())
+    for name,expression in captured['reflection'].items():
+        assert _normalized_check(expression)==_normalized_check(CONTRACT['checks'][name]), name
+    assert _normalized_check(captured['reflection']['ck_chat_batch_pair'])==captured['expected_normalized_pair']
+
+
+@pytest.mark.parametrize('left,right',[
+    ('user_message_id != assistant_message_id','`user_message_id` <> `assistant_message_id`'),
+    ("state <> 'reserved'","state != 'reserved'"),
+])
+def test_receipt_normalizer_accepts_equivalent_unquoted_not_equal_operators(left,right):
+    from app.services.chat_batch_schema import _normalized_check
+    assert _normalized_check(left)==_normalized_check(right)
+
+
+@pytest.mark.parametrize('left,right',[
+    ("label = '<>'","label = '!='"),
+    ("label = 'x<>y'","label = 'x!=y'"),
+    ('label = "<>"','label = "!="'),
+    ('label = "it""s <>"','label = "it""s !="'),
+    ("label = 'it''s <>'","label = 'it''s !='"),
+    (r"label = 'it\'s <>'",r"label = 'it\'s !='"),
+    ('user_message_id != assistant_message_id','user_message_id = assistant_message_id'),
+    ('user_message_id != assistant_message_id','user_message_id <=> assistant_message_id'),
+    ('user_message_id != assistant_message_id','user_message_id <= assistant_message_id'),
+    ('(a=1 and b=2) or c=3','a=1 and (b=2 or c=3)'),
+])
+def test_receipt_normalizer_preserves_literal_operator_and_boolean_distinctions(left,right):
+    from app.services.chat_batch_schema import _normalized_check
+    assert _normalized_check(left)!=_normalized_check(right)

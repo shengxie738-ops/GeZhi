@@ -1,0 +1,12 @@
+{
+  "mysql_version": "8.0.39",
+  "published_commit": "c5916ca6c4782712b62c4687a1801be016ec295c",
+  "source_thread": "01a11509-dc29-73af-8ed6-e9e76ed1e002",
+  "proof_level": "Exact reflected CHECK strings reported by native Cloud executor; dot does not operate that database",
+  "reflection": {
+    "ck_chat_batch_pair": "(((`state` = _utf8mb4'reserved') and (`user_message_id` is null) and (`assistant_message_id` is null)) or ((`state` in (_utf8mb4'committed',_utf8mb4'deleted')) and (`user_message_id` is not null) and (`assistant_message_id` is not null) and (`user_message_id` > 0) and (`assistant_message_id` > 0) and (`user_message_id` <> `assistant_message_id`)))",
+    "ck_chat_batch_state": "(`state` in (_utf8mb4'reserved',_utf8mb4'committed',_utf8mb4'deleted'))"
+  },
+  "expected_normalized_pair": "(state='reserved' and user_message_id is null and assistant_message_id is null) or (state in 'committed','deleted' and user_message_id is not null and assistant_message_id is not null and user_message_id>0 and assistant_message_id>0 and user_message_id!=assistant_message_id)",
+  "observed_normalized_pair": "(state='reserved' and user_message_id is null and assistant_message_id is null) or (state in 'committed','deleted' and user_message_id is not null and assistant_message_id is not null and user_message_id>0 and assistant_message_id>0 and user_message_id<>assistant_message_id)"
+}
