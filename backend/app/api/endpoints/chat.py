@@ -21,7 +21,7 @@ from app.core.miniprogram_response import api_response, is_miniprogram_client, p
 from app.api.deps import get_auth_payload, ensure_self_or_teacher
 from app.models.user_rag import UserRagMapping
 from app.models.code_diagnosis import CodeDiagnosis
-from app.models.user_custom_ai_model import UserCustomAIModel
+from app.services.byok.errors import ByokError
 from app.schemas.chat import ChatRequest
 from app.services.rag_service import (
     build_repository_metadata_condition,
@@ -87,6 +87,9 @@ def _resolve_student_work_skill(request: ChatRequest) -> str | None:
 
 
 def _validate_task_identity(request: ChatRequest) -> None:
+    # Close the legacy bare-ID entry before search, history writes or runtime.
+    if request.agent_model is not None:
+        raise ByokError('MODEL_SELECTION_REQUIRED')
     if not clean_message_content(request.message).strip():
         raise HTTPException(status_code=422, detail='message must contain non-whitespace text')
     if request.conversation_id is not None and len(request.conversation_id.strip()) > 64:
@@ -133,27 +136,8 @@ def resolve_request_agent_id(request: ChatRequest, agent_mode: str) -> str:
 def find_user_custom_model_credentials(
     db: Session, user_id: str, model_id: str, *, strict: bool = False,
 ) -> tuple[str, str] | None:
-    """若当前用户配置了该模型 ID，返回 (base_url, decrypted_api_key)，否则返回 None。"""
-    if not user_id or not model_id or not db:
-        return None
-    try:
-        records = (
-            db.query(UserCustomAIModel)
-            .filter(UserCustomAIModel.user_id == user_id, UserCustomAIModel.is_active == True)
-            .all()
-        )
-        for rec in records:
-            if isinstance(rec.model_ids, list) and model_id in rec.model_ids:
-                base_url, api_key = rec.base_url, rec.get_decrypted_api_key()
-                if strict and (not isinstance(base_url, str) or not base_url.strip()
-                               or not isinstance(api_key, str) or not api_key.strip()):
-                    raise ValueError("selected model credentials are unavailable")
-                return base_url, api_key
-    except Exception as e:
-        if strict:
-            raise ValueError("selected model credentials are unavailable") from e
-        logger.warning(f"[CustomModel] Failed to query user custom models for {user_id}: {e}")
-    return None
+    """Retired ambiguous bare-ID override; no lookup, decrypt or fallback."""
+    raise ByokError('MODEL_SELECTION_REQUIRED')
 
 
 def build_agent_runtime_config(
@@ -166,6 +150,10 @@ def build_agent_runtime_config(
     db: Session | None = None,
     strict_custom_credentials: bool = False,
 ) -> dict:
+    # An explicit legacy override cannot identify a platform/custom configuration.
+    # Reject before prompt/runtime construction, including same-ID collisions.
+    if request.agent_model is not None:
+        raise ByokError('MODEL_SELECTION_REQUIRED')
     agent_id = resolve_request_agent_id(request, agent_mode)
     agent_prompt = request.agent_prompt or get_default_agent_prompt(agent_id)
     configurable = {
@@ -175,15 +163,6 @@ def build_agent_runtime_config(
         "agent_model": request.agent_model,
         "agent_prompt": agent_prompt,
     }
-    if user_id and db and request.agent_model:
-        if strict_custom_credentials:
-            creds = find_user_custom_model_credentials(db, user_id, request.agent_model, strict=True)
-        else:
-            creds = find_user_custom_model_credentials(db, user_id, request.agent_model)
-        if creds:
-            configurable["custom_model_base_url"] = creds[0]
-            configurable["custom_model_api_key"] = creds[1]
-
     selected_model = resolve_runtime_model_id({"configurable": configurable}, message)
     configurable["agent_model"] = selected_model
     return {"configurable": configurable}
@@ -192,24 +171,11 @@ def build_agent_runtime_config(
 def get_request_chat_model(config: dict, *, temperature: float = 0.1):
     configurable = config.get("configurable", {})
     model_id = configurable.get("agent_model")
-    custom_base_url = configurable.get("custom_model_base_url")
-    custom_api_key = configurable.get("custom_model_api_key")
+    if "custom_model_base_url" in configurable or "custom_model_api_key" in configurable:
+        raise ByokError('UNSUPPORTED_ADAPTER')
     paper_options = {}
     if configurable.get("agent_mode") == "paper":
         paper_options = {"request_timeout": paper_remaining_seconds(), "max_retries": 0}
-        if custom_base_url:
-            custom_base_url = custom_base_url.strip().rstrip("/")
-            if custom_base_url.endswith("/chat/completions"):
-                custom_base_url = custom_base_url[:-len("/chat/completions")]
-    if custom_base_url and custom_api_key:
-        return ChatOpenAI(
-            model=model_id,
-            openai_api_key=custom_api_key,
-            openai_api_base=custom_base_url,
-            base_url=custom_base_url,
-            temperature=temperature,
-            **paper_options,
-        )
     if paper_options:
         return build_chat_model(model_id, temperature=temperature,
             client_factory=lambda **options: ChatOpenAI(**options, **paper_options))
@@ -1415,13 +1381,13 @@ class OpenAIChatRequest(BaseModel):
 
 
 def build_openai_runtime_config(request: OpenAIChatRequest, *, thread_id: str, message: str) -> dict:
+    if not has_model(request.model, category="text"):
+        raise ByokError('MODEL_SELECTION_REQUIRED')
     configurable = {
         "thread_id": thread_id,
         "agent_id": "agent_tutor",
         "agent_model": request.model,
     }
-    selected_model = resolve_runtime_model_id({"configurable": configurable}, message)
-    configurable["agent_model"] = selected_model
     return {"configurable": configurable}
 
 @router.get("/v1/models")
@@ -1440,6 +1406,8 @@ async def list_openai_models():
     }
 
 async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session, *, user_id: str):
+    if not has_model(request.model, category="text"):
+        raise ByokError('MODEL_SELECTION_REQUIRED')
     chat_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
     model_name = request.model
@@ -1628,6 +1596,8 @@ async def stream_openai_chat_events(request: OpenAIChatRequest, db: Session, *, 
 @router.post("/v1/chat/completions")
 @router.post("/chat/completions")
 async def openai_chat_completions(request: OpenAIChatRequest, db: Session = Depends(get_db), auth: dict = Depends(get_auth_payload)):
+    if not has_model(request.model, category="text"):
+        raise ByokError('MODEL_SELECTION_REQUIRED')
     user_id = auth["sub"]
     if not request.messages or not clean_message_content(request.messages[-1].content).strip():
         raise HTTPException(status_code=422, detail='message must contain non-whitespace text')

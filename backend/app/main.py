@@ -28,6 +28,11 @@ async def lifespan(app):
 
 app = FastAPI(title="AI Private Tutor Backend", version="3.0", lifespan=lifespan)
 
+from app.services.byok.http_boundary import install_byok_http_boundary
+from app.services.byok.observability import install_byok_privacy_filters
+install_byok_http_boundary(app)
+install_byok_privacy_filters()
+
 static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

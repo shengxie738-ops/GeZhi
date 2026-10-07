@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -43,6 +44,10 @@ def parse_cors_origins(value: Any) -> list[str]:
     return origins
 
 class Settings(BaseSettings):
+    # Dedicated deployment injection; no defaults/derivation from APP_SECRET_KEY.
+    BYOK_ENCRYPTION_ACTIVE_KEY_ID: str = ""
+    BYOK_ENCRYPTION_KEYRING: str = Field(default="", repr=False, exclude=True)
+
     APP_SECRET_KEY: str = "change-me-before-production"
     ENVIRONMENT: str = "development"
     BACKEND_PORT: int = 8516

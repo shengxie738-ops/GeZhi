@@ -1,0 +1,2335 @@
+{
+  "schema": "work-byok-offline-source@1",
+  "repository": "shengxie738-ops/GeZhi",
+  "commit": "5b57a81db765659a482fb5ec6b6c770ce403070c",
+  "root_tree_sha": "1c17b378378c9e560a849e70e4708eb0c61663f6",
+  "baseline_manifest_sha256": "5f78bd4e891bbdd98d01582a66b0d5b62339db61bd5daf83b92fd88395c7425f",
+  "source_scope": "426 byte-verified Work source/runtime/relevant regression files; not a whole repository checkout",
+  "reviewed_python_suites": [
+    "backend/tests/test_work_byok_test_fences.py",
+    "backend/tests/test_work_byok_contracts.py",
+    "backend/tests/test_work_byok_crypto.py",
+    "backend/tests/test_work_byok_transport.py",
+    "backend/tests/test_work_byok_repository.py",
+    "backend/tests/test_work_byok_http.py",
+    "backend/tests/test_work_byok_schema.py"
+  ],
+  "allowed_app_modules": [
+    "app.schemas.model_selection",
+    "app.services.byok",
+    "app.services.byok.types",
+    "app.services.byok.limits",
+    "app.services.byok.errors",
+    "app.services.byok.endpoint_policy",
+    "app.core.byok_crypto",
+    "app.services.byok.transport",
+    "app.schemas.user_model",
+    "app.models.user_custom_ai_model",
+    "app.models.user_model_inventory",
+    "app.models.user_account",
+    "app.repositories.user_models",
+    "app.services.byok.schema",
+    "app.services.byok.http_boundary",
+    "app.services.byok.observability",
+    "app.services.byok.reservations",
+    "app.api.endpoints.user_models"
+  ],
+  "source_pins": [
+    {
+      "path": "AGENTS.md",
+      "blob_sha": "f53499d60b444600aecdd6e3b93fa193bcacb054",
+      "sha256": "231065c95d918752fefa04f78e2ef50115b181fa86fa273bcbc4253164a64aba"
+    },
+    {
+      "path": "backend/app/api/api.py",
+      "blob_sha": "704db2f0fbe0afcbd51c1eb97ada713520989fca",
+      "sha256": "58dabb6303b5def7abb6fdf898af87d753245742ecea7659bd4fd9b6c84871ee"
+    },
+    {
+      "path": "backend/app/api/deps.py",
+      "blob_sha": "c34f75a193b230e189240953edeb71a866fe6cad",
+      "sha256": "3f3cfe5ae1d093624e7ccdaf6bd4379df5458ea95b0f86810e670f6481ca8503"
+    },
+    {
+      "path": "backend/app/api/endpoints/academic.py",
+      "blob_sha": "d9da11845e150cf9996ee5ff627aeeaf3de94dee",
+      "sha256": "fc3609f7a2fe2828b57004ca5cc0dd31110c8e772b7a78d11e4f92251f0cc03a"
+    },
+    {
+      "path": "backend/app/api/endpoints/agents.py",
+      "blob_sha": "5c6a4b5bd761cf6d6d88aa463a48727a8de9af93",
+      "sha256": "26d4e834c63e1c2c7fcb7f96966db6341fc2a11f190c761e489925ec0687d319"
+    },
+    {
+      "path": "backend/app/api/endpoints/analytics.py",
+      "blob_sha": "974941470a3d28ddfe583afc02f561205e3f470b",
+      "sha256": "763b9705b83caa0c93a61775b90caec22f9326f012eeef7e33aa7bf630e601d2"
+    },
+    {
+      "path": "backend/app/api/endpoints/auth.py",
+      "blob_sha": "7a500971137f484f31841321e4b41a6ebad626fc",
+      "sha256": "434ab772de4cb374c0d345102f5f762e861a1c632c468096a141153b87a90d32"
+    },
+    {
+      "path": "backend/app/api/endpoints/chat.py",
+      "blob_sha": "939672cc8378517bf4310b1da9b8f424055043fc",
+      "sha256": "b13db1f0c77fa78ed910a8f8ba819c84354602fbb5c11ab72761d55b2be498b0"
+    },
+    {
+      "path": "backend/app/api/endpoints/code_repository.py",
+      "blob_sha": "bcc3210ade58c30b2e642aedc4d445cf0407d1c3",
+      "sha256": "b97840a79d15d14f7f81e3f40eafadd2947f5130c5c2934d9c453a4f8383cf10"
+    },
+    {
+      "path": "backend/app/api/endpoints/dashboard.py",
+      "blob_sha": "b6620f7f87207d85df7a0bc9d8850dba549cd16e",
+      "sha256": "fd2083c754f17fd1de697204202c5ffcaef1f73962eaae6fd20504bba8ebb77f"
+    },
+    {
+      "path": "backend/app/api/endpoints/evaluator.py",
+      "blob_sha": "01ada8c38a8370289c37cae9fb7fa1fbd9674de0",
+      "sha256": "838a808db9ffb4a5ccb16c8496d6604124cbddd3e879bdf0adad4253aefc2e63"
+    },
+    {
+      "path": "backend/app/api/endpoints/exams.py",
+      "blob_sha": "458efc95e1183b470dc2000932ca3d5889a75cf3",
+      "sha256": "d59ba5a27fa16278a5c6d1b7b3a4c0c334e6eed2ca5fedac251dc014be947290"
+    },
+    {
+      "path": "backend/app/api/endpoints/forum.py",
+      "blob_sha": "a72ee00da224e3bf2c4659285427423f6a97eba6",
+      "sha256": "59b91e74367c18f96705c736d6de2b3b6e1f72b7fe2ac3063ef3e4e09fd95693"
+    },
+    {
+      "path": "backend/app/api/endpoints/git_coach.py",
+      "blob_sha": "1350702079d793bf1327ee9c5bff3126692ef509",
+      "sha256": "fb48087e89c581744e26dcf5dc02dd2500276392f23ec51610fcf2548d94df58"
+    },
+    {
+      "path": "backend/app/api/endpoints/gitea_accounts.py",
+      "blob_sha": "b0909786433b75997d5571b2fd66dc9cf7f44226",
+      "sha256": "a6e31a97383474a0bef3a50c121ef0f881c518324a2ceddbeb11b8b9af64eb24"
+    },
+    {
+      "path": "backend/app/api/endpoints/homework.py",
+      "blob_sha": "f86a5ceba574418ed24b39ef504582df9961999c",
+      "sha256": "a346383939a2f43d1a03c1255ba8e7048e2f1fad4810213d95e7d96c667ef12e"
+    },
+    {
+      "path": "backend/app/api/endpoints/journal.py",
+      "blob_sha": "e569c74654b21f07e697a1314518568fdfe2a427",
+      "sha256": "cec4a30735e88f0c0d3b9b726e551167689c6ff7a2f5f900c9168828df88d009"
+    },
+    {
+      "path": "backend/app/api/endpoints/language.py",
+      "blob_sha": "7c373c0446dd25eb05049cdbd6970fce7bf41158",
+      "sha256": "7b6a377042f91b5a3341db7bb6d935cfcb46d56f1c8fb742819c4ea42c2b848e"
+    },
+    {
+      "path": "backend/app/api/endpoints/learning_diagnosis.py",
+      "blob_sha": "036f87ff716e547b023753d82e9b0fdf3334901c",
+      "sha256": "9cef2b77b39e1e4a1e4339e09e395b3299aba6fdf94bfa48e90cb72637693038"
+    },
+    {
+      "path": "backend/app/api/endpoints/profile.py",
+      "blob_sha": "8810c3841c2250ec833f597317f2f5fcdbc4404c",
+      "sha256": "b7fc182dd43776eb2b0d00a2313a04f2e8abe2bc062a11da2ef220d67b522bf1"
+    },
+    {
+      "path": "backend/app/api/endpoints/ranked.py",
+      "blob_sha": "17f07936bb5c105cfe290d346e8647226bc3155d",
+      "sha256": "18af1545b1967c263145a521151d6230a3a360dfe967774838a74b86367570f1"
+    },
+    {
+      "path": "backend/app/api/endpoints/student_work.py",
+      "blob_sha": "44c5f30ade26c0fbba72adedadd4b43563eac5a6",
+      "sha256": "ba0061ae5413e7ac7fd1fa81d08a8a43e6d2a6ea647b0ba4311b4560965af33e"
+    },
+    {
+      "path": "backend/app/api/endpoints/teacher_learning_diagnosis.py",
+      "blob_sha": "6e3ce27965445666846e2ce7e54a424d0666a446",
+      "sha256": "12071e86a56f7a02e24e270c7425f45fd7a46cf93d1839e282f025ddc4593eef"
+    },
+    {
+      "path": "backend/app/api/endpoints/teacher_lesson_prep.py",
+      "blob_sha": "b6defebb8145426c66080c6a065e8bcbce5cbb78",
+      "sha256": "533bb327d67b49d89b848d73d33cdd8d65cde64fbe8e34aa314a53c3f9fe4a47"
+    },
+    {
+      "path": "backend/app/api/endpoints/teacher_work.py",
+      "blob_sha": "fe2db6a763cd7a03a5c45bebf066f712746e0f32",
+      "sha256": "7b7557e797d11b4f343e27ba2af5fe632f0afe7b6034621a40a8cb164b16f481"
+    },
+    {
+      "path": "backend/app/api/endpoints/teacher_work_proposals.py",
+      "blob_sha": "f1a6d71f9ca767fc4f05d3070219dc0942bba6ed",
+      "sha256": "a14e7ad21df7b09fe5f8f1d307b009bce2838acfb997d321e4e14cbf6dbb65bd"
+    },
+    {
+      "path": "backend/app/api/endpoints/teaching.py",
+      "blob_sha": "d22db46e58caa3525b1dc6ec7b960ac0748e0abd",
+      "sha256": "b510363248714f087914b94a8d45c6187d7dd041233ec79f11067baa65c8a398"
+    },
+    {
+      "path": "backend/app/api/endpoints/teaching_assessment.py",
+      "blob_sha": "a3fc26c509327236f58726d54a58b3c93550e50d",
+      "sha256": "3b9d5dc59978a3ef4a19ee7ddb6c26170c8554861303ab70ad002595a0e043d9"
+    },
+    {
+      "path": "backend/app/api/endpoints/team_git.py",
+      "blob_sha": "ab02892e0002fe16e6939174591d83fc9b275009",
+      "sha256": "3eb43a52451f7e065989045b129b43b7db831921f9cad55eda30459cff9ae505"
+    },
+    {
+      "path": "backend/app/api/endpoints/user_center.py",
+      "blob_sha": "4a49e446d9a13cf50d4704fd09f70fff9ec63dd1",
+      "sha256": "1eaeb02aee7727971e89f846a760f55b6cb0970430513b9e52e6f6909b5a9f9c"
+    },
+    {
+      "path": "backend/app/api/endpoints/user_knowledge.py",
+      "blob_sha": "f93d6dfe657a5c6740e51513717bfff67193d7f9",
+      "sha256": "cf8b64425eff122982d897227de64b33ad9cfd0979a6271164956fc97b6e0ff7"
+    },
+    {
+      "path": "backend/app/api/endpoints/user_models.py",
+      "blob_sha": "cbf974333286af888f4ca66750da8c98f4664933",
+      "sha256": "9f3d6f3b8165b0e72fb91dac46db756c3ebc39b69b67edc55c93b265dc7f3266"
+    },
+    {
+      "path": "backend/app/api/endpoints/visual_guide.py",
+      "blob_sha": "56faa1357305e3ef6e4d2ea861ff36a07a66c8c0",
+      "sha256": "e8450cc0e85445b69966b860968a170174ce76546ec44b2d7e5f16310ef1e62c"
+    },
+    {
+      "path": "backend/app/core/config.py",
+      "blob_sha": "b1624ad632a67645d77a2ab7da4d50029a692a05",
+      "sha256": "346a5e0dd175e5c175d41ac06bcda443909d2eb5c35bd564d4f09f1c3dfdca76"
+    },
+    {
+      "path": "backend/app/core/crypto.py",
+      "blob_sha": "86f22c4cf7c6105a8ff2506f0b48f07da5259175",
+      "sha256": "81720f8ec0dec8394e8d919e55b4d92156c83dbf5cab295f82ec6da23f5ed595"
+    },
+    {
+      "path": "backend/app/core/database.py",
+      "blob_sha": "f4c718ae4fbc9fa7f93373e316311e87e92e9cef",
+      "sha256": "2f1f99450353a245b198282ee2541e5dd84e891462db41d218ff691d8e41ae18"
+    },
+    {
+      "path": "backend/app/core/init_db.py",
+      "blob_sha": "8da42d0ecbc230966e5c2882da85e43537a378f8",
+      "sha256": "ed795864c9d73e6f71735ef9e3e7cd09dde921eafd5f95d3b61c8e95589861ca"
+    },
+    {
+      "path": "backend/app/core/miniprogram_response.py",
+      "blob_sha": "79208c2d8f1daa7f932b97c6455c43c1b3d6ee96",
+      "sha256": "e95aaf124b8a5bd903da8de892d54caa22a16911e921b2e3a68c509ccae5c2a9"
+    },
+    {
+      "path": "backend/app/core/responses.py",
+      "blob_sha": "e3e5c77fa4d1c8e459fe3ad05a96bebf68357fee",
+      "sha256": "0e8df15b12b538894e0ac7a88fbe0d6a991f93a4e5f9efbd5c7428a452f5b893"
+    },
+    {
+      "path": "backend/app/core/schema_policy.py",
+      "blob_sha": "35e309838ec1c4c624ad7311b64504db8030183c",
+      "sha256": "5bfbad933324c901c58bd4a199b023f137b8749450a9332d75ee5e90131d422c"
+    },
+    {
+      "path": "backend/app/core/security.py",
+      "blob_sha": "08d623e0038bd02781fc37fa0dbbee931b4d0995",
+      "sha256": "9e2e19b6b30f78f9198b988a18f81495345f59901aececfd21a0212bf86597f3"
+    },
+    {
+      "path": "backend/app/core/username_policy.py",
+      "blob_sha": "84e2769e92e6e8535c33a23611e8a81dbe9e9d84",
+      "sha256": "5e00b47bc97bf72f52f140f896ce4e4b40973c7c5ad6a62f19e2ddb7a427dbb0"
+    },
+    {
+      "path": "backend/app/demo_data/__init__.py",
+      "blob_sha": "0a85c0044cb40d0a6d101741ea8c43367154585a",
+      "sha256": "748203a1f0faaf6db2ee586d5b8021753d2da33d45165691247bb82c1fc73f57"
+    },
+    {
+      "path": "backend/app/demo_data/academic_forum_showcase_seed.py",
+      "blob_sha": "e9730fd28c295ba62595eeb240f4a882f3c2bd27",
+      "sha256": "1411bca10d3ef4396dda8efb16eaf7f07f9aa13126fea0757a12f4dd2b51c36b"
+    },
+    {
+      "path": "backend/app/demo_data/class_students_sixdim_seed.py",
+      "blob_sha": "65a20783ce90d5bb6c6cf457b9a5d3d1da33d007",
+      "sha256": "f19aa65b5d6da2983202350c257578c783ca7d4ccd85a9e3f637eea94759c9d3"
+    },
+    {
+      "path": "backend/app/demo_data/realistic_seed.py",
+      "blob_sha": "e0d5bfdb77a5c2d6b87fcda3b1d771ed06a2b0b7",
+      "sha256": "d08887879be2f7247a2ff937d13691129a2f34f7f3f8179403e23acad83b2cea"
+    },
+    {
+      "path": "backend/app/demo_data/target_teacher_homework_seed.py",
+      "blob_sha": "d15f394b9a844ca2182ade975c01930d794fbbb5",
+      "sha256": "ba0f59b630f3886eebd81570bb9440fd876e761a5f3b0c9cd6bce0dfd8beff7f"
+    },
+    {
+      "path": "backend/app/demo_data/target_user_demo_seed.py",
+      "blob_sha": "581b0bf29839da51188755b5c38286218162fa97",
+      "sha256": "995ae012b7f81b12e6dbcdd5a49e381088e066c37aa49941c1b34498e0b4f911"
+    },
+    {
+      "path": "backend/app/demo_data/target_user_mistake_seed.py",
+      "blob_sha": "ae8b300ce26a4fc8c21303fe9f848c994a814d34",
+      "sha256": "772fbf7728500a1ffd5ec2d13418482d14dbcd057f5fc17074a238dfdc524fd6"
+    },
+    {
+      "path": "backend/app/demo_data/target_user_showcase_seed.py",
+      "blob_sha": "d1bea9fc665750dfb25ae78bacb7990fa6e3a841",
+      "sha256": "6d3306d36dcd9ebbe1c3af69691c3f4331cb6c4da8274dbc78543b811c5fd20f"
+    },
+    {
+      "path": "backend/app/demo_data/target_user_sixdim_seed.py",
+      "blob_sha": "a817424243fa859fef837bb3ed0eb3aba786df0d",
+      "sha256": "e5bdf7ef97874c782bcd3dc0da8d0f19f59386fc8ec807832b9613e1ecc6b90b"
+    },
+    {
+      "path": "backend/app/main.py",
+      "blob_sha": "c018a51bf6abc3dec5fbc6bbf19428688c7f312a",
+      "sha256": "864f403cf7fdc158fa30ebb2adfc8662000220d61ab6703f8a6cf7f607fab348"
+    },
+    {
+      "path": "backend/app/models/chat_batch_receipt.py",
+      "blob_sha": "ade0985efb7056df8a0f0182b694ec7bbc686563",
+      "sha256": "fd87a4ef2d213fe3d312c4cff66f944c6070b8818a0d210558513c59074e3256"
+    },
+    {
+      "path": "backend/app/models/chat_message.py",
+      "blob_sha": "5473a7c4f3519b2fd940df3e7931a387c20ec21a",
+      "sha256": "7bd75525c35f811c93576f8446b2aea12a15664021cca7c791f0f195a06ac7de"
+    },
+    {
+      "path": "backend/app/models/code_diagnosis.py",
+      "blob_sha": "af270250cf5f52db8abbd349ef525f5fd964b540",
+      "sha256": "c9b50330a7ed9b76386445a19c70e5da4e300a6d011ca436ff948e9f59c025a5"
+    },
+    {
+      "path": "backend/app/models/domain_record.py",
+      "blob_sha": "2b6be496fee3fb317cb581a9fc4551bce482ee40",
+      "sha256": "0211fdb4bb54d2b1ce81f99ab4440a3d44f5982797bf0380e7de18047b25b88f"
+    },
+    {
+      "path": "backend/app/models/git_coach.py",
+      "blob_sha": "f5658e527c7112646baed0ca2fe7862dd3cdfb53",
+      "sha256": "d2d12747916b07ea6936f327156a436ee0fda4d189c4e504c385d9c86f0b7606"
+    },
+    {
+      "path": "backend/app/models/gitea_account_binding.py",
+      "blob_sha": "fc8ca2915099eb81281e37615a18b04f94cc2ec7",
+      "sha256": "bc87f2f7ed72676116643f0bc30c4ec8f5bfb1ff4fb7298d63934dd5f0d65c9c"
+    },
+    {
+      "path": "backend/app/models/ranked_question.py",
+      "blob_sha": "352dad0c0576c905d02b48c6bce4a6b2e4b9b301",
+      "sha256": "f6639d9eced13b7aacd794652846a0ab4d859e01191d77a531dcd31f242f2f06"
+    },
+    {
+      "path": "backend/app/models/sms_verification_code.py",
+      "blob_sha": "d4306de757b97c8d850540b1965afdf7ae5d0620",
+      "sha256": "bf0fb112121470072b8942e4de94737b2eb298129fa94a1f3c8a76cd765c03b1"
+    },
+    {
+      "path": "backend/app/models/student_profile.py",
+      "blob_sha": "25f2bc17a09edabb1e18d91fdca593292b6eb04b",
+      "sha256": "d832d20d440d583b23c9fa9b20279ceedafeda78ee724a6f3b0369807c394e93"
+    },
+    {
+      "path": "backend/app/models/teacher_work.py",
+      "blob_sha": "47e290dc45e1fdd71142a3af381f30ea1510535a",
+      "sha256": "013ffd8518121722afc6b8954bf452a6b72905fc9aa54389d87d5d94baab4128"
+    },
+    {
+      "path": "backend/app/models/teacher_work_proposals.py",
+      "blob_sha": "5e8a900c35b243e270db2776697cf186f0890da3",
+      "sha256": "3a273719a51e86cb6e632bdce60d2b4ad7d7d784269a57b3ba4f088adf77d082"
+    },
+    {
+      "path": "backend/app/models/teacher_work_v3.py",
+      "blob_sha": "f72f3ff096497b39974ddec3af06bb94943791a1",
+      "sha256": "149f0e9c30148d1337922c5ca9286f31097e6520ee2ff07e9d4dce382a32549b"
+    },
+    {
+      "path": "backend/app/models/teaching.py",
+      "blob_sha": "962ea1a3d2baebc8a6671fe109a655e09f76e739",
+      "sha256": "d95ae7164e0bdd73a00841200722a79679d09e18311979cac8344ab4c90219e4"
+    },
+    {
+      "path": "backend/app/models/teaching_assessment.py",
+      "blob_sha": "6566f874a29842099ce1c81381f08803523e6cca",
+      "sha256": "fccbe7c4fe40b0ff2c565353873ddd69333aec6f694c7890f265ecdc3271ba75"
+    },
+    {
+      "path": "backend/app/models/teaching_schema.py",
+      "blob_sha": "8ebd230aface8a81a0483fc916f81a251916b0f9",
+      "sha256": "f6ba2cf8fc011f18cd64950ef8bed80094c6ed6371d55c7835c618c8d363fe44"
+    },
+    {
+      "path": "backend/app/models/user_account.py",
+      "blob_sha": "1ede5a43aca4c554de958d94cdbf9a24930531ad",
+      "sha256": "7c5542abfa43e8e8d451354c7b4ead4bdbc92d4adc1d5fc6179324a5f2649c98"
+    },
+    {
+      "path": "backend/app/models/user_custom_ai_model.py",
+      "blob_sha": "52c55e52b8b26428e5b894514a29174e1c24ace8",
+      "sha256": "d8b9e34f56f4f3ca471c57f1109b34c4d54d05acdcb4031de86162743cfc6ab3"
+    },
+    {
+      "path": "backend/app/models/user_knowledge.py",
+      "blob_sha": "7d325475c0b0af84dda39fe12c77a7b604546e35",
+      "sha256": "d35101d878e98ab7d47d05cf8f54de2f0ed8abc42ee1aa5c577f4cef35b59f20"
+    },
+    {
+      "path": "backend/app/models/user_rag.py",
+      "blob_sha": "04ad53f37f05fdd215683a0b096550de5238097b",
+      "sha256": "9558b66b74af4d01c6ac114c4646909812f87d02370ba0aabad1058644300fbd"
+    },
+    {
+      "path": "backend/app/repositories/json_store.py",
+      "blob_sha": "a52e04d19d4cc02eb6fcd3eb4174fb5eea586b29",
+      "sha256": "bba8a5159870bcffcf1b7970770f64d3691388aa9d326585edbed311c2dde602"
+    },
+    {
+      "path": "backend/app/repositories/teacher_work.py",
+      "blob_sha": "b5508ee5cd4d27b93f4a254b4a3a10af54b378b7",
+      "sha256": "cbb93da27b3fc9f51fa38d351138c6331b6bde81f9f71d454425c956b2113efe"
+    },
+    {
+      "path": "backend/app/repositories/teacher_work_exports.py",
+      "blob_sha": "7aafca98f5eb4309b90add27d3c19c9a2e5d2ba1",
+      "sha256": "c6e3103c027c544332955dfeeb561aed64fff19fdef8f25faf8ff351402ca46e"
+    },
+    {
+      "path": "backend/app/repositories/teacher_work_materials.py",
+      "blob_sha": "6cf1f47e9ce5cb75999963e17c3df025ce5e49a9",
+      "sha256": "377097a760fcf3f2588cc0e7d2217a981dcfef4e0643c7a33b7327b19056a36a"
+    },
+    {
+      "path": "backend/app/repositories/teacher_work_proposals.py",
+      "blob_sha": "33948492b464f5674278d0b3178410979a58af22",
+      "sha256": "2efa35aaee8365e81585a20adbe5c72915b3f48105de56b2af1829d26c402978"
+    },
+    {
+      "path": "backend/app/repositories/teacher_work_sql.py",
+      "blob_sha": "59057882734027b44ae57829b137f4af90b2eafb",
+      "sha256": "f461ad064c963bfb746ff6b708d1e9baecf9365ff150576a7efe7240cac9c367"
+    },
+    {
+      "path": "backend/app/schemas/chat.py",
+      "blob_sha": "413110633e2cca68c744d2cd451c42a5309b7c14",
+      "sha256": "b2717a7c81ba826db260dab82a42fe08370a7d9118e9988fbb88db8986416f7e"
+    },
+    {
+      "path": "backend/app/schemas/learning_diagnosis.py",
+      "blob_sha": "265c588574e2d64043c583290eaed4ebda4d7c9e",
+      "sha256": "a2548eb4e2d27422479c4f538ed804f51da3e669ed50f370c9ffb528a0380d0d"
+    },
+    {
+      "path": "backend/app/schemas/teacher_learning_diagnosis.py",
+      "blob_sha": "9f9c3f560d9e7efb325a71a2ee504964fcb233bb",
+      "sha256": "ad7c6c59d5e0966740d0cd9de1c8156522877511a26aef48d72ee3c47bb82dd7"
+    },
+    {
+      "path": "backend/app/schemas/teacher_lesson_prep.py",
+      "blob_sha": "f99bda4b226054b4052d74ee28f4bd3eeaf47b14",
+      "sha256": "a898b641820bdab119e7f894445df813f3fbe01e188bbe133f2a47e5a7499648"
+    },
+    {
+      "path": "backend/app/schemas/teacher_work.py",
+      "blob_sha": "c20219a6e2d70ad0b04ba293268be19d8fc1771b",
+      "sha256": "986661e6989088f99bc1a8884068b3ec076e7fda38346d6dc2ac2dade403869b"
+    },
+    {
+      "path": "backend/app/schemas/teacher_work_exports.py",
+      "blob_sha": "5f313336557728b72d531ed0859ec9b196c86432",
+      "sha256": "42bf7b85f85dfa2c81f603237dfc2de11f6018ff9f3f28870398b45c7915318c"
+    },
+    {
+      "path": "backend/app/schemas/teacher_work_proposals.py",
+      "blob_sha": "a04c283ec8a90fdff31de041501ce6d8278596d7",
+      "sha256": "6cfb603e3c6d58522f9d01299a7384ee8b3d93a9ac22160f28dc92a82cdbf9c1"
+    },
+    {
+      "path": "backend/app/schemas/teaching.py",
+      "blob_sha": "4a765dba930aabd092b06fe2f519288f93746a73",
+      "sha256": "ee3f0bd5d9a4fec1e4642b6a355557260da5dc7667a88676673a8a6c0f6a329d"
+    },
+    {
+      "path": "backend/app/schemas/teaching_assessment.py",
+      "blob_sha": "22ec597896e7ac78052a6a31d13f61868ebc6f87",
+      "sha256": "e24c257b7a306d88f18592f07e67bd119a69b16428792040417d79bdb8c6c19a"
+    },
+    {
+      "path": "backend/app/schemas/user_model.py",
+      "blob_sha": "de6169efc5d4117330d8b92ea1005d9c3c906a35",
+      "sha256": "a79017427ffd54249913c965e634f274b4be9f881a04f850f4c486482ea40c9f"
+    },
+    {
+      "path": "backend/app/services/academic_sources.py",
+      "blob_sha": "4ea4d24bda4912d303f2a09489a2d799c74340ef",
+      "sha256": "ffc824e54f95a73de9ff3597da003112e1e238c2f96378430d83d33d50bf63da"
+    },
+    {
+      "path": "backend/app/services/agent_workflow.py",
+      "blob_sha": "129355599ee16de90669274ad7457c291cc31585",
+      "sha256": "6fbd4e77cd35fa05a14a9804dfcf1b5b90a18937e80f223c1356ca224a4261cf"
+    },
+    {
+      "path": "backend/app/services/assessment_policy.py",
+      "blob_sha": "e8ec826f0793b1b830aba22766b313338e2831e0",
+      "sha256": "9f67947c5dad956652bd4ec2a37dd28d48c9069d20fceb6e79d5b336543ed141"
+    },
+    {
+      "path": "backend/app/services/chat_batch_receipts.py",
+      "blob_sha": "1893cca14f75ca5375c5e0bb5c7607b63d0ad054",
+      "sha256": "9859878025213fd9abe864b1d33c37ff23b7f23b7215f4298a0b9f5aa9041dab"
+    },
+    {
+      "path": "backend/app/services/chat_batch_schema.py",
+      "blob_sha": "8492840888be10ee68f1dbf5bf1d483ad6e6db10",
+      "sha256": "1e818bf01b1f19e6443f8a78f40c828bdd8d9f846867c41f60c3a00f38db484d"
+    },
+    {
+      "path": "backend/app/services/chat_context.py",
+      "blob_sha": "16c693a2ff98f28b8559d11de69d935b10364e28",
+      "sha256": "69bedf7df7c17458ea86961e2431c9172cbe600f85ec28b404145b30b37f42b2"
+    },
+    {
+      "path": "backend/app/services/chat_history.py",
+      "blob_sha": "dcdfffe71097e599ea21aced042bc7be64603435",
+      "sha256": "4d45219d73b9199ffbc5929045ae92c092e6f051ea43dac2a7721086824eda04"
+    },
+    {
+      "path": "backend/app/services/chat_identity.py",
+      "blob_sha": "2885b194e2eeaeedbf3265ecbadee1be52e419f8",
+      "sha256": "b1263d8eb428fff6a9c9215f06cf9939e81167337fc987fe06b5dbc7dcc8d47b"
+    },
+    {
+      "path": "backend/app/services/code_repository_service.py",
+      "blob_sha": "b86aa23b9b3284dfd8812b6c70f44f57aacf5e39",
+      "sha256": "f898868f34a7630d5f1c1f6ae6ebf980fcb71785cf75bf1716bb650ae52a2e98"
+    },
+    {
+      "path": "backend/app/services/code_sandbox.py",
+      "blob_sha": "c891d96462bff193d07f73a43b2b5948eec8b0ec",
+      "sha256": "f1dccadb0fa637c468a074c460fef5cbb05ac4184259be3c4fc950875673588a"
+    },
+    {
+      "path": "backend/app/services/current_identity.py",
+      "blob_sha": "21c71b2e84f9616b3866500833324372dfb04df8",
+      "sha256": "18fbd13380d0d87771e1a11b7b531473d095177562de7abf71480a3dbdb30ff5"
+    },
+    {
+      "path": "backend/app/services/default_agents.py",
+      "blob_sha": "9e7e7fd6b38e2c908fef8556744061acb8bc0c4b",
+      "sha256": "3408e0d477cc28c8657ddecccf26552e78579195e228e5ce0bf1d15b84d049e8"
+    },
+    {
+      "path": "backend/app/services/git_coach_jobs.py",
+      "blob_sha": "60d85070c7bc1f9a3fbd9c26f251f69a5b76bd01",
+      "sha256": "abc913dfe5ba474c306ba3ee990edcf168ecd481341ee01dc006214ace3363be"
+    },
+    {
+      "path": "backend/app/services/git_coach_service.py",
+      "blob_sha": "f8d7c6b05c842204d8a2c4f916b89758df8539fc",
+      "sha256": "3ca424da8adf8323ef341069d9079c8e4e797d7f685fce7d090e4f94cc1dce39"
+    },
+    {
+      "path": "backend/app/services/git_workflow_rules.py",
+      "blob_sha": "070bd761d8af5f926c50f3b47e57ff70cdb7b88f",
+      "sha256": "3a77975cbdf11daf03a500df31c701b624c51df94a0f46c25d013159fb891262"
+    },
+    {
+      "path": "backend/app/services/gitea_account_service.py",
+      "blob_sha": "c322e4ca9137e2489c7949be5f92ae48a287152c",
+      "sha256": "e1e817c4dc296822368704cecedae2e6d88eed4cf8a76d0e4f7e7998028d19c1"
+    },
+    {
+      "path": "backend/app/services/gitea_service.py",
+      "blob_sha": "244b80b4fbe670effcf3d72c0c3e305611fb3610",
+      "sha256": "1432d86d36a8b2ac10e789ae6e7f7fe45c45adc8c80a33077c8f19d2e4ee84a0"
+    },
+    {
+      "path": "backend/app/services/language_metrics.py",
+      "blob_sha": "9893e1e484c66a1221d0c8ea02d77054dcf71fed",
+      "sha256": "baf3ba440c3afee6171ba502ded74afb9328133fdcdce7206eef6fa8a85c9c04"
+    },
+    {
+      "path": "backend/app/services/language_service.py",
+      "blob_sha": "611a85000d67d3e05540e72ea1f9dade6e68a4a4",
+      "sha256": "aa0d42d52b6fa695ad473ebc2f8c7619aa94a95becf2614c1d5dbdf89d002213"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/__init__.py",
+      "blob_sha": "fa02a1a39be6c303cf8726aefa27910909c01e55",
+      "sha256": "d7b357d8fee34e0c303df93e4f0de200796e922c292dcf2608a3c09e676741ea"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/activity_listener.py",
+      "blob_sha": "a6826c1c36b50a05182afef78ad460880bd528ca",
+      "sha256": "15f6acc01c1d24665d9a7a64aec9ae1448757b1c21fe1b1d25d029d814816f52"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/answer_evaluator.py",
+      "blob_sha": "82c6ff67464a646b20ac6bee9ed95ca40cc61288",
+      "sha256": "e1a0b23118ae86f2e7dca734e5fa63b34b591f5eac72e3757945403b67fe4dc3"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/catalog.py",
+      "blob_sha": "3a2e44c2cae08b9489a3bc4e269e5974d4c8a2f4",
+      "sha256": "8c319a993ca792e18ab1eb96871ddec40267e83efc6406c6d2ceb2c1be39e686"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/constants.py",
+      "blob_sha": "97df9a099a95521a22cfc86b7ad12079092164ce",
+      "sha256": "07e7acdbf3c01774f33c73646640a1049ce9a134c49da3c6b3529fc2e93c92c8"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/content_matcher.py",
+      "blob_sha": "1a905b0ddcd4bd4aab81be805f47ba25bb681676",
+      "sha256": "2a0fd19d874309b41c1cc56a18ba1ed061f02d216160cd6cb60de96da7696642"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/contracts.py",
+      "blob_sha": "d1f04a73a4a63562871f67066870eaad155890b2",
+      "sha256": "d3a0f49e4a93a7e232c0ae24e51ace1339b672f635899980e29f74f09c70eca9"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/evidence_providers.py",
+      "blob_sha": "440e39c394943674c64149f268341c8cdcec526c",
+      "sha256": "66842a7ccda684ec70e9d6a3057d7f455932bb79400cd49488cb83d79f68470d"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/evidence_store.py",
+      "blob_sha": "da5c989d755ea7139c18754b8c71c6a035270dc3",
+      "sha256": "b2d059a188c407a6ee35377e724c5e061220bd7f26fe28959e97fdff7dfbdefa"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/git_practice_service.py",
+      "blob_sha": "6adf88b2cb659b925618051b4fc42725711d98e3",
+      "sha256": "5a33b89fb70191edfaffe3a7f76969f6f1c7e85108e8e4b8a5a80e8905fb970b"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/goal_orchestrator.py",
+      "blob_sha": "73787f5bc5b9baad7b8f6c21d0e83b80f1e2086c",
+      "sha256": "5e1855ba7098a26e3702a7cf0482d7d379fc463b1cad7011985eda9d5c17c8f5"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/hint_service.py",
+      "blob_sha": "12911cc242e8fdab3c9e20a3dc4eb923e7221f3d",
+      "sha256": "c5a4b276a4d6be8749c232aea6a24b660740c1592a3ef76e2be490fc74b0e1ae"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/knowledge_graph.py",
+      "blob_sha": "dc7c5aa10ed12895bc1ed9e0b623de5ba066aac2",
+      "sha256": "9131d1b4e653253bc2ac5407822597f99749ea788ea20fe90aeff65607d63af6"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/knowledge_retriever.py",
+      "blob_sha": "29c3d3f1fbc5f22415575c8f548f6ffb4278d25c",
+      "sha256": "fe71cd3c97aa9484244c698d20a33d19c60913e985b1c26687eb91603ad9bf16"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/llm_explainer.py",
+      "blob_sha": "3ab956b79bd750f5fdbae7fad02995e398127771",
+      "sha256": "cd318c5e963ec93ea853a2eb229768ae00f12c7a7c5d6630edc89dfe3ddf427c"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/mastery_evaluator.py",
+      "blob_sha": "374fa4c694a2fa1b77baa3cf4a1b56fb9d29542f",
+      "sha256": "2a35fdd36e8ae76c65e110dfd695c6b3b3a23b623c2f84e48d3760e4b2e86551"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/mock_knowledge.py",
+      "blob_sha": "45366b9e46a544a872061bea5b6c5f066749aee1",
+      "sha256": "577dd451bf6d109c8e747e79b2fb36d7ebb1f7f6dc49bd84f2be582de8dbdd20"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/output_guard.py",
+      "blob_sha": "943f0b6093a605bda58109bb1cff75cfa621f9a2",
+      "sha256": "b5c2e3ffe25db94ac0f24e65cb1ce5c288fd13f1d603da617d5a2df6ac2a770b"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/path_planner.py",
+      "blob_sha": "d728686bfd58a9092f5bd364b54c9afabc92c442",
+      "sha256": "c3b3bfce05f14368323355f846b1a41d5f5fcca60e0b74ea74254465a4183554"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/rule_engine.py",
+      "blob_sha": "15ed853c54247918da551d5da6e87b8db4e8b122",
+      "sha256": "ca6e3036ffab6cca27bad1ca4552f0cef99a7839c96ac99ad6f0c43e27ac08aa"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/sandbox_adapter.py",
+      "blob_sha": "4385a9c11a95714168e6efb3a9750bb1690f47f0",
+      "sha256": "b8ccfb61a74a237605511bece0e917a01f976790b412547ec529e40dfe127f2a"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/task_resolver.py",
+      "blob_sha": "8250fdcdbafdab69cec0c7c382db25037a7cf8db",
+      "sha256": "28a69a8374268d6fecf36c188690b5ff1426e58ff7be22ce3d4dc570d0e94116"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/task_templates.py",
+      "blob_sha": "7d0262e64d44eef74f965bbb0dd577a0cc11657d",
+      "sha256": "a6c55e767da382e6beaebdcae3c5bbf90d2e5bd7240c9fd7ca36c5e48c5b9819"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/teacher_review_service.py",
+      "blob_sha": "637b1f8cfa50893ba97194a1262438a75440674f",
+      "sha256": "cbac98bc0a3ea71dd29169452aa444bb5a29b4c577ab759ab17ed5b830810814"
+    },
+    {
+      "path": "backend/app/services/learning_diagnosis/workflow.py",
+      "blob_sha": "d03036e9188da99e382d141e646e5e4bfd9007cf",
+      "sha256": "e6b2c02f618eaaa61d1f772649d5318fb3fc66ce2ed0c391fb74a9fe45caf18c"
+    },
+    {
+      "path": "backend/app/services/model_registry.py",
+      "blob_sha": "7f19f2328599ded9c6796d8f96b53d8409aba829",
+      "sha256": "d75d199fab6da049e12c73e8a78e03af7798bee27838c97383bfb2b65444bbc1"
+    },
+    {
+      "path": "backend/app/services/profile_extractor.py",
+      "blob_sha": "752e811db45cafb48a236d9c690db0eb2d9e2bbc",
+      "sha256": "2b6fb753ae679e134f83a58cce2fb99810dafe8d6a3699bc4bcef69b6e1e0bd4"
+    },
+    {
+      "path": "backend/app/services/rag_service.py",
+      "blob_sha": "16539dda051bf51c68ba2cdce5283ca432459398",
+      "sha256": "012d7640f42e4010628aff3d81fcdcb7e669d40fa5541168b3aca581e0ca7fc7"
+    },
+    {
+      "path": "backend/app/services/repository_git_observation.py",
+      "blob_sha": "baf6eaae1aeb432f2526b9ac3e284fb911f93dbd",
+      "sha256": "10e138c0cd6fbceae8c1f68eed51bf1b71026ad3602c18abe0c2e8834f3adace"
+    },
+    {
+      "path": "backend/app/services/sms_service.py",
+      "blob_sha": "f36235700d17f326aea0bac63c46e36b3e283119",
+      "sha256": "4e6094cccc60037ef4f735ed75187a42ca050b453cd3b543fbcba5d568b87bef"
+    },
+    {
+      "path": "backend/app/services/student_git_guidance.py",
+      "blob_sha": "d8237e71c2d244d749a28e8cd9d84b7b14c22ea6",
+      "sha256": "1e6717a6fd0120b6bf19ebfa2c58626a93f6ab99029fb8112347c2af4f6a6f77"
+    },
+    {
+      "path": "backend/app/services/student_git_workflow.py",
+      "blob_sha": "1ba9ab0b4ddbc0e3e84a2e201fb08a8128ad8220",
+      "sha256": "0df76452b21d164abc99f91b1e1dd8e5b35c86c617c01e85d7c1cb9e0f52c38c"
+    },
+    {
+      "path": "backend/app/services/student_paper_reading.py",
+      "blob_sha": "abe0f951b2c4721f994e32d10f30f3ffa9b01283",
+      "sha256": "249ce9af8d61069a832bab7a93993f218cde6207b7b76ce013980e1c7cf72d43"
+    },
+    {
+      "path": "backend/app/services/student_work_capabilities.py",
+      "blob_sha": "8fded675569167af5fafa7c2fc6e9166bd12b021",
+      "sha256": "7a3335457382d20f2696e9c02a2144d9a1e4e9cc89d29c85817f8cf3605022da"
+    },
+    {
+      "path": "backend/app/services/student_work_skills.py",
+      "blob_sha": "796c925b32069d8eb6d680ae802bfe009987da3d",
+      "sha256": "3a2a5762eb690851c11a95e74e94d5077429bdaaf2397498367b98eaa8b27c79"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/__init__.py",
+      "blob_sha": "79fd3ca364f63dc0d1bd2b4537eca52df008d65e",
+      "sha256": "ee6d9ecc2f2f4931f338fbc5020d6d01261a76c4b0b50532f41f376623d79e14"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/ai_client.py",
+      "blob_sha": "e9174a7521713ef5130ef03847d0a767e767ed98",
+      "sha256": "5cc084d0b7d7fd14791b441e72932fd4076f4acc0bd2c2e9c5f863bfecb2889d"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/courseware_catalog.py",
+      "blob_sha": "a9cd1316bf991882a17a9787d9428cdfdc9e4876",
+      "sha256": "4c269dd9705c53e0eb08e73c59a5f4bd198ed65e017f0dca7b70e2019280e7fd"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/document_retriever.py",
+      "blob_sha": "33270e5761d4fbc4db704551ce6638e6d383d02c",
+      "sha256": "e060545432cc6348590089adf494996bcce6df0f92794534735c9647b6a0a174"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/docx_exporter.py",
+      "blob_sha": "983050a14ac303508b27a2062599dc60c54156e9",
+      "sha256": "5f91ad2ca125b237d257be21d68c06919d64330796825916850940b77750e20c"
+    },
+    {
+      "path": "backend/app/services/teacher_lesson_prep/service.py",
+      "blob_sha": "160de001a683717950327eebf4d650ae507e0e7a",
+      "sha256": "0a1adac356e2033e2ab908957c9c66b3035ef4185275c9406f391fab1354ef9b"
+    },
+    {
+      "path": "backend/app/services/teacher_work/ai.py",
+      "blob_sha": "db6fe304c2c9326d2afdeae14634cbca354bb540",
+      "sha256": "5f2cb06df3b40091fd9c00bb4f8a713c997fad2c8e7f32abc3454ac5e67b91f7"
+    },
+    {
+      "path": "backend/app/services/teacher_work/authorization.py",
+      "blob_sha": "3fe3175ea41c00e46c27af231bf12c459f64650a",
+      "sha256": "ad0c25ccc783d72ada399e61b28bf5ecef2cc6fa9e2d88007e9ab88f75fdbbbb"
+    },
+    {
+      "path": "backend/app/services/teacher_work/bootstrap.py",
+      "blob_sha": "f39d98ce9f40632e13b5e177d70ba0bcee4bff6b",
+      "sha256": "a1b2f2eaf4a9ad1862c7fdbf713efbded4a467733225c64493cbd64aa655ca9a"
+    },
+    {
+      "path": "backend/app/services/teacher_work/capabilities.py",
+      "blob_sha": "c24b56bca59bb9be5449db7a3e10d703d6ce227a",
+      "sha256": "3f6d8760731db841d863565428d239fc4c13412194d9c4f906ec3e867519de90"
+    },
+    {
+      "path": "backend/app/services/teacher_work/chat.py",
+      "blob_sha": "6191a604deb675a3edf386bf29c75d04f213f041",
+      "sha256": "e5041f45b586a3fd656584a32d886b67b1dbcb5c47bba7d2e94393d6c5a9a6a9"
+    },
+    {
+      "path": "backend/app/services/teacher_work/chat_execution.py",
+      "blob_sha": "15e5b7891817a6b67f139d03f2d6ca96cff7a4aa",
+      "sha256": "0fdad0d930f2f06061bd12e00993be45830f606b08dc7320d5cadd037848ad8f"
+    },
+    {
+      "path": "backend/app/services/teacher_work/courseware_docker_transport.py",
+      "blob_sha": "98ef252bbbd7173bc60969fff336e6aa8978a409",
+      "sha256": "ad4f5aa9884e3e24a224853f3979b959e2a25f1159ef64b2167abbaf0ae2c3ec"
+    },
+    {
+      "path": "backend/app/services/teacher_work/courseware_extract.py",
+      "blob_sha": "b23edd765b89add191f96e2f192b89241317f784",
+      "sha256": "60d12bdda6eeb0c3fb26a9d83748b358a1b3feff31f63257f63952275225db8f"
+    },
+    {
+      "path": "backend/app/services/teacher_work/courseware_parser_lifecycle.py",
+      "blob_sha": "b256cda2da750b4c70ed5dafd165ec3733139619",
+      "sha256": "57b814081f37f3457c7b10dab1609820def300fd6491d7ce1845a34d5ac7bb8e"
+    },
+    {
+      "path": "backend/app/services/teacher_work/courseware_snapshot.py",
+      "blob_sha": "0fa5d1340105879cffe69b324f983c61a2606d5c",
+      "sha256": "f497043163a599f084b5764d0685a01088b3201e629d4e6e69bdf0d667ad1f54"
+    },
+    {
+      "path": "backend/app/services/teacher_work/courseware_supervisor.py",
+      "blob_sha": "9a45e6e6ebfdf9dc10262f16b2231c386c08cba3",
+      "sha256": "bdd42c849dd5decda32f94da6b347228c326767bab2fe2a30e90d1104ce19d59"
+    },
+    {
+      "path": "backend/app/services/teacher_work/execution_capacity.py",
+      "blob_sha": "7f6f6de91fb01180ecc9cae932bf441dc1b81380",
+      "sha256": "cbb95000412f6a41776ada74535f5fcf523f5b650bf785da85339d4432ca596e"
+    },
+    {
+      "path": "backend/app/services/teacher_work/exporters/docx.py",
+      "blob_sha": "f216d4d827bcd255deab07ac2a3efb77d04e984e",
+      "sha256": "ed429e5d948c6ef935857e1084987286a9b1995ba1b11356c24b891f4f1af7ca"
+    },
+    {
+      "path": "backend/app/services/teacher_work/exporters/pptx.py",
+      "blob_sha": "b100cadc13bfc5beaac208901a45fe9849899d07",
+      "sha256": "ad8ec641d384028902acdf723a224b305d1fbe7112dd072657477757d3f6cb6f"
+    },
+    {
+      "path": "backend/app/services/teacher_work/exporters/theme.py",
+      "blob_sha": "dc0dbb48de70eadea80965f1ada66a0e8fce5486",
+      "sha256": "e44d9f550071bec72d1cab8526ec0d5273799925737356eda37fa342642933cc"
+    },
+    {
+      "path": "backend/app/services/teacher_work/exporters/validation.py",
+      "blob_sha": "5181581e6942fa10949f45205f435478a74a6190",
+      "sha256": "e54534fca9c2104d31c6ed44b4b249ddcca1b0d3162621a0acabcf053319f673"
+    },
+    {
+      "path": "backend/app/services/teacher_work/legacy.py",
+      "blob_sha": "1245cad0e2e83822debbed8102a56765e923bb03",
+      "sha256": "d58f787691e8e2743766756b50846b6b8959460c26b027f6352cf90f5159d064"
+    },
+    {
+      "path": "backend/app/services/teacher_work/material_sources.py",
+      "blob_sha": "86ce1df23af3badadfb93ff0ea506d43a46ef65f",
+      "sha256": "6854f160ddf5854117ef630226d64215f04469c50f64960d1ff50ca8d506c5ed"
+    },
+    {
+      "path": "backend/app/services/teacher_work/materials.py",
+      "blob_sha": "f2c1effc9bee3a37ad4318dcfb187fdb64a4fd76",
+      "sha256": "d4dbaca9eb48db9833ceccf316036056b5db36baa25d12dc3932f1d0afb1a9ad"
+    },
+    {
+      "path": "backend/app/services/teacher_work/office_execution.py",
+      "blob_sha": "853bae64716c360aeb88b9625c2252f7624b1a13",
+      "sha256": "e2292a0ad16aa28f9d0b56cfb93dbb2b653afee460c71ef8c9844bd6b7b0cc42"
+    },
+    {
+      "path": "backend/app/services/teacher_work/private_chat.py",
+      "blob_sha": "1705184a5005290d30df5d158d533cd49df83736",
+      "sha256": "9b9b1eff84fdaf03a698075685c3541fe9b042866de7cb77281944ed00576757"
+    },
+    {
+      "path": "backend/app/services/teacher_work/private_exports.py",
+      "blob_sha": "b48aea4696cd5ef255d4c8827ba608ed0d6c68bb",
+      "sha256": "0e3eb5b458437240b2295df19d0efa89f55d083ee7aed037c132e260a234f6bb"
+    },
+    {
+      "path": "backend/app/services/teacher_work/private_proposals.py",
+      "blob_sha": "4afca6257daefe85f2a645f730f6c62f43a72d92",
+      "sha256": "617924e9a7f46dc706d156daf6d8eafea0808d0cf4ffc5c03c6a6180cf21ba3c"
+    },
+    {
+      "path": "backend/app/services/teacher_work/private_storage.py",
+      "blob_sha": "a5189ed785eec1e290ba33cbc369ba038afeadc3",
+      "sha256": "e04f6b26f732a68a9929bc93b0de79a8a9cd45d1ffc3638c55799073421475fb"
+    },
+    {
+      "path": "backend/app/services/teacher_work/private_tasks.py",
+      "blob_sha": "5c7327da326904f1e87f016659ac96851fe32c14",
+      "sha256": "e23d23d68ac2928c87099e39cad64fffb1d6967c868b5bf1f1830e900624719f"
+    },
+    {
+      "path": "backend/app/services/teacher_work/proposal_execution.py",
+      "blob_sha": "70889e5058b7078869490398d7e337eb9f912b1f",
+      "sha256": "75b438678b709d2ed596ff16067e2e947baf0b1b459461ae14f41006a8bf5fc8"
+    },
+    {
+      "path": "backend/app/services/teacher_work/proposal_persistence.py",
+      "blob_sha": "2062cda63e9e3394636211b721b7973e42a92909",
+      "sha256": "daac4be3888a8105a63ee25ba2b5a820c4d546037d2987a290b0013002991ca0"
+    },
+    {
+      "path": "backend/app/services/teacher_work/proposal_schema.py",
+      "blob_sha": "5b81c95c5e1e296a6c9613d6861b9b9310e46066",
+      "sha256": "d8ede69ab7ba72740ed4485d5a0d6790a4d2bea378d57d6986a3ad2f760fbbfd"
+    },
+    {
+      "path": "backend/app/services/teacher_work/proposals.py",
+      "blob_sha": "943c1dfe461af98dfb19889ccf3dcedbcf8d8820",
+      "sha256": "12b789584200ac7834630a9c9693b2f7ded5be1fdcabdc597b4172155b4f3ea8"
+    },
+    {
+      "path": "backend/app/services/teacher_work/run_persistence.py",
+      "blob_sha": "3c9fd39fb23e7ee18ecf6397769866fefdf0a003",
+      "sha256": "c2bd1ac3a23002f5f3c1cff709a9b0bd355193f2b9e3f1154d8baab108bdbf0f"
+    },
+    {
+      "path": "backend/app/services/teacher_work/runs.py",
+      "blob_sha": "283e6cf5ef722355c64335620d2389a413fed086",
+      "sha256": "71a4861cff1de4d9ec26e13d9a3c57c5e80de8be1311852df35580207a4e6503"
+    },
+    {
+      "path": "backend/app/services/teacher_work/schema.py",
+      "blob_sha": "856e04d19c8de86bfa68e388e4734183ed424786",
+      "sha256": "8f1ad905379d0f42fffc5b824368e7e8ca44f130cb76384a0b26aebf9993b157"
+    },
+    {
+      "path": "backend/app/services/teacher_work/schema_mysql.py",
+      "blob_sha": "8959bbf318a19593fff21e77fe4cb9aa8b983125",
+      "sha256": "66daff686d4dfa180bdb584931b280bc39f7a51e9c4679488ae878f71d15c94b"
+    },
+    {
+      "path": "backend/app/services/teacher_work/schema_mysql_v3.py",
+      "blob_sha": "0f779a4ad5b4ad686cfbcdefa2f51a44a128ad18",
+      "sha256": "0011e43d01a62b55f087ace0286dd383c83d2a976637289a6f470504eb4feed5"
+    },
+    {
+      "path": "backend/app/services/teacher_work/schema_v1.py",
+      "blob_sha": "24be8fbae2ebe37d9460a8ff97bd01e385b493ad",
+      "sha256": "3a6e98397e2ba9d7c8879437d3698ded8c455d45f155a6edc8871cf7df2351cd"
+    },
+    {
+      "path": "backend/app/services/teacher_work/schema_v3.py",
+      "blob_sha": "4be6ab545db524fa71045c7cc0bf592b4aa64ff0",
+      "sha256": "efba134bc611542ddd4cedaba8024cfb842fbee05f352502a9b5217f608c0ede"
+    },
+    {
+      "path": "backend/app/services/teacher_work/types.py",
+      "blob_sha": "bc213830d32c1c59ae9fb7d4e0f55a2a02bacbca",
+      "sha256": "c644ed9db4606556c4eca98767d7f17f3899056c038a2be415328f2545ddcce5"
+    },
+    {
+      "path": "backend/app/services/teaching/__init__.py",
+      "blob_sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "backend/app/services/teaching/access.py",
+      "blob_sha": "07f6d7b7e89e2b5e6c00f3d4bf05ae6b009ac266",
+      "sha256": "567b33768ddb60eea6030ce6aa0b508205e3f04596aed48d6a6c246e94205af2"
+    },
+    {
+      "path": "backend/app/services/teaching/assessment_access.py",
+      "blob_sha": "4e4b5578a72f960a210017bc8372c005470e34d5",
+      "sha256": "3f097836231acabee29e5a42a7ff759abe8264fe715109e4b8e83a1983ea1d6a"
+    },
+    {
+      "path": "backend/app/services/teaching/assessment_pagination.py",
+      "blob_sha": "27a909ed3092be205e2ed75f2b38dc586c5d7909",
+      "sha256": "cc771d6620c8a9cd0ab9b123a0a9d125eaf6f04eeb73998cfdfc49cfe7e5562d"
+    },
+    {
+      "path": "backend/app/services/teaching/assessment_schema.py",
+      "blob_sha": "e07c506fad1ed2eba73b2c540bcde3da426ee3be",
+      "sha256": "ac73436e48b81d6b47b5ca9200272d9d891e3cb8b48c7151acdb056b6dc40a00"
+    },
+    {
+      "path": "backend/app/services/teaching/assessment_types.py",
+      "blob_sha": "2f8c2e7a5fa4204c641c4395e8c625eb8aad56f7",
+      "sha256": "97a5fe66b9cae92c11ced98a65c0d8ebad8969f4072aadecec1ee38043e49ce7"
+    },
+    {
+      "path": "backend/app/services/teaching/assessment_writes.py",
+      "blob_sha": "da841d56a4fcad58003492925b7b5c205197cd4b",
+      "sha256": "83ad5c8735f8587d6129149689eb8c27097a8888a490b1fb0e01a4dc7e8e97b3"
+    },
+    {
+      "path": "backend/app/services/teaching/assignments.py",
+      "blob_sha": "7425a10f3cb3b58320410855eb34b567ce933187",
+      "sha256": "2e1d20943af04698a72d2006db47321174db68875f132864d0c2f33124be5da3"
+    },
+    {
+      "path": "backend/app/services/teaching/courses.py",
+      "blob_sha": "2e004988de0786ff3002b3e8b6f7b7c9bbc7fbee",
+      "sha256": "7834de487c3969038d951a7d9210a017f2ffa24036599af79243ed7e4bcdd80a"
+    },
+    {
+      "path": "backend/app/services/teaching/policy.py",
+      "blob_sha": "15b6142fdd9847b5f700b597d56bcc4f1829fc3c",
+      "sha256": "58ab5a9265b0799934dc418effd9de1046559bbe03b4560fc4dade4c8603bedc"
+    },
+    {
+      "path": "backend/app/services/teaching/releases.py",
+      "blob_sha": "ced3d5b4dbf321d5fe17e9868a9a7524c5ba675e",
+      "sha256": "1f6096f2a27e402a0c5b4778f7282b1ec0dc092a25cc3a99085140ded5b18b30"
+    },
+    {
+      "path": "backend/app/services/teaching/roles.py",
+      "blob_sha": "b806e7fb9edc5607c88e2cbd5b1a2535609c5e41",
+      "sha256": "14f5067264a284650c40c730278f8fda7bbec8291ed72b065086908773faa604"
+    },
+    {
+      "path": "backend/app/services/teaching/rosters.py",
+      "blob_sha": "41193121acfec27ceeed2e1bc108c014c1e8b5ed",
+      "sha256": "e56b6bc91fb8251b0b7e03d6e244dfbc82516cbad475dff2de6120754c6be312"
+    },
+    {
+      "path": "backend/app/services/teaching/schema.py",
+      "blob_sha": "abbade678856f8ed615d085753d0344b9c86d54a",
+      "sha256": "14c18608e361dde80c32cb5a5104efeda6ad6f0d6c9c82e4a33d07dee8012442"
+    },
+    {
+      "path": "backend/app/services/teaching/sessions.py",
+      "blob_sha": "4aba9d1719e018161a2186ae46957910e5a53fec",
+      "sha256": "1fecfcdf08225c918047587d9e87f4dd33b88483609116f631b06c18bdb4e071"
+    },
+    {
+      "path": "backend/app/services/teaching/submissions.py",
+      "blob_sha": "e87c4d283cf02012637f1ab7b1657d2f74d5cc75",
+      "sha256": "f9a031593cf2c11b1b48fdbff36e5050eff94e8d90d9ac3cc2b355007f4ee3e6"
+    },
+    {
+      "path": "backend/app/services/teaching/types.py",
+      "blob_sha": "472d7ca200730cab4f8dd90a28085fc4e909fbb0",
+      "sha256": "ce3944be33ac1cd7e5c6666a9712baf33e56035aca9b7bcf1adf82b6ecc82d37"
+    },
+    {
+      "path": "backend/app/services/teaching/writes.py",
+      "blob_sha": "1c15fbf7a5151031939e1a535dfa27a80e83b13c",
+      "sha256": "d8d44ac80bcad8cdafc8abf8b8127c6a36c627facc804e82eb86753bae65dc20"
+    },
+    {
+      "path": "backend/app/services/team_git_service.py",
+      "blob_sha": "f1f6aaf1910cff735c1261c60156afc616d6eaf1",
+      "sha256": "2cea0a7c7afeefbf8509932d7f30971b45f0b408982f6c2b550248b88c8f2f84"
+    },
+    {
+      "path": "backend/app/services/user_knowledge_service.py",
+      "blob_sha": "3b52bd945a24ef53a119b893d82c29d2e08623c6",
+      "sha256": "7542affe4e8233911b514b52c47e6ceb448a129a0383712995151989fd64734c"
+    },
+    {
+      "path": "backend/app/services/visual_guide_service.py",
+      "blob_sha": "f2ffff9d3f4279412502a4f232a1a3901a84ad96",
+      "sha256": "1409a09197db13d35d889bbeb47f40d413499645a93dc2a6953f2ec0a1e5f5a9"
+    },
+    {
+      "path": "backend/app/tools/ragflow_tool.py",
+      "blob_sha": "03e9801180b1ab17d1b8526264cc739577b96b0e",
+      "sha256": "03892388e3bc90afe3235ec65834bda33b7c9db55b48085bfe9c86c6ef22440f"
+    },
+    {
+      "path": "backend/app/utils/datetime.py",
+      "blob_sha": "c4b8617dee7e129b3c16ac97bc9b5b920333a526",
+      "sha256": "55888961b7b42cd42371efd2db607d08ca5134dad6827f59dbc4c40a7c6df1b0"
+    },
+    {
+      "path": "backend/requirements-dev.txt",
+      "blob_sha": "2c81bef76c6d763c52057afe903c6c0d297c1fc1",
+      "sha256": "c98387f43c0b47c4310c66a296066fe604aaf94640b113b51ef0e4ff40a691cc"
+    },
+    {
+      "path": "backend/requirements.txt",
+      "blob_sha": "ca5c8420df107d8cca673885a92da7a739b51dc5",
+      "sha256": "9cdbfb910fdb8b2b96492ec2fcabd246c8b1db35a8230165ad66d6aa17ccf95d"
+    },
+    {
+      "path": "backend/tests/fixtures/chat_batch_mysql8039_checks.json",
+      "blob_sha": "8bf8aa9274fef2dc6ec93b773f0061ec011f01ec",
+      "sha256": "2d949f94984ec0110be6113afba4fccd73b0bdde4d2a0e2ea0f53815a551b75d"
+    },
+    {
+      "path": "backend/tests/fixtures/teacher_work_material_proposals_http_contract.native.json",
+      "blob_sha": "15da2dbfeab1f2afaf6e811aff7e416bc0432653",
+      "sha256": "4f70b0e0fc4e5294e935346c2f1738a03031cbc2e474f1ea5be8e440e70efb7b"
+    },
+    {
+      "path": "backend/tests/fixtures/teacher_work_private_chat_http_contract.native.json",
+      "blob_sha": "5d2ff86e92d8ead6405c1543e50d3ec11bdca98c",
+      "sha256": "f7cf0d38471a7cfc851f2e44044c357bb5298d7afd96dca1f816ad4c19bdf068"
+    },
+    {
+      "path": "backend/tests/fixtures/teacher_work_private_http_contract.native.json",
+      "blob_sha": "e5e8881968526a2f1100892037921377d036c53a",
+      "sha256": "169233d98d113f2f1f9a1aa875fb9abf19bcf7e15a9ee248726f10f4d15e7290"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_chat.py",
+      "blob_sha": "553b99562ce80c597d5a0f9d0aa833f7537e5b7f",
+      "sha256": "1654e1ba84abe322995de9af7ce3f0905979127447fab34d65651347c9f6f829"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_material_proposal_contract.py",
+      "blob_sha": "d673e23d17c608163ecb859cc1cfc51946776718",
+      "sha256": "1848fcef03a5de883d66b1ddbe67b71ba3b904e3f1e4640d11dbe6f72a76374f"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_mysql.py",
+      "blob_sha": "1ca7befbd7696023d28f16897161c0ef4f28243a",
+      "sha256": "62aec5ac45607df371293fd80de1a11b77dd8ab7c6ac185cecdfcccc675ec8ee"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_private_chat_http.py",
+      "blob_sha": "87e9572c767e434950a0982efb6cadbd1bbf8295",
+      "sha256": "58aa8b6a7a55a87753b0dfe1e92cd9d2a675aa8dc5a4a81268cf0dd4fe3a7ec0"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_private_http.py",
+      "blob_sha": "72f04e4e63ecce435379197d84cabc269be1bfe0",
+      "sha256": "71a97cae904d4fe36186296c0d2b009ef764ac9702925b47c4210cf214388767"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_proposal_http.py",
+      "blob_sha": "3517bba7f705ddd25341ca115bfc339bec36c0f4",
+      "sha256": "62650441cdeed1b248f9b526ade06a2804f927d9817c7b8373f5531ae290ae60"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_proposal_origins.py",
+      "blob_sha": "46f4a3af0b445b679245897965e23384c872c11f",
+      "sha256": "5b0c2b2419c5593343f03792b09a2edd97a28e539654e50b8144e4896fc88aab"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_proposal_repository.py",
+      "blob_sha": "919cf8d9a5a699d9da268be9b366f51b2e8ff2f2",
+      "sha256": "63e2cb48c4ba837b1cf837e7be53ca09100302dd5e25ef60387abe1d99793559"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_proposals_schema.py",
+      "blob_sha": "29c4e7cde585cb44e6ab5f7306cbbc2f26e1a1cd",
+      "sha256": "67bfa8a401f0ae132d0caaf6bb56c9439b9c97ab998ea0038e7c2b2d585ae6e7"
+    },
+    {
+      "path": "backend/tests/native_teacher_work_repository.py",
+      "blob_sha": "87161b16eeae389f1d0d4c25fc31eede0535d1f7",
+      "sha256": "2aa2ee0f3b848b45cc87da20de33abfc731889434d2249d9635d591e1f621e40"
+    },
+    {
+      "path": "backend/tests/native_work_persistence_contracts.py",
+      "blob_sha": "d5a203a05cfdfba08f97ce4163fa1f9cbb5908b6",
+      "sha256": "0c48659033b34d2717edf0cd35d808cad4c445ec8f7d9224b928c596ec046621"
+    },
+    {
+      "path": "backend/tests/run_work_persistence_audit.py",
+      "blob_sha": "3e47c572d4861f6cee41fc522e31bc7efa74f2ba",
+      "sha256": "7e89a613854adf8303ee6f942ad3367e745383250b0b9a3ef100e34e30bac094"
+    },
+    {
+      "path": "backend/tests/teacher_work_executor_ownership_unit.py",
+      "blob_sha": "e3c09a5c9f9dde96e21e3e8b1be3b0c9edef5d1f",
+      "sha256": "cc08195773950ddc76b16a19efe1124152941e85d68448c44bc9b08e8dc835c2"
+    },
+    {
+      "path": "backend/tests/test_agent_paper_runtime.py",
+      "blob_sha": "d7f304fae9852fb15d9a1c81a2d1baf5fb7413b2",
+      "sha256": "20ec92a15815d2d673e68ca35b5e467a6ba23cbebfb1388cf6b8c169c7822b19"
+    },
+    {
+      "path": "backend/tests/test_student_work_skills.py",
+      "blob_sha": "f9fd1c1b5cbf8574d519e85f99bd52cdd1c9b21b",
+      "sha256": "5803d19b95ea3acf746cad8e0df7d2427a87e6142bd0db5c2ed9714e2b4dd42a"
+    },
+    {
+      "path": "backend/tests/test_student_work_skills_asgi.py",
+      "blob_sha": "aee8fb81dfa4ba4f880d2d3d9c9464f108e6a737",
+      "sha256": "4b98197aa942eb04fc430fb0b45bbf788960196f1fe582390f51347d2e7ea978"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_ai_bridge.py",
+      "blob_sha": "5940c198a8f28d150e10e862b81767594661388f",
+      "sha256": "4e8b8837244d6257ab0cc509ded7142a1fcf48e26f0c0e70dccc24c39f546626"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_ai_bridge_regressions.py",
+      "blob_sha": "f1569a68049fc00d84db7985c9ec0c0bffea8149",
+      "sha256": "c38ddaef16b8f7d30405a319db4345acc6e6b395d45a35835aa078f89be7877b"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_authorization.py",
+      "blob_sha": "749132dad3e880fbb2547584a1af3858089100e4",
+      "sha256": "bce653474f9064beb342ea83070c73138e3851f9046abf4a578d324e21db1b2f"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_chat.py",
+      "blob_sha": "e962c1b5a4ea8869e94b58a2369fb7465ce89e63",
+      "sha256": "0d84c0574b960174e84e94079972898ed97690a1a7eaee1464023c64b8ce6fa9"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_chat_execution.py",
+      "blob_sha": "a68775c5c0a1739c5ae2ff498a6f499a12ece6e0",
+      "sha256": "cfbf1e7f68f5125ff225a8eedb33dc608c6974c25cf323dbbd93d038807a15e8"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_chat_execution_regressions.py",
+      "blob_sha": "70609a19f2b930d16983dd85c3b4efc3e50b580b",
+      "sha256": "97257cbb4bf5e143764d32146f90e2c08fecdedaa52b53b166b97306180c100d"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_contracts.py",
+      "blob_sha": "172c182331301a53e3a578480dfca00104ba6c68",
+      "sha256": "471badedab251f4cff88ef17edb0b1a6b4e0c5cab41a9082c76155a6eb9a4d9f"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_legacy.py",
+      "blob_sha": "cb22ba718c51845848683d23405c7ab23e93cf8e",
+      "sha256": "335a3d578b45253ba4389224b8317f4cabe62d298c2f5a84f22bcea30969c947"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_mysql_schema.py",
+      "blob_sha": "bd56c538cbd2db445fa1dd85754929ae423809c5",
+      "sha256": "205f20003c50bcc7f913c1a7f5bc49159f77e16f38bf02e0f2d2da7088478ff6"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_private_chat.py",
+      "blob_sha": "07d3ce9ea73014e293388fb8135cfae8d1eedad7",
+      "sha256": "c94a1cb11bfb51e942a8c0e2670635048afce937679ead387cb20cbf2a84507d"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_private_snapshots.py",
+      "blob_sha": "98e0c0cb10ce28db7f8f36fc94856dd8a6213fdb",
+      "sha256": "0081b4eef33f9b631238f17fb449e5b9f7f3aca4f14b41b70c396c1aae7f9988"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_private_task_list.py",
+      "blob_sha": "7d8295f376cbc4f13350f1e3b1121f4f0b5d444b",
+      "sha256": "830701c9ec4ce50346cebcc07c33d019964be86c5083813ceb084896ed18b67f"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_proposal_execution.py",
+      "blob_sha": "75eba193d24d9171febae52bf50beacc9618aeba",
+      "sha256": "8b657b250a6ba6ed89074b408f77ccb9dcbfbce3d17959f5049a0f9965aa11c9"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_proposal_http.py",
+      "blob_sha": "4853e5ce6781ae53408b26b8a1c0c35ea1508847",
+      "sha256": "5bf470b453b0c3e0b9797d38bb8c457a723d69a0ce96b22622f8613983d935eb"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_proposal_persistence.py",
+      "blob_sha": "6eaa52634c89a992f51aa661e070799f99b3ec61",
+      "sha256": "2392ba745b2138618b69fae01bfb587f87e3765a0b51fcd70416caec494c7a93"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_proposals.py",
+      "blob_sha": "1386ea62edfe94e626f790a5d0c0b18760e21db4",
+      "sha256": "01700eefdc2bd0cda7a386448b4d88771715eeca10e18dcae08e9312508be90f"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_repository.py",
+      "blob_sha": "2dbc91b1863b6e0480509fb2e89ca5faae1aca0b",
+      "sha256": "683d8fc728db70fefc2630109ffce0d1ca51b1da4b41716a8a1e7c38315ee332"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_run_persistence.py",
+      "blob_sha": "5a73d7943f8c88cdf4ac1a168d6ecce984e21dc9",
+      "sha256": "d7d83d56f578a25203dbb58b51e51230ce978f422bd736ec92eb5435fb85346d"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_run_repository.py",
+      "blob_sha": "062a514488e878eacd834b556e8289fc31fe4e10",
+      "sha256": "a1d8f0f75aef677c060e54a2b2e8902545c209ec86c2e450bd2a8b76af910b7c"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_run_sql.py",
+      "blob_sha": "c8b214ca0fb65483faa764a5757aaa7b61549011",
+      "sha256": "f9442a5e835f6465e43a36bb3cae148ba053c47c0d8123ac49b5d9bb6370fb42"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_run_sql_poison.py",
+      "blob_sha": "21744297650350c54e584bbaf540316bed46783c",
+      "sha256": "d0c9b835389316fbae3ac00080cc7c0d3ddbbfdd0881be737fc16f2eb82b2678"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_run_statements.py",
+      "blob_sha": "6e93a253c211155176456e49943a04fe87e69094",
+      "sha256": "dd9a95954f9ce1d367b3e282786d02f0325a56d58c863146e4deef1867f5057b"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_runs.py",
+      "blob_sha": "7ea779e866de914b84b1b1caec3d06aab13bbdc9",
+      "sha256": "a3d82db0ca98c8b106d8c4bed234a696b4adc247290a6c34189695027a7f9b88"
+    },
+    {
+      "path": "backend/tests/test_teacher_work_wiring.py",
+      "blob_sha": "cae8b46e4579fb2423dab45b6669b9c95f723349",
+      "sha256": "79cbeeb3f976e9649c1264e171bdf32fbd1a9d8f5d70b2e66e71df019dd5eb6b"
+    },
+    {
+      "path": "frontend/index.html",
+      "blob_sha": "8643b6e71d7cddedf1d34fdfede72b07191e4b40",
+      "sha256": "5091551a2e8c123ca030b99a47e6dfec29dcdd3612737d90ff8cae74959188f4"
+    },
+    {
+      "path": "frontend/js/api/academic/aggregate.js",
+      "blob_sha": "83a9f9643d23d867f01316911789ed2f49ccba24",
+      "sha256": "71c4973dbab7bf8e2b57c46fe66c62895145604376a62ba087789deeb71c6375"
+    },
+    {
+      "path": "frontend/js/api/academic/citations.js",
+      "blob_sha": "e0b73edf1af48e235ead4fbd892c9e5325f1a16b",
+      "sha256": "fc771290589a6a4d274ba602a2a584367caf7b027ac0fd83981cc04338008a93"
+    },
+    {
+      "path": "frontend/js/api/academic/gateway.js",
+      "blob_sha": "2b542eec5c112d5870a6b0c5fa5c83ecdd2873cb",
+      "sha256": "df51d37dbf821ba6bf6a3c2f80063d6ee3a227b415436804ba6e44606eb88be7"
+    },
+    {
+      "path": "frontend/js/api/academic/paperModel.js",
+      "blob_sha": "61e808d7b39874bcca1796e2aefd4a4e2103b01c",
+      "sha256": "e36677479062bf5bd3492f2b3d596ad46f18d9093ecc0fdd63bb5bf530ffc3c4"
+    },
+    {
+      "path": "frontend/js/api/academic/providers/arxiv.js",
+      "blob_sha": "0ef740b2d230f0f29a7e9c4c4aad1d3d7e03b7e0",
+      "sha256": "c6a1da8f2387566824e090c60d05da0cdaad37fca8ba6c15be6c16c97b210ab5"
+    },
+    {
+      "path": "frontend/js/api/academic/providers/crossref.js",
+      "blob_sha": "36fbda4e2ba11c52899576598c8e12f331db440c",
+      "sha256": "dd2a98ff2199e4d74d20c76220eee21b9c84a554440ecb8c0b9ec2e14cf4a25c"
+    },
+    {
+      "path": "frontend/js/api/academic/providers/europePmc.js",
+      "blob_sha": "64b169c08cfde0418ab6a83d6fc29bb42606affe",
+      "sha256": "c1b6c0b6b15effaa40c4732b9e298f00fda46ed65d6992465a85f98f9abddc92"
+    },
+    {
+      "path": "frontend/js/api/academic/providers/openalex.js",
+      "blob_sha": "832d023db5cf0f91268821bdc9f7b653eb72c755",
+      "sha256": "6169cb1b07160c45212ce7d0a4d12aa2a54a2a92a1cbfac5d9252a295563651f"
+    },
+    {
+      "path": "frontend/js/api/academic/queryPlanner.js",
+      "blob_sha": "ebab81c163ad7250922d057cad3c733a38d5bc5c",
+      "sha256": "fa73aeb7d4f1d1585d584a65a5f2c9cc1d77fccf029df59022c90b48e29bd0c3"
+    },
+    {
+      "path": "frontend/js/api/academic/recordValidation.js",
+      "blob_sha": "8ea49c36857532a9d1eeeb395745a6bbd1b09474",
+      "sha256": "cfa7e9d3cf44afc52b148eed6bcb9b749fcf6a0e50a4cdbc8c4f5bb5bb5971fb"
+    },
+    {
+      "path": "frontend/js/api/academicSearch.js",
+      "blob_sha": "c4e1fa762b70a3146b832823e08432551ca70f48",
+      "sha256": "d89df5927211a02eaa8dcef72c030b4cd33624dd9ffd4c00f8b037924124fb3c"
+    },
+    {
+      "path": "frontend/js/api/agents.js",
+      "blob_sha": "9470d6f008c5684fb75e7db619aaa82381f2f21d",
+      "sha256": "4b96ab7c7a1f0e85b74842d76fca95b298133d33f0dcf02065c0694f693b5e3f"
+    },
+    {
+      "path": "frontend/js/api/analytics.js",
+      "blob_sha": "272ab03c45fc19de31c68176340ee7bf319ba447",
+      "sha256": "8cdcbf588f1c7be13af2eaa211e31d313d397b7ea0dd6dc5689586357ce3cac8"
+    },
+    {
+      "path": "frontend/js/api/authApi.js",
+      "blob_sha": "8960f8fb97053c11214485a7344629c232782855",
+      "sha256": "01cec4d0a12c9bc3d6af0e2856ffe905eebaedaf82c25c2e651400cba7984ac2"
+    },
+    {
+      "path": "frontend/js/api/examCenter.js",
+      "blob_sha": "a72b26e7d29d73f836a10737f85c3b02978fefc5",
+      "sha256": "dbe69253ce1207754bae689f196bc733f209621eca7744680a875f705e6052a4"
+    },
+    {
+      "path": "frontend/js/api/forum.js",
+      "blob_sha": "84adceffa2791ae248a0b9a306b021b1e30ea79b",
+      "sha256": "6eba2dee5f530144205eb5bf9293d929f09e270dfb92da012891d73d56773ae7"
+    },
+    {
+      "path": "frontend/js/api/homework.js",
+      "blob_sha": "e6ada1a9f2cca6fe4399d4e3540a58f57c87e945",
+      "sha256": "0d3b30c721453f4532c3cb0aeb81a4b0376456de191a2a165a66f3e96fd38aaa"
+    },
+    {
+      "path": "frontend/js/api/knowledgeApi.js",
+      "blob_sha": "15d1fe26e873f46f31548d09ca73e06280885630",
+      "sha256": "26689fde7b61a28d064fdd474fee37edf3742b4e6afeffb745ee829dd9d9b8c2"
+    },
+    {
+      "path": "frontend/js/api/language.js",
+      "blob_sha": "512025daf442d6145bb1e3b562e1890b3a20662c",
+      "sha256": "a4fe2d01dd973a67c4aee66be8204d21bdbda7d274ed42f806555257930caf0a"
+    },
+    {
+      "path": "frontend/js/api/learningDiagnosis.js",
+      "blob_sha": "433b4576102d83edd1133eb48237c261e65a2ec4",
+      "sha256": "962f6ee6eeb78fa5b137999f80b301dae5b6efce4d57a3a01db8fcc5b95881d9"
+    },
+    {
+      "path": "frontend/js/api/profileApi.js",
+      "blob_sha": "6630c20eef021704e4e3ffcfaa9da614409ce469",
+      "sha256": "18fc3f482edf233a6fd9cb5e6b89cd832b312b555990eea5f8afc1b3f2045911"
+    },
+    {
+      "path": "frontend/js/api/ranked.js",
+      "blob_sha": "0cc8ff6b2e46eaa32f0442b4331dffa2e29caa98",
+      "sha256": "6285c91c28f21d6e621601459ba4dbca8118578319d7b72f32f22559c203445c"
+    },
+    {
+      "path": "frontend/js/api/repository.js",
+      "blob_sha": "70c5f6c2c8bb413d0db402da4ce038091cb77743",
+      "sha256": "8ec90512b7bca366da2f0992cf18610ad16626199770346a1f046581fb3d59a2"
+    },
+    {
+      "path": "frontend/js/api/streamChat.js",
+      "blob_sha": "41ab0ebf98863cc258b2c31c181c85a6de4b1b48",
+      "sha256": "a10a2f57e9f36dcb55f4f29deb9ca2376ea92890dbf8bca1db909ad8dbf04dc2"
+    },
+    {
+      "path": "frontend/js/api/studentWorkCapabilities.js",
+      "blob_sha": "5ed869769eaf82f2cdfb128e96fd211198559c4d",
+      "sha256": "9bf26b1329e0ad7a1110bee7441807c72447c58f680fd135fb0335144fffc02c"
+    },
+    {
+      "path": "frontend/js/api/teacherLearningDiagnosis.js",
+      "blob_sha": "d4890760dc28663c8034ca071c8b8d180a0e72af",
+      "sha256": "5a328f98b3594036e0ad9cf962c5d96098f96de442e5d1f7487070e4888f7589"
+    },
+    {
+      "path": "frontend/js/api/teacherLessonPrep.js",
+      "blob_sha": "114cacfb080b68d41fd8cf1b6fd6a301a2bb73fe",
+      "sha256": "b0d97bb45fbb92b551b4a298ce4201ecea4a2f2a4fb747304e1849c842ae26c7"
+    },
+    {
+      "path": "frontend/js/api/teacherWork.js",
+      "blob_sha": "b44061d0c001b83d488208d4f36b460238cf8978",
+      "sha256": "d0e5f39bc733803257f76d8e80b1aa99bfd927e692309d45b2cba72e9a35bf9e"
+    },
+    {
+      "path": "frontend/js/api/teacherWorkMaterialProposals.js",
+      "blob_sha": "ae19197f4bc07c466c24d34477fc60b2fe7ca6a2",
+      "sha256": "e37cd932fada135e6172b1896543df6e91062399db2c38c9d1c566a951e3f43b"
+    },
+    {
+      "path": "frontend/js/api/teacherWorkMaterials.js",
+      "blob_sha": "429ab0f05e83e0356fe2fcf3ef5b1faeef2eea31",
+      "sha256": "4734cb3cd9b627e85e681a8740392e8a44fbdfac67b8fa19b91da19f3d77b8e2"
+    },
+    {
+      "path": "frontend/js/api/teacherWorkPackages.js",
+      "blob_sha": "67b339273655d04873a51475c3c586ca8552cf71",
+      "sha256": "ed3cf1c2b1a5d118c77ad26d33677e2f7dd456e77e5d8b852ae46ae8a8442f12"
+    },
+    {
+      "path": "frontend/js/api/teaching.js",
+      "blob_sha": "d655652d563bda308fce8aefd18606aed5e62667",
+      "sha256": "6d117c1ccadcea64a781340630ad304a9e4f03727401525407da45e367b12fae"
+    },
+    {
+      "path": "frontend/js/api/teachingAssignments.js",
+      "blob_sha": "110a4a458183ba3908995fb7ec09cbe165986966",
+      "sha256": "2ae3d0fec73d65fc992af4406f7466acc3fb4fe58750c8bd3d7a22b2984fcd28"
+    },
+    {
+      "path": "frontend/js/api/teamGit.js",
+      "blob_sha": "6dc5d86b931efc6c48ea9a561d6d72271bac9e40",
+      "sha256": "9842e598e2bbcc6f16eecc276749999fadbd6778c6e896e09ce0d535c800800a"
+    },
+    {
+      "path": "frontend/js/api/userApi.js",
+      "blob_sha": "3c5336f839618bc3687d2cb097128418545c52f3",
+      "sha256": "487400d3cae2602b2f0ccde96732db8dbde14face789ab327031c40468c6af45"
+    },
+    {
+      "path": "frontend/js/api/userModelApi.js",
+      "blob_sha": "62a20fe6ac587c34b82221450626ef745b0362af",
+      "sha256": "af5a219010e900248d934d88a44794293615081ca3bfcc7bb030d9dace98c3c8"
+    },
+    {
+      "path": "frontend/js/api/visualGuide.js",
+      "blob_sha": "762a118b157e0cfcde0aea4f631be4ca9455e047",
+      "sha256": "954a5f51940e3bafb69f8c43fa89dd44f0fbfd6f5245a4478b53d0bf44daf8d6"
+    },
+    {
+      "path": "frontend/js/components/CodingSandbox.js",
+      "blob_sha": "7a3d60fc80893b97b722b07a0320e47729f6f59b",
+      "sha256": "53e6e6b99c89a0864f30949a658f40e4ea0b06b13e3a301ee11bc2e1846d2f64"
+    },
+    {
+      "path": "frontend/js/components/GraphChart.js",
+      "blob_sha": "d925b8c9833ed5280b92616a56959e5cc43e4983",
+      "sha256": "6889f3fd5a8d88048e382e04267c8ad04df007175c16e3b8f2084193b6041f95"
+    },
+    {
+      "path": "frontend/js/components/LearningCodingPracticePage.js",
+      "blob_sha": "6f7b4ffbf6f97e58669e23ad06a7dc4cbb435ee7",
+      "sha256": "13bb00d3eab5dbf7a672bc7fee07c516666ec0ee488c444021eb36e1771daad2"
+    },
+    {
+      "path": "frontend/js/components/LearningDiagnosisEvidenceModal.js",
+      "blob_sha": "e984c19ae83e9c0cc15977f6ebf2131baf2e4692",
+      "sha256": "e01305e4a870fe953724ecb704c464d502847a060b58f9009d74a9000509ea90"
+    },
+    {
+      "path": "frontend/js/components/LearningDiagnosisGoalModal.js",
+      "blob_sha": "8013217a4fa0aa6e909793cacd886df5049c49c9",
+      "sha256": "57ab55d3cd0b21d87cb2e4fd48424593b8477d3675448665d8baddabf3a80e15"
+    },
+    {
+      "path": "frontend/js/components/LearningDiagnosisMetricDetail.js",
+      "blob_sha": "9af58e26793bca9d508c3a3dbecd623387c7dcfa",
+      "sha256": "8b888ee1d191047430b07916ca7dd788814462ee82cd8a58b208c62c101d4a1d"
+    },
+    {
+      "path": "frontend/js/components/LearningDiagnosisTaskPage.js",
+      "blob_sha": "64a98f32b86f59f7657c7bd0db1f20a6aa25ac44",
+      "sha256": "dc6603bc9d70dcb0b3d81bf4a0646e5726f3e71f98173ea51dadc183d5497738"
+    },
+    {
+      "path": "frontend/js/components/LearningDiagnosisVersionPage.js",
+      "blob_sha": "8ae1981ad468dca75a8f93273b72556d33ee73cb",
+      "sha256": "c20aac9688ec7f24d15a4df4d839a8552d032b4a667234dcfa9d16ba2648611f"
+    },
+    {
+      "path": "frontend/js/components/LearningGuidedPracticePage.js",
+      "blob_sha": "e17a0a2c92c870151e877348bb779f8dc5576094",
+      "sha256": "649b7abe4690d2c2e874a2a61149bdf0a1f49b249c4b799d2e3243da97aaa8f9"
+    },
+    {
+      "path": "frontend/js/components/LearningIndependentRetestPage.js",
+      "blob_sha": "d3e34b3e5f275a3034797ef05e2241653e6d1410",
+      "sha256": "b1b7f41a51da6d8871254d65e58ad143c6afab9e194ba5844278dd3f7f229da9"
+    },
+    {
+      "path": "frontend/js/components/LearningKnowledgeReviewPage.js",
+      "blob_sha": "3c4425be3f994c52b575467690df24ad5cec1063",
+      "sha256": "86189da13704a3c052f88b9f78ced6602bf5304552fb7dd85b64ad1a5a793b12"
+    },
+    {
+      "path": "frontend/js/components/LearningTextTaskWorkspace.js",
+      "blob_sha": "fe3b1482cbf0d9fdc86e4787a53dd440917db3b3",
+      "sha256": "50fde55b6aa0843919b19c93e84ab84e868a3a153fc49a6961d28cfc8fc41893"
+    },
+    {
+      "path": "frontend/js/components/LineChart.js",
+      "blob_sha": "788bb3999127ea5532895141e635b9775070b799",
+      "sha256": "5c46b9dc7a908c683ff39bed5b4c68b1bb5f315ae66f111d6843ad9db9ebedc0"
+    },
+    {
+      "path": "frontend/js/components/RadarChart.js",
+      "blob_sha": "24d00fa52df505bb370fc319036fee103c21b0cb",
+      "sha256": "a98f2465caa805fcffff21e3262ac1ba65b4dea48837eec7c873796feba77542"
+    },
+    {
+      "path": "frontend/js/components/StudentAcademicSpace.js",
+      "blob_sha": "f6403a0d64fd93b2f9e1fcd7a568588d609b4a77",
+      "sha256": "6999f9fb74bf29d34820c1d966b3aca4d36cbf71fe4d3cbbaa1cd87a9956686e"
+    },
+    {
+      "path": "frontend/js/components/StudentCodeRepository.js",
+      "blob_sha": "5e4f30ada7a072de348d0641b5821b7d91b213de",
+      "sha256": "5a08c9c42c4d309688132989fb8a23f9caadaf13158691eda9b1af61979b566b"
+    },
+    {
+      "path": "frontend/js/components/StudentDashboard.js",
+      "blob_sha": "8034a3f88d0fae562f5cd29e2d17ee5d3091707f",
+      "sha256": "38ff4eb97efa83d2779bbd705afab435b51e25726340e1fc5018d74f86bd6f2d"
+    },
+    {
+      "path": "frontend/js/components/StudentExamCenter.js",
+      "blob_sha": "b0539446e45415fb768450170d6b7c281ac45da3",
+      "sha256": "b25bbc1d8052e8f420d0225abbbdc2b794eac3bb0922981a0c99a6ceef88f162"
+    },
+    {
+      "path": "frontend/js/components/StudentForum.js",
+      "blob_sha": "759d2ef918b5e68d75326585a12821d204a41af3",
+      "sha256": "3dffcd77a23f781db196ed7f4d31109cf6b3890989b477083cceb1ae858914a7"
+    },
+    {
+      "path": "frontend/js/components/StudentHomework.js",
+      "blob_sha": "a51162b37eba9b4da0c3898fe52415bf1a995d1c",
+      "sha256": "3c7f81656e03ffa6d63bf2237d4cce2ed480f4ff564435728901fc34017fe928"
+    },
+    {
+      "path": "frontend/js/components/StudentLearningDiagnosis.js",
+      "blob_sha": "a51e544d7c32ace063bba9900c3ad147b5db7f02",
+      "sha256": "6a5b6c1e68234c776a74d0a853ed370fdf521fdf758bc1a2378a211ee565c72b"
+    },
+    {
+      "path": "frontend/js/components/StudentMistakeBook.js",
+      "blob_sha": "e524f9d2eb84808811425dacf76555b8c85dae03",
+      "sha256": "9034b1322da7e5a9bfd351fe690b52d4bba63400c312c8e6991e11f8c7ff6e58"
+    },
+    {
+      "path": "frontend/js/components/TeacherAiLessonPrep.js",
+      "blob_sha": "7e19cf47a4a6adfeff525cff22da95ec88498900",
+      "sha256": "dfd1c5e60819549c50ed7b2bcdec9f9ec91687f6edbb041d405852d8d9a3496c"
+    },
+    {
+      "path": "frontend/js/components/TeacherAnalyticsCenter.js",
+      "blob_sha": "f15eb261ac5ccfbe7f5a6408e7114f815321c861",
+      "sha256": "0eb1981552ba1001be7971af56b416dbd5a352adf45139aa74055933553f9dec"
+    },
+    {
+      "path": "frontend/js/components/TeacherCourseManager.js",
+      "blob_sha": "a181a4d6664fd615deabf96ce4caf7d72f66da86",
+      "sha256": "44750e89e2750f6678af047dd763390fd8a5cd1cb64354a04bb0f91bd4a40b32"
+    },
+    {
+      "path": "frontend/js/components/TeacherDashboard.js",
+      "blob_sha": "491f7a22f2577e605f45ed0fda545e8d60b63e30",
+      "sha256": "f078359faba7187d2fd54ebbe7c715722ee2541415e37d40c5029518040249f1"
+    },
+    {
+      "path": "frontend/js/components/TeacherExamManager.js",
+      "blob_sha": "b2cc29151aa5ed516d9be59c8feb6d5c755279ce",
+      "sha256": "e915c6199a29309b6f6e5b86c58f959800e0a16914f17e45c094f6e1f12de5e8"
+    },
+    {
+      "path": "frontend/js/components/TeacherForumManager.js",
+      "blob_sha": "008f3bb4c7998cd98d74ae6aadaee9ce02b1cd10",
+      "sha256": "c50cfccd52a56879f9ee2b876f5c812036824be7fb368bc643692322c4f20590"
+    },
+    {
+      "path": "frontend/js/components/TeacherHomework.js",
+      "blob_sha": "1c7e4a62d88dd5dcb25528e67668c0427c92b4bc",
+      "sha256": "3aa886f9affa0a7e687aeae18280f85486319cc4bf008004eb6edf2d408d539d"
+    },
+    {
+      "path": "frontend/js/components/TeacherLearningDiagnosisReview.js",
+      "blob_sha": "ad817bdd224edeeff9c1c9f3dcdfe0a82af2168c",
+      "sha256": "a399ab770a9b696f7ca44797a10872d459d910992662ed133abe61378b640211"
+    },
+    {
+      "path": "frontend/js/components/TeacherProjectManager.js",
+      "blob_sha": "659ec5990d0177cb61c85c3d00a5217f0e8ae3d6",
+      "sha256": "f1b4da1b46b61635e06fce9ddebfce1434189332e68569778d35aa4220c2f821"
+    },
+    {
+      "path": "frontend/js/components/TeacherRepositoryManager.js",
+      "blob_sha": "f7ba18ed2f8637338960977c3c75e9ed450f4e68",
+      "sha256": "7fdaa80404a7f97acb1caadee79dd5b7245e614ef265a8468173638c92578274"
+    },
+    {
+      "path": "frontend/js/components/TeacherSpaceManager.js",
+      "blob_sha": "d58c3eb45a611ea337844126f888631b11409fbe",
+      "sha256": "4fab581db01a1afa2281dcf7bb332af892cdd0b07db7c5473af233fc919b187d"
+    },
+    {
+      "path": "frontend/js/components/TeamCoachFeedback.js",
+      "blob_sha": "32502000db10d800ea5accc2702fef0692f56934",
+      "sha256": "751025f5806bca51805e290707543a1fd5132883d6edb78c6dc72a49c8b7a384"
+    },
+    {
+      "path": "frontend/js/components/TreeChart.js",
+      "blob_sha": "96e0dab45b52d176f5acc918145c51fc41eb3fc2",
+      "sha256": "539ad39e4b92eca5d9079054f640ba5dfc9a3da35b79360c6c4e2c6bca9125a0"
+    },
+    {
+      "path": "frontend/js/components/WorkPaperDetail.js",
+      "blob_sha": "e436da0bd6ead3a09da0b602c50a5db8354682fc",
+      "sha256": "3cdc24180349b9641c9b9155246ac6a9991e3ce7008b486645c50652f4b3d80d"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/ForeignLangPage.js",
+      "blob_sha": "b9e0da52155b2c9cdcc7eedc548a920e3f45f532",
+      "sha256": "bde55e767ff4d34bdf3dc423e7d97c389a8781898acfdb12602a7da16f9d271b"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageInsights.js",
+      "blob_sha": "6546b2d336980b58785460183049fa28b93e4b6a",
+      "sha256": "f7b0f5ef399e7eb1b96294716d7e03589981d0df22df88fa3430e8009331028c"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageReading.js",
+      "blob_sha": "30adf72c2cf13bee19eb2a0ec9c6619e78d7432d",
+      "sha256": "8165e49a39585e1163041902fcf875f4dd1e7657dcba3b8b075c7e29cf31c0c9"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageSpeaking.js",
+      "blob_sha": "27cdb0f334724dee41abb6946685453347c0c958",
+      "sha256": "608a1c04de500171804ce76dd9288e0c0d4a11a07125de8c4cfad170966f488d"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageTutor.js",
+      "blob_sha": "8628c47db9fab9dcdf48e971d0a764b2e7e70d67",
+      "sha256": "bf4f0c86f2d61695d28d2cfdea46096462a0479e238f0be575541b0e75fec914"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageVocabulary.js",
+      "blob_sha": "124eb13df20b99dee135157105d88a0e0e6c487b",
+      "sha256": "1c0c1de71c48de3cbdb614b341519cb8a9075a9b49a3ed9e6848032d4611b541"
+    },
+    {
+      "path": "frontend/js/components/foreign-lang/LanguageWriting.js",
+      "blob_sha": "9816cd544ca3fe6937d501225f354b7b89cad4d2",
+      "sha256": "29c61fcfffdf6cf7a8fa4b311d7553aa78147111df3157cbc372f1f8eb1b0f40"
+    },
+    {
+      "path": "frontend/js/components/teacher-work/TeacherWork.js",
+      "blob_sha": "15ff763027a0c3825fa768a806e6c2425caa3a66",
+      "sha256": "e9294fd4f0de925d5f10191dabef2e3fdc3b4cd427a03cbadbb6dd5d6635f131"
+    },
+    {
+      "path": "frontend/js/components/teacher-work/TeacherWorkMaterialProposals.js",
+      "blob_sha": "18880c4992d20c1153e0cc6d96776c64fc9bde71",
+      "sha256": "27f85daf15fe8daadb47543e3b2b2903a9099f299e01693cacd7923f5a670eb7"
+    },
+    {
+      "path": "frontend/js/components/teacher-work/TeacherWorkMaterials.js",
+      "blob_sha": "dcc4b78d62e63b2128f62b1afc4adb816270661a",
+      "sha256": "39f9c03f02c3aee5b18b8e907a220b589a53ff5dc7825eacd85b414aca993b77"
+    },
+    {
+      "path": "frontend/js/components/teacher-work/TeacherWorkPackages.js",
+      "blob_sha": "d01c8f48fb9ab379c50efcde054865dce5e138b4",
+      "sha256": "f3e4de4b7703f988866e0b1564bb94c83e5aee8142dde5919284b0d4e5166ea4"
+    },
+    {
+      "path": "frontend/js/components/teaching/AssignmentPublicPreview.js",
+      "blob_sha": "772677a1faff74eaf1b84d98f41f856f82fd4926",
+      "sha256": "20b20b20e28c9775a7d30dadc6109b5f74f10b14122c47bd52ba6daeeca5abf8"
+    },
+    {
+      "path": "frontend/js/components/teaching/SubmissionFactsPanel.js",
+      "blob_sha": "dc9ea458ad206f9a47f156db434c5caf456a0be9",
+      "sha256": "d6600c7f2af8247e758c90fc4142deaade3c20c93d4a354d39fd06af638fbfe4"
+    },
+    {
+      "path": "frontend/js/components/teaching/SubmissionHistoryPanel.js",
+      "blob_sha": "c20096087a10040556fa8a55657a2bd50569fa7e",
+      "sha256": "a44049c414a88af789fd6925c668a98ed9d8b3ae20557aaabfaada9e279ff955"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingAssignmentList.js",
+      "blob_sha": "fba8fe2cff9df8ebc8a364f79c8e10c8583e0dc4",
+      "sha256": "dd92362895b2dba067efc6a80fea30606d28c78f677669f824a55ff1e3c9dcd8"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingAssignmentReadWorkspace.js",
+      "blob_sha": "05d5b6302003c0e8289a7ccd6d96ccd119211387",
+      "sha256": "4c485b1e8342d3a702ae14bd1704840fef7bed01db8b081dfe607a1f8d83e100"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingAvailabilityNotice.js",
+      "blob_sha": "1c91ef2816aa1911ba2c97c8c922599f11927598",
+      "sha256": "86f4c7f3bd23a0b8a921fafe86d43aaccc55413dda8fcd6ca03e9272a5f5c311"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingCourseDirectory.js",
+      "blob_sha": "3568eebfc0947c0a69c96701f2b894cb34aef45e",
+      "sha256": "ae39e47a0346db46ee8cc956d20c4801e828e4230e0e3da60241bb7011a1cb0b"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingCourseSelector.js",
+      "blob_sha": "c97e3456f1e07e77f89a7e04cf35170505cb5a2c",
+      "sha256": "e68779c38b52c9e452c5a89dce6350974cf6dd59b96fb3e6ba53704ac67ed6b3"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingResourceState.js",
+      "blob_sha": "a69a0c7e1af839aab0c038fdbd1a301b6b13fcaf",
+      "sha256": "356cc48c2161b3364dd7d8cadf2bd0d43a49157fdb55d44bfbd28cd14590f315"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingSubmissionReadWorkspace.js",
+      "blob_sha": "2c811b3d05cb389ef5eda9c932b2d3cea28700ef",
+      "sha256": "add8119efcfab0cfb0f9f1cc84c1d3e8b99ca6c95107e94227e2fe8a9b135523"
+    },
+    {
+      "path": "frontend/js/components/teaching/TeachingWorkbenchShell.js",
+      "blob_sha": "f0aacf5382b460d944a21df25d0ec94c3fc2e618",
+      "sha256": "d0c0989c99ca5529b759619abddfed03f0443f766968a680dc87d17c5fbf294d"
+    },
+    {
+      "path": "frontend/js/config/academicPlugins.js",
+      "blob_sha": "3107a3fec3c394c8c96713572bc457b9a8fdd12f",
+      "sha256": "43110942a5eb72b9ee799a25115ddc4c80bf625098986756a2635966c010378a"
+    },
+    {
+      "path": "frontend/js/config/aiModels.js",
+      "blob_sha": "80e2729e0056e123b919377dbe0d342fa2915b72",
+      "sha256": "62f826052549893268af12041601d6da6f8c905aa65c8088259b3d021eb4708b"
+    },
+    {
+      "path": "frontend/js/config/chartOptions.js",
+      "blob_sha": "26bff11d81e50aa038a5ab93994dbede808f4b92",
+      "sha256": "a5320f9ddf9d463dc6c5afe98fc2498302706617ea4207a58d6d3cf318edb3af"
+    },
+    {
+      "path": "frontend/js/config/env.js",
+      "blob_sha": "2bc84c112385ac47b459cf6dcd4871c795bdb046",
+      "sha256": "9a7aa618deeb213e6d992fad53c071b744ff6bdd7c86bba60ade0bd3af109a01"
+    },
+    {
+      "path": "frontend/js/controllers/teacherWorkState.js",
+      "blob_sha": "a394a969a8df3557438e3c3b3fdbfbac4fd7ac06",
+      "sha256": "8e970972b01e8afd996167e47d1d941e76eeec8f6a3f258bc9c924f63fd4166c"
+    },
+    {
+      "path": "frontend/js/controllers/teachingNavigation.js",
+      "blob_sha": "b4389ae2d1b7d2a3a90e361e22efb9dfdc6e7b27",
+      "sha256": "1774e8bbfc1ad54eaac941aeac487769f42b8e60ec56ad7dba6c36c1d195315b"
+    },
+    {
+      "path": "frontend/js/controllers/workspaceSendRouter.js",
+      "blob_sha": "ce39495c6560e4d083b2b2a26c6b01d1a1eaabcf",
+      "sha256": "6b3e4ad98444a1ab78215891d4a813353e5860d5c835fc17ab366b2acabc9f42"
+    },
+    {
+      "path": "frontend/js/data/aiTemplates.js",
+      "blob_sha": "013cd0ca9aa1e6a1c58b84185b8d177e70aa3634",
+      "sha256": "463cc0b17384cd0c63b0ff994f8f305983d1d04e826b514c5f5fb16c59fd28c2"
+    },
+    {
+      "path": "frontend/js/data/basicArticles.js",
+      "blob_sha": "573ae71ce97e0445060f90782bd71831aaf5b067",
+      "sha256": "0703a41e4c84e49a7dcaaddcf6048756edcef1e3e3f0391b08d46fc53365e32f"
+    },
+    {
+      "path": "frontend/js/data/cetReadingArticles.js",
+      "blob_sha": "8a51fa09490c614c58b92774b63996367904270b",
+      "sha256": "01b9f4dfe6e925e8338318913b9d0e666f9f7f59b0ddca4072bffec3bc1e1593"
+    },
+    {
+      "path": "frontend/js/data/mockData.js",
+      "blob_sha": "0b457b10af1e5d019337483cb264407c39dc113f",
+      "sha256": "de310162472511eebc94c9f34c04f71f2a562259bbb9f5a6adb18878ce7da2d9"
+    },
+    {
+      "path": "frontend/js/data/speakingArticles.js",
+      "blob_sha": "c57730b1b457dd5059f41cd717c9959912c85aa7",
+      "sha256": "044d588d74b4cd4ad6689e9397f5df3596428b70917af4e1dadc1079c19d5d9b"
+    },
+    {
+      "path": "frontend/js/hooks/useAgents.js",
+      "blob_sha": "a7a1c978acf008de66981b999d42ffd5b00c8c4e",
+      "sha256": "679c30e33c1a631fc69abeef08e0462b940afc2d34d7507ebef4f3d69e7f36d4"
+    },
+    {
+      "path": "frontend/js/hooks/useAuth.js",
+      "blob_sha": "701894d6129e447df3abc4bf6809ee76ffded077",
+      "sha256": "2517c66040e0c1ce03ff5bd33fee6e88f74ed0d846a2d9ca460b34b9d0c032e4"
+    },
+    {
+      "path": "frontend/js/hooks/useChat.js",
+      "blob_sha": "cfac0ab90979063ed8d280ec1bce2dc284c6fd37",
+      "sha256": "27db17cf11516fb0fe5dd3badf659223a802dc191fd0dab8f064fad3e6e3bec9"
+    },
+    {
+      "path": "frontend/js/hooks/useCourses.js",
+      "blob_sha": "ce3152fe12c1b0a5654755538348b9467b20197c",
+      "sha256": "eb255163e0af2794b1a57b1b0541cc444f6293c760e28f17b804ab03876590e0"
+    },
+    {
+      "path": "frontend/js/hooks/useCustomModels.js",
+      "blob_sha": "8ad34d2a3892aea621f6359992bed855acf2600d",
+      "sha256": "891a7a1db952b68a32680a6d2c3e4a66515fc5992830326ab9712a3c60078587"
+    },
+    {
+      "path": "frontend/js/hooks/useDashboard.js",
+      "blob_sha": "b73613657edd31945800a9be231928342c3b65b0",
+      "sha256": "84d80f6cd036f02770e12082464a4b05981f39a18516f49780de9a605251f0a8"
+    },
+    {
+      "path": "frontend/js/hooks/useEcharts.js",
+      "blob_sha": "44604ec96319aaec31150e71b58592faa67f5e2e",
+      "sha256": "8285b31dcc93862076f26288ab4a606989f64161cd8163100aeab0729cc4c7fa"
+    },
+    {
+      "path": "frontend/js/hooks/useForumOperations.js",
+      "blob_sha": "fd8f8b1fe99356c70179f83e893d20981ea75b34",
+      "sha256": "7650d0f9f7186c70376afc97cf7887c9e8decacd1a8ca0688b3b32e45279bb8b"
+    },
+    {
+      "path": "frontend/js/hooks/useLanguageWorkspace.js",
+      "blob_sha": "f75b06f599fdc6b9f41dd2f865bd296d6cfc9f77",
+      "sha256": "c48c42bddc617311b1cf73c3056d33c549b00bc50016ab30fad2a8bd059bf2c4"
+    },
+    {
+      "path": "frontend/js/hooks/useLearningDiagnosis.js",
+      "blob_sha": "5e5897e7eea563482bdafc5ae0156e3a87a2232e",
+      "sha256": "6ec0ac7c48adf5738ccdab042b179731dd531c748fa3fe4d4445706e60d7fa9f"
+    },
+    {
+      "path": "frontend/js/hooks/useMonitor.js",
+      "blob_sha": "398b44718ab64b3b0843ef08c25d390674e28fed",
+      "sha256": "e37193a5bd4ce616c22e96c84553313b4d49f44d12817957485d5c2487a8231b"
+    },
+    {
+      "path": "frontend/js/hooks/usePlugins.js",
+      "blob_sha": "6bf29ce0a30a74d5eb02cc5bb8b8745e4d4c08cd",
+      "sha256": "044f1106bd36fbbd5ed358c731a5480a43ef9e2cf90353c3e00c1c910e762aba"
+    },
+    {
+      "path": "frontend/js/hooks/useProfile.js",
+      "blob_sha": "51393cb98bf0be333833ba954f85c6f81a949ccd",
+      "sha256": "87ba5f76e3a0a6f84ae907f05bfac38039d37bb859e46fc0c65176b6a62396d7"
+    },
+    {
+      "path": "frontend/js/hooks/useStudentNavigationPresentation.js",
+      "blob_sha": "db7af9cb1d0e2a7491bbb85260cbf15c9a6da0c8",
+      "sha256": "e728298c4696a7e74f53ab30e0682c64db7e4b43d2ce0843e136eaec560c6533"
+    },
+    {
+      "path": "frontend/js/hooks/useTeacherWork.js",
+      "blob_sha": "f68ed3fb9c89eacd00f2eeb6421ce8f40a827751",
+      "sha256": "63983adb6b87b75d990d2d1fdbb7a6b76254c9c8485757f2a709463521e4c9a0"
+    },
+    {
+      "path": "frontend/js/hooks/useTeacherWorkChat.js",
+      "blob_sha": "f5aa09ba91f19b54f2f86335915e950c46f5b386",
+      "sha256": "fdf7fb733c550caac898ff29513c5ac5fe9619de61e2df77e3e6b597ab2957e8"
+    },
+    {
+      "path": "frontend/js/hooks/useTeacherWorkMaterialProposals.js",
+      "blob_sha": "ec6de6a6003bdc6be113575ce36167ec8c8155d6",
+      "sha256": "33d77acb6f8f770f1af2bbe6760fd02b4620626c88092b44c66d79c42c821862"
+    },
+    {
+      "path": "frontend/js/hooks/useTeacherWorkMaterials.js",
+      "blob_sha": "6c54935ad62fced2fe8dd40b8e1d34e5f110f79b",
+      "sha256": "b7c293befbdb01f007e596d7740a44429aca39e27ebc54904c23242e31a2c5e7"
+    },
+    {
+      "path": "frontend/js/hooks/useTeacherWorkPackages.js",
+      "blob_sha": "313eb622ae46f171eafaa6a8ea5a5beb07868c76",
+      "sha256": "2f4113c47209d862f80c35e2bca407b9c5fd738535ca52676f7c2cd069c10875"
+    },
+    {
+      "path": "frontend/js/hooks/useTeachingAssignments.js",
+      "blob_sha": "96aecff16e830d51f3a480d118759a1d5294e06f",
+      "sha256": "d5963dcc91747424107b6bb2bcb4a434118f00222e04cb8431130dad4e6077bf"
+    },
+    {
+      "path": "frontend/js/hooks/useTeachingContext.js",
+      "blob_sha": "d62489a21728c20c5f70710cb15adf64763155fc",
+      "sha256": "123dfac134443621a20b151d4727f6e249e3f1af778ca09bcd0336785cbdef01"
+    },
+    {
+      "path": "frontend/js/hooks/useTeachingReadDetailFocus.js",
+      "blob_sha": "efc22b7b423da7b5d4314054838d267e2add41ae",
+      "sha256": "8416e3d70b6c9cd41277a747fd08334caa698b687c4fc7790b222be77cbfa936"
+    },
+    {
+      "path": "frontend/js/hooks/useTeachingSubmissions.js",
+      "blob_sha": "a5d81a70e0e7c5055f305e881bd91226ab449d35",
+      "sha256": "84eed581685012bbbe13125eafc61945f55df24e8cddd6d964186828d53f587c"
+    },
+    {
+      "path": "frontend/js/hooks/useTeachingWorkbench.js",
+      "blob_sha": "75b0600c10c0c89d5e36ddf71cf46d0e06c9c149",
+      "sha256": "ef2c8cf057c7436015a0c31f88a18ebc0f2f6de3dd2a7072ce23f191dfa6b050"
+    },
+    {
+      "path": "frontend/js/hooks/useToast.js",
+      "blob_sha": "d16c9bb610b247d43209e38d338aad9f42284da7",
+      "sha256": "42629588f30d0c1c396ee4f9f6e05ca92b12c635bd274a0c12daf0605363519c"
+    },
+    {
+      "path": "frontend/js/hooks/useUserCenter.js",
+      "blob_sha": "495576c2b9327789bbc8ece50be5e649ce35de0d",
+      "sha256": "631e5ec2ff48804d1e9e737d3583a2fffc38f8c9a617e0263d05be97181a031f"
+    },
+    {
+      "path": "frontend/js/hooks/useWorkPresentation.js",
+      "blob_sha": "9c6799ba841bf58fad3ddd9513f2a26e426e9cc4",
+      "sha256": "76f04f7f2883684376d8d3e2783b8c1ab6485f0b336c689d0ca724ac41681260"
+    },
+    {
+      "path": "frontend/js/main.js",
+      "blob_sha": "225eaed04362fa1774cac7d34af7cc61c77f35fc",
+      "sha256": "ade6e68f3b381a74a9d215d160e107d9aec821bb56a103737bdcf1fc3149b908"
+    },
+    {
+      "path": "frontend/js/task_temp.txt",
+      "blob_sha": "230a710e979061b45b60fbb362b6bdd82e000756",
+      "sha256": "61f2335e3cad422084af36a7aa07e9d30983fc1443bbf5a8066b908a390a2322"
+    },
+    {
+      "path": "frontend/js/utils/chatModes.js",
+      "blob_sha": "6197b094f1d486ead9fa5b7c5753c78c3e4ac2e4",
+      "sha256": "9a81d4055d4f299cd3ca122a5e01fdf227656e1c3dc0372a73747c63f59c2bd9"
+    },
+    {
+      "path": "frontend/js/utils/conversations.js",
+      "blob_sha": "69fbe22bfd1d201f9334c52eb13582dc5efd3760",
+      "sha256": "b9275fbfb9d5686e9b5e22486ea7736d0278e6b46f3d5e58138b369249d200fd"
+    },
+    {
+      "path": "frontend/js/utils/dashboardGreeting.js",
+      "blob_sha": "f29a0bb45c1ae3cca4de9dd5ee34717dd608391c",
+      "sha256": "d6e30ddea35885e40e49eab737eaab91e988ce7ee6dcbb506b46db342bfbfd54"
+    },
+    {
+      "path": "frontend/js/utils/forumIdentity.js",
+      "blob_sha": "20ce06e21dd9f8c3a9f98a6c8946c0b89b403781",
+      "sha256": "3e78fc5b550d1a248d28670ca69c2efd490f61f4d29ad5370be27bc6c68349a6"
+    },
+    {
+      "path": "frontend/js/utils/helpers.js",
+      "blob_sha": "9e4fa6da28325b051f4ea1b71ed5eba3fb76318f",
+      "sha256": "cedaf4e0613a602ee8af40dc9a38f82a22505a2c41fa75c75ac392efbd360706"
+    },
+    {
+      "path": "frontend/js/utils/knowledgeFiles.js",
+      "blob_sha": "30e3cab44191800ce3932ec81ff0f18bce9d87a2",
+      "sha256": "032e2278fd54cee843476646c9172f4a25e9ebb479aaa24f5f3cad1aa9e47d02"
+    },
+    {
+      "path": "frontend/js/utils/navigationGuard.js",
+      "blob_sha": "ff1057a6b9eb374504b5c17a973319af62c690fd",
+      "sha256": "907436c3510a01595951e60b6d95e4535916bc012645bed1fa233adbb6495120"
+    },
+    {
+      "path": "frontend/js/utils/request.js",
+      "blob_sha": "64dded6caa9a2c4cad0caa6576e26f05290a87a1",
+      "sha256": "4c244de568e2f02aba0fe55d970e87d5fe20fc33e487305f58e60c066370a27f"
+    },
+    {
+      "path": "frontend/js/utils/safeRendering.js",
+      "blob_sha": "c2458f2d5572576b2964ac42d5d89dc786755984",
+      "sha256": "2cdf59407d7e053b2cde25db4fa467c838e685786e9d32439013badab3471b1d"
+    },
+    {
+      "path": "frontend/js/utils/studentGitGuidance.js",
+      "blob_sha": "4c6973fc89641e9d69836d4d22f713d52cf439f5",
+      "sha256": "82ebc280c9506dabcbe2ce548b1ed96621e17364b0f650f674d2fdd57bf9acfa"
+    },
+    {
+      "path": "frontend/js/utils/studentWorkCapabilities.js",
+      "blob_sha": "b01dee0f16788260b7474bab4537169be96f47c9",
+      "sha256": "e0e748e51dcf3e4225fd9dd82d259201466621c2d1ee2cbc24feb8473fb183fc"
+    },
+    {
+      "path": "frontend/js/utils/teachingAssessmentDTO.js",
+      "blob_sha": "3a1ca0c0e6d03cb1359b31fb26c9e754b918f13b",
+      "sha256": "245c33946a9cb6bbe5e10748395e94e145f2e4e0ea8cbd58155d739052291f05"
+    },
+    {
+      "path": "frontend/js/utils/teachingReadAccess.js",
+      "blob_sha": "6aeb10ef402465b149d229d8925ab2b86d90eae4",
+      "sha256": "56f61fbf9b6656fb671f78392ddc7af6a2ffeaa3cfa3bb49c9d666cc38d4d2b9"
+    },
+    {
+      "path": "frontend/js/utils/teachingStatus.js",
+      "blob_sha": "d1707f67adfbc54a0d6f7c2102d69ed6f491dcf5",
+      "sha256": "abbef169814b0556944018e43eb4cc77783b70ac507ca0b3d0bdbeae870f062b"
+    },
+    {
+      "path": "frontend/js/utils/teachingTime.js",
+      "blob_sha": "54adbb2bcc0999f38b7b6060f64872824d9d7d61",
+      "sha256": "8b449152908eb7e046640c021cacc333ac748bce6a1ac471970ea03a5cd7a7f1"
+    },
+    {
+      "path": "frontend/js/utils/teachingToolsViewport.js",
+      "blob_sha": "ecd09bf4e0119d2cb91e8e5aa1112161d58359fb",
+      "sha256": "35674f91f9bd7f5686a740ac58f0442e33e28484b4418c74e7be07890fb268c4"
+    },
+    {
+      "path": "frontend/js/utils/teamCoachFeed.js",
+      "blob_sha": "94b94e6330f3006d3170a3b696fa7b6866aeeaa1",
+      "sha256": "9d13ef23c4eaaa56f42dc5693be4eab0b5df90f715c03b563312b120814f77b1"
+    },
+    {
+      "path": "frontend/js/utils/teamProvenance.js",
+      "blob_sha": "6e70b193c3e30e80bcd22e8781dbbf6129ab8b8d",
+      "sha256": "338ccdbcbf5df526bb9a855e9a2b79805f5e7fad624848e00bb0bb76f195dc2c"
+    },
+    {
+      "path": "frontend/js/utils/timeFormat.js",
+      "blob_sha": "608b943b8ec0ba8c68f549d5bb18049b6070a2de",
+      "sha256": "45d52c6dc06a2d45cb39e9da0d10d3d48725c0081faa61bfcbc9d38ec3522ec9"
+    },
+    {
+      "path": "frontend/js/utils/wav.js",
+      "blob_sha": "9d2dc1ee145ab81766fa2c842b3d32c8be67e53d",
+      "sha256": "e891e9e44193029423c49bc0d45073ee7d34e59b46090f7d5fe3263ea554312b"
+    },
+    {
+      "path": "frontend/libs/vue.esm-browser.js",
+      "blob_sha": "37c9dd322dbca8a3f3a3888895b76a56d3d834a1",
+      "sha256": "ff0c8fcaa207637d20372a08af75cee5dda3d870168a01fa110f3af7eb4500fd"
+    },
+    {
+      "path": "frontend/package.json",
+      "blob_sha": "42c9e0109524e6c9b26ac28c1f8d8850b84d9201",
+      "sha256": "4a1662bb56bec1654cfa36840178c451ebd81eb4451b5480c2dcb868ab1cf9dd"
+    },
+    {
+      "path": "frontend/tests/academicAggregate.test.mjs",
+      "blob_sha": "100e51c2fa1783babcf8b30c8c573cd69bf23674",
+      "sha256": "94d895a8a8b3bedaee8a370cd2011eedfadf5f3ef6fb5099ae64c571820665b9"
+    },
+    {
+      "path": "frontend/tests/academicBoundary.test.mjs",
+      "blob_sha": "0e250c7a48e98decbdcf43fbf851ecff69390e68",
+      "sha256": "ed3205fb0fea7c79d6d445b23a75a788c6e367d41e1fa79d6de1c257f315608f"
+    },
+    {
+      "path": "frontend/tests/academicCitations.test.mjs",
+      "blob_sha": "7914a08cc66465a26d0b33365985916077fc16b7",
+      "sha256": "5d12a91c0acbd8d4f0b7640edc9a88ad989f77e35e6a54a738e7f17e9b8b9835"
+    },
+    {
+      "path": "frontend/tests/academicPaperModel.test.mjs",
+      "blob_sha": "a13a7b8a5b52f2539e4664540156058cf69d1e25",
+      "sha256": "0e4142c3d9b6ca33d4ea3648b99ed3b262859c37f63f00e111c28ae111c20325"
+    },
+    {
+      "path": "frontend/tests/academicPlugins.test.mjs",
+      "blob_sha": "f9f1480cf3b3e3b4e7b7e965c16d0767d837c3b5",
+      "sha256": "f8f4e76522d12156113eb1f1283db367d426b05bcf16f763dbbeb7ac427c4b4b"
+    },
+    {
+      "path": "frontend/tests/academicProviders.test.mjs",
+      "blob_sha": "8ee5d1e87d0a054f369f523dc5b2d66be451e590",
+      "sha256": "afadd8f935461dfe9b208529682538421e5bc565c1c8c9531faa30f2ea677937"
+    },
+    {
+      "path": "frontend/tests/academicRepair.test.mjs",
+      "blob_sha": "357cbcb4789cc2613cb30c8300b502f058892729",
+      "sha256": "21cf8f564ec7ed9b9b78f08047215929bd3e4b161a43670d0a04a2b9c85bc98a"
+    },
+    {
+      "path": "frontend/tests/academicSpace.test.mjs",
+      "blob_sha": "c7fbea77e97685a51a49bd7846bfde9ba8d30195",
+      "sha256": "8f28eb497a23b7eb8fb3950ee984eb956cd88ef53ed466a0422a3a1b58ee4ea8"
+    },
+    {
+      "path": "frontend/tests/paperDrawerSelection.test.mjs",
+      "blob_sha": "4bb935eaac6b1ae83ea7d447c99191eb283eb5ce",
+      "sha256": "d914820e66739df6575ac55b800b97180635e514945d1bafaeaa3709aaa434a1"
+    },
+    {
+      "path": "frontend/tests/paperSearchFlow.test.mjs",
+      "blob_sha": "c2e60d8e85d889804db8ae26947c5595de90a129",
+      "sha256": "6efac1911d835eb7402e2aea5f3d679872f2717d5f9fdb4baa11eb47a41ede8a"
+    },
+    {
+      "path": "frontend/tests/paperSearchOutcome.test.mjs",
+      "blob_sha": "84817fc776a7a3cf9d5fd2e3e0006ebf48650798",
+      "sha256": "d93653e73e1c62aaf15641bdad00f3dca9cc0b5e81e59e594c09d22fb1292931"
+    },
+    {
+      "path": "frontend/tests/paperSyncUncertainty.test.mjs",
+      "blob_sha": "efb7c0d2231d5d18e1754c20c1241faa2a6990fd",
+      "sha256": "b6f3011bece9cae5b0e8854a9ab619a07b53b601c94667aba077d0c97de2ab51"
+    },
+    {
+      "path": "frontend/tests/paperWorkflow.test.mjs",
+      "blob_sha": "899be0571076503cfed618f289e077e2de526b01",
+      "sha256": "ffcdb92a57fe5428ca305b93f3cf23a662fbedb6390cf5e7acfe873f45a114a8"
+    },
+    {
+      "path": "frontend/tests/streamChatSafety.test.mjs",
+      "blob_sha": "7cb3582a18f785469f78df1b5af74b1db7877f06",
+      "sha256": "1478808c48e88fcec3637f82add8d744738a2cb0157ba6c3563ac875a8d8ab45"
+    },
+    {
+      "path": "backend/tests/run_work_byok_offline.py",
+      "blob_sha": null,
+      "sha256": "96155353964a05051d7db0a95e514b65e2dc331a6223c94c0215d80db4c0d6c6"
+    },
+    {
+      "path": "backend/tests/support/work_byok_offline.py",
+      "blob_sha": null,
+      "sha256": "ed3b908cacaad08ec411fe8d79e3f3dae9044764f37eb339f0ad0d85a8d777b8"
+    },
+    {
+      "path": "backend/tests/test_work_byok_test_fences.py",
+      "blob_sha": null,
+      "sha256": "9c9232a40bd594be2a1db6470ed15acd05a30ff35032972f7d26092303f7b400"
+    },
+    {
+      "path": "frontend/tests/support/work-byok-offline.mjs",
+      "blob_sha": null,
+      "sha256": "f389cefa45673e545f42197b0d24c6471fc6d2888c8296ca056cbd999b4ac5a9"
+    },
+    {
+      "path": "frontend/tests/support/work-byok-offline.test.mjs",
+      "blob_sha": null,
+      "sha256": "ef497f730164dce29462e67491071c3576532b59a88fa567b61820705b9cf43a"
+    },
+    {
+      "path": "frontend/tests/support/vue-loader.mjs",
+      "blob_sha": null,
+      "sha256": "0c60aeddda204ac3b9d8311c956299a01aec52eb06f6520a59f1a544f78bcb7f"
+    },
+    {
+      "path": "docs/work-byok-call-ports.md",
+      "blob_sha": null,
+      "sha256": "aecef70b3816bb676c5b29caf69bbea154bda7e013a5095a1d05dc5c59091610"
+    },
+    {
+      "path": "backend/tests/test_work_byok_contracts.py",
+      "blob_sha": null,
+      "sha256": "b613f043e0c244f1532b51ee48d6d2f39fd4fff830df3db406696803eeb5d926"
+    },
+    {
+      "path": "backend/app/schemas/model_selection.py",
+      "blob_sha": null,
+      "sha256": "979eb86e78721b1ea26d2f8e1ce1f592e52d0d59c394c68fce851ee02cea2f90"
+    },
+    {
+      "path": "backend/app/services/byok/__init__.py",
+      "blob_sha": null,
+      "sha256": "452d13d9557a98f41b0a774957a76de22dca9d955be4205eac997e643d92f6d5"
+    },
+    {
+      "path": "backend/app/services/byok/types.py",
+      "blob_sha": null,
+      "sha256": "54d0950eb7d8de491a1ee9cd7f26b6f3f1b0ccccd2276e0da57e2c74391c5b96"
+    },
+    {
+      "path": "backend/app/services/byok/limits.py",
+      "blob_sha": null,
+      "sha256": "e5769086a45c4117115fd9007435daceb5161649a235967bffb4d912f9b6fe47"
+    },
+    {
+      "path": "backend/app/services/byok/errors.py",
+      "blob_sha": null,
+      "sha256": "3bf5df922098fa91638ccd20ce6f54bd51802d7dab855123230f81bca329ca9c"
+    },
+    {
+      "path": "backend/app/services/byok/endpoint_policy.py",
+      "blob_sha": null,
+      "sha256": "b7c1b6ffc7d23015f56cf3d543339567d7730e1f25e84db521f314e65ce918c0"
+    },
+    {
+      "path": "backend/tests/test_work_byok_crypto.py",
+      "blob_sha": null,
+      "sha256": "334cbb87f67b2f5622532df8fc849c587c6f308c268f56cf53694060e774f03b"
+    },
+    {
+      "path": "backend/app/core/byok_crypto.py",
+      "blob_sha": null,
+      "sha256": "785be0c7be755e1a252bf1f8ec137b3f2a0d1af5259a416fed1007d83f43f305"
+    },
+    {
+      "path": "backend/tests/test_work_byok_transport.py",
+      "blob_sha": null,
+      "sha256": "4d69e03ee5fedb0f3db130c622a0f4269a337dc4e6856b15bc8b4be6817423ca"
+    },
+    {
+      "path": "backend/app/services/byok/transport.py",
+      "blob_sha": null,
+      "sha256": "8e0242f7022fc67b927d427efca95fb2ef6d096c2691ec5e3c7732ddf52190c7"
+    },
+    {
+      "path": "backend/tests/support/work_byok_tls_harness.py",
+      "blob_sha": null,
+      "sha256": "0be2dd40f26e0d6bcc3aeba0f4e388d10276ec0dc8355b4c86533b1481ba14f1"
+    },
+    {
+      "path": "backend/tests/fixtures/byok_tls/ca.pem",
+      "blob_sha": null,
+      "sha256": "2d91ea0bb45cf3f33ff8616c15a7af371dc02e907068ecf38d6d3be5959d1387"
+    },
+    {
+      "path": "backend/tests/fixtures/byok_tls/server.pem",
+      "blob_sha": null,
+      "sha256": "b5119a2acb286a1942c87f901ef129efb022d92ebf982ce232848ea80daaac05"
+    },
+    {
+      "path": "backend/tests/fixtures/byok_tls/server-key.pem",
+      "blob_sha": null,
+      "sha256": "82de5a38e9d2605f78b46a6048dc60975fae1a82495e5ff265b7aa224bb610f3"
+    },
+    {
+      "path": "backend/tests/test_work_byok_repository.py",
+      "blob_sha": null,
+      "sha256": "40ae7d72ab0b8f5a6c930b3c67fce65fe321a4a6c58e5c4285908e6b116404e9"
+    },
+    {
+      "path": "backend/tests/test_work_byok_http.py",
+      "blob_sha": null,
+      "sha256": "a0bacbdecb6ef7ec961b7e264168da979903d7c71a183ebb0b4d161f8dc071ab"
+    },
+    {
+      "path": "backend/tests/test_work_byok_schema.py",
+      "blob_sha": null,
+      "sha256": "01a16080702dbfbf3987ce9b3c4e4b569bf49ec2115d14a54f553f4662927321"
+    },
+    {
+      "path": "backend/app/models/user_model_inventory.py",
+      "blob_sha": null,
+      "sha256": "d853f049e1de7277bc05cc907e39647367a2dfeb855be7699ecd82fd3dea376a"
+    },
+    {
+      "path": "backend/app/repositories/user_models.py",
+      "blob_sha": null,
+      "sha256": "1f4ac2bafaa2f56b32d0685370f6b48fa0b9dfc57eb2903133eb28787c19f909"
+    },
+    {
+      "path": "backend/app/services/byok/schema.py",
+      "blob_sha": null,
+      "sha256": "64fdf7ac2d38eddcc813ac6cb1661a1bd9ee0386b61aa48fff61ca863cd0f92f"
+    },
+    {
+      "path": "backend/app/services/byok/http_boundary.py",
+      "blob_sha": null,
+      "sha256": "6fffda450f8d38ffe28c2b655df986890d5c4453085683db4f9d62869cc175f7"
+    },
+    {
+      "path": "backend/app/services/byok/observability.py",
+      "blob_sha": null,
+      "sha256": "5b59d2205c92906f54e8e219d32aabb6d4ec83ab06f8ec0fb1ab1eebed369194"
+    },
+    {
+      "path": "backend/app/services/byok/reservations.py",
+      "blob_sha": null,
+      "sha256": "999a9bca039cbf1cf54fbee4115263b9e3b884265ef39060fce06f9144ea083c"
+    },
+    {
+      "path": "backend/migrations/v20261007_work_byok.py",
+      "blob_sha": null,
+      "sha256": "5c37c9621ea1524638d0bd3a80925b50b275df04cac7a1cc076d4326fad5ac6d"
+    },
+    {
+      "path": "backend/tests/support/work_byok_repository_fakes.py",
+      "blob_sha": null,
+      "sha256": "42fd7e71b72b64d14a38aeff1b54a211717395b388cbf218efbda776ce4b96e5"
+    }
+  ],
+  "review_state": "candidate_pending_independent_review"
+}
