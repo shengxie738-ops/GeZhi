@@ -36,6 +36,7 @@ export default {
         const submitting = ref(false);
         const diagnosing = ref(false);
         const currentDiagnosis = ref(null);
+        let diagnosisRequestEpoch = 0;
 
         const username = computed(() => props.currentUser?.username || '李明');
 
@@ -71,7 +72,9 @@ export default {
             loading.value = true;
             try {
                 const list = await homeworkApi.getStudentHomeworkList(username.value);
-                homeworkList.value = list;
+                // The persisted teacher queue uses "pending" for a received
+                // submission. Keep storage semantics; normalize student display.
+                homeworkList.value = list.map(hw => ({ ...hw, status: hw.status === 'pending' ? 'submitted' : hw.status }));
             } catch (err) {
                 emit('show-toast', '读取作业数据失败', 'error');
             } finally {
@@ -100,6 +103,9 @@ export default {
 
         // 退回科目首页
         const exitSubject = () => {
+            diagnosisRequestEpoch++;
+            diagnosing.value = false;
+            currentDiagnosis.value = null;
             currentSubView.value = 'overview';
             selectedSubject.value = null;
             selectedHomework.value = null;
@@ -107,6 +113,10 @@ export default {
 
         // 选择作业
         const selectHomework = (hw) => {
+            if (selectedHomework.value?.id !== hw.id) {
+                diagnosisRequestEpoch++;
+                diagnosing.value = false;
+            }
             selectedHomework.value = hw;
             activeQuestionIndex.value = 0;
             currentDiagnosis.value = hw.diagnosis || null;
@@ -137,46 +147,53 @@ export default {
 
         // 请求智能体协同诊断舱
         const handleDiagnose = async () => {
-            if (diagnosing.value) return;
+            if (!selectedHomework.value || diagnosing.value) return;
+            const homeworkId = selectedHomework.value.id;
+            const answers = { ...submittedAnswers.value };
+            const epoch = ++diagnosisRequestEpoch;
+            const current = () => epoch === diagnosisRequestEpoch && selectedHomework.value?.id === homeworkId;
             diagnosing.value = true;
             try {
-                const diag = await homeworkApi.requestAgentDiagnosis(selectedHomework.value.id, submittedAnswers.value);
+                const diag = await homeworkApi.requestAgentDiagnosis(homeworkId, answers);
+                if (!current()) return;
                 currentDiagnosis.value = diag;
                 // 同步本地
-                const hw = homeworkList.value.find(h => h.id === selectedHomework.value.id);
+                const hw = homeworkList.value.find(h => h.id === homeworkId);
                 if (hw) {
                     hw.diagnosis = diag;
                 }
                 emit('show-toast', 'AI协同会诊报告生成完毕', 'success');
             } catch (err) {
-                emit('show-toast', '请求诊断服务失败', 'error');
+                if (current()) emit('show-toast', '请求诊断服务失败', 'error');
             } finally {
-                diagnosing.value = false;
+                if (current()) diagnosing.value = false;
             }
         };
 
         // 提交当前科目作业
         const handleSubmit = async () => {
-            if (submitting.value) return;
+            if (!selectedHomework.value || submitting.value) return;
+            const homeworkId = selectedHomework.value.id;
+            const answers = { ...submittedAnswers.value };
             submitting.value = true;
             
             const payload = {
                 studentName: username.value,
-                answers: submittedAnswers.value,
+                answers,
                 file: null
             };
 
             try {
-                const receipt = await homeworkApi.submitHomework(selectedHomework.value.id, payload);
+                const receipt = await homeworkApi.submitHomework(homeworkId, payload);
                 if (!receipt?.success || !(receipt.attemptId || receipt.submissionId)) throw new Error('服务器未确认提交');
-                const hw = homeworkList.value.find(h => h.id === selectedHomework.value.id);
+                const hw = homeworkList.value.find(h => h.id === homeworkId);
                 if (hw) {
                     hw.status = 'submitted';
-                    hw.submittedAnswers = { ...submittedAnswers.value };
+                    hw.submittedAnswers = answers;
                 }
                 if (typeof window !== 'undefined') {
                     window.dispatchEvent(new CustomEvent('homework-submitted', {
-                        detail: { homeworkId: selectedHomework.value.id }
+                        detail: { homeworkId }
                     }));
                 }
                 emit('show-toast', '作业成果已递交，等待教师评定', 'success');
@@ -219,6 +236,8 @@ export default {
 
         // 关闭诊断舱 Modal
         const closeDiagnosis = () => {
+            diagnosisRequestEpoch++;
+            diagnosing.value = false;
             currentDiagnosis.value = null;
         };
 

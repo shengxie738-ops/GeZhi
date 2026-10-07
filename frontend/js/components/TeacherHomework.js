@@ -24,9 +24,11 @@ export default {
         const reportGenerating = ref(false);
         const statusFilter = ref('all');
         const highlightedQuestionId = ref(null);
+        let detailRequestEpoch = 0;
+        let reportRequestEpoch = 0;
 
         const isSavingGrade = ref(false);
-        const gradeLevel = ref('A');
+        const gradeLevel = ref('');
         const teacherComment = ref('');
 
         const isSavingHw = ref(false);
@@ -81,12 +83,15 @@ export default {
         };
 
         const loadDetailData = async (homeworkId) => {
+            const epoch = ++detailRequestEpoch;
+            const current = () => epoch === detailRequestEpoch && selectedHomework.value?.id === homeworkId;
             detailLoading.value = true;
             try {
                 const [submissions, analysis] = await Promise.all([
                     homeworkApi.getHomeworkSubmissions(homeworkId),
                     homeworkApi.getHomeworkAnalysis(homeworkId)
                 ]);
+                if (!current()) return;
                 submissionList.value = submissions;
                 homeworkAnalysis.value = analysis;
                 if (submissions.length > 0) {
@@ -95,17 +100,21 @@ export default {
                     activeSubmission.value = null;
                 }
             } catch (err) {
-                emit('show-toast', '获取作业详情失败', 'error');
+                if (current()) emit('show-toast', '获取作业详情失败', 'error');
             } finally {
-                detailLoading.value = false;
+                if (current()) detailLoading.value = false;
             }
         };
 
         const openHomeworkDetail = async (hw) => {
+            reportRequestEpoch++;
+            reportGenerating.value = false;
             selectedHomework.value = hw;
             activeTab.value = 'detail';
             detailMode.value = 'student';
             activeSubmission.value = null;
+            submissionList.value = [];
+            homeworkAnalysis.value = null;
             activeQuestionIndex.value = 0;
             homeworkReport.value = null;
             highlightedQuestionId.value = null;
@@ -114,9 +123,16 @@ export default {
         };
 
         const backToOverview = () => {
+            detailRequestEpoch++;
+            reportRequestEpoch++;
+            reportGenerating.value = false;
+            detailLoading.value = false;
             activeTab.value = 'overview';
             selectedHomework.value = null;
             activeSubmission.value = null;
+            submissionList.value = [];
+            homeworkAnalysis.value = null;
+            homeworkReport.value = null;
             highlightedQuestionId.value = null;
         };
 
@@ -151,10 +167,16 @@ export default {
             return submissionList.value.filter((sub) => sub.status !== 'graded').length;
         });
 
+        const numericGrade = (value) => {
+            if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+            const score = Number(value);
+            return Number.isFinite(score) && score >= 0 && score <= 100 ? score : null;
+        };
+
         const selectSubmission = (sub) => {
             activeSubmission.value = sub;
             activeQuestionIndex.value = 0;
-            gradeLevel.value = sub.grade || sub.recommendedGrade || 'A';
+            gradeLevel.value = numericGrade(sub.grade) ?? numericGrade(sub.aiScore) ?? '';
             teacherComment.value = sub.teacherComment || '';
             detailMode.value = 'student';
         };
@@ -176,15 +198,23 @@ export default {
 
         const generateReport = async () => {
             if (!selectedHomework.value || reportGenerating.value) return;
+            const homeworkId = selectedHomework.value.id;
+            const detailEpoch = detailRequestEpoch;
+            const reportEpoch = ++reportRequestEpoch;
+            const current = () => detailEpoch === detailRequestEpoch && reportEpoch === reportRequestEpoch
+                && selectedHomework.value?.id === homeworkId;
             reportGenerating.value = true;
             try {
-                homeworkReport.value = await homeworkApi.generateHomeworkReport(selectedHomework.value.id);
+                const report = await homeworkApi.generateHomeworkReport(homeworkId);
+                if (!current()) return;
+                if (report?.homeworkId !== homeworkId) throw new Error('作业报告标识不匹配');
+                homeworkReport.value = report;
                 detailMode.value = 'report';
                 emit('show-toast', 'AI作业报告已生成', 'success');
             } catch (err) {
-                emit('show-toast', '生成作业报告失败', 'error');
+                if (current()) emit('show-toast', '生成作业报告失败', 'error');
             } finally {
-                reportGenerating.value = false;
+                if (current()) reportGenerating.value = false;
             }
         };
 
@@ -193,34 +223,54 @@ export default {
                 emit('show-toast', '该作业尚无智能体诊断记录', 'error');
                 return;
             }
-            gradeLevel.value = activeSubmission.value.recommendedGrade || 'B';
+            const score = numericGrade(activeSubmission.value.aiScore);
+            if (score === null) {
+                emit('show-toast', '该作业尚无可采纳的数值得分，请教师填写成绩', 'error');
+                return;
+            }
+            gradeLevel.value = score;
             const diag = activeSubmission.value.diagnosis;
             teacherComment.value = `[多智能体协同评估报告]
 Alina反馈: ${diag.alinaMsg.replace('Alina建议：', '').replace('Alina诊断：', '')}
 CodeNinja反馈: ${diag.codeninjaMsg.replace('CodeNinja建议：', '').replace('CodeNinja诊断：', '')}
 Prof. X反馈: ${diag.profxMsg.replace('Prof. X建议：', '').replace('Prof. X诊断：', '')}
-教师复核结论：建议评定为 ${gradeLevel.value} 级。`;
+教师复核结论：建议评定为 ${gradeLevel.value} 分。`;
             emit('show-toast', '已采纳 AI 预批改得分与诊断意见', 'success');
         };
 
         const submitGrading = async () => {
             if (!activeSubmission.value || isSavingGrade.value) return;
+            const grade = numericGrade(gradeLevel.value);
+            if (grade === null) {
+                emit('show-toast', '请输入 0 到 100 之间的数值成绩', 'error');
+                return;
+            }
+            const attemptId = activeSubmission.value.id;
+            const homeworkId = selectedHomework.value?.id;
+            const detailEpoch = detailRequestEpoch;
+            const comment = teacherComment.value;
+            const classInsight = homeworkReport.value?.homeworkId === homeworkId ? homeworkReport.value?.studentInsight || '' : '';
             isSavingGrade.value = true;
             try {
-                await homeworkApi.gradeHomework(activeSubmission.value.id, {
-                    grade: gradeLevel.value,
-                    comment: teacherComment.value,
-                    classInsight: homeworkReport.value?.studentInsight || ''
+                const receipt = await homeworkApi.gradeHomework(attemptId, {
+                    grade,
+                    comment,
+                    classInsight
                 });
-                const sub = submissionList.value.find((item) => item.id === activeSubmission.value.id);
+                if (receipt?.success !== true || typeof receipt.gradedAt !== 'string' || !receipt.gradedAt.trim()) {
+                    throw new Error('服务器未确认批改发布');
+                }
+                const sub = submissionList.value.find((item) => item.id === attemptId);
                 if (sub) {
                     sub.status = 'graded';
-                    sub.grade = gradeLevel.value;
-                    sub.teacherComment = teacherComment.value;
+                    sub.grade = grade;
+                    sub.teacherComment = comment;
+                    sub.classInsight = classInsight;
+                    sub.gradedAt = receipt.gradedAt;
                 }
-                activeSubmission.value = sub || activeSubmission.value;
-                await refreshAnalysisOnly();
-                emit('show-toast', '批改发布成功，学生端反馈已同步', 'success');
+                if (sub && activeSubmission.value?.id === attemptId) activeSubmission.value = sub;
+                await refreshAnalysisOnly(homeworkId, detailEpoch);
+                emit('show-toast', '成绩与反馈已保存，学生重新读取后可查看', 'success');
             } catch (err) {
                 emit('show-toast', '提交批改失败', 'error');
             } finally {
@@ -228,10 +278,12 @@ Prof. X反馈: ${diag.profxMsg.replace('Prof. X建议：', '').replace('Prof. X�
             }
         };
 
-        const refreshAnalysisOnly = async () => {
-            if (!selectedHomework.value) return;
+        const refreshAnalysisOnly = async (homeworkId, detailEpoch) => {
+            const current = () => detailEpoch === detailRequestEpoch && selectedHomework.value?.id === homeworkId;
+            if (!homeworkId || !current()) return;
             try {
-                homeworkAnalysis.value = await homeworkApi.getHomeworkAnalysis(selectedHomework.value.id);
+                const analysis = await homeworkApi.getHomeworkAnalysis(homeworkId);
+                if (current()) homeworkAnalysis.value = analysis;
             } catch (err) {
                 // 分析刷新失败不阻塞批改主流程。
             }
@@ -949,14 +1001,8 @@ Prof. X反馈: ${diag.profxMsg.replace('Prof. X建议：', '').replace('Prof. X�
                                             </h5>
                                             <div class="flex flex-col md:flex-row gap-4">
                                                 <div class="md:w-48 shrink-0">
-                                                    <label class="block text-xs font-semibold text-slate-600 mb-1">成绩评级</label>
-                                                    <select v-model="gradeLevel" class="w-full bg-white border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#1c2b38]/10 focus:border-[#1c2b38]">
-                                                        <option value="A">A级 (优秀卓越)</option>
-                                                        <option value="B">B级 (良好平稳)</option>
-                                                        <option value="C">C级 (合格待进)</option>
-                                                        <option value="D">D级 (勉强通过)</option>
-                                                        <option value="E">E级 (尚需补做)</option>
-                                                    </select>
+                                                    <label class="block text-xs font-semibold text-slate-600 mb-1">最终成绩（0–100 分）</label>
+                                                    <input v-model.number="gradeLevel" type="number" min="0" max="100" step="any" placeholder="请输入数值成绩" class="w-full bg-white border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#1c2b38]/10 focus:border-[#1c2b38]">
                                                 </div>
                                                 <div class="flex-1">
                                                     <label class="block text-xs font-semibold text-slate-600 mb-1">教师寄语 / 批改总结评语</label>

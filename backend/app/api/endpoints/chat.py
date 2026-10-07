@@ -966,7 +966,7 @@ async def get_chat_history(
     x_gezhi_client: str | None = Header(default=None, alias="X-Gezhi-Client"),
     auth: dict = Depends(get_auth_payload),
 ):
-    ensure_self_or_teacher(session_id, auth)
+    _ensure_self(session_id, auth)
     try:
         page = list_chat_history_page(db, user_id=session_id, agent_mode=agent_mode,
                                       limit=limit, before=before, conversation_id=conversation_id)

@@ -1,0 +1,8 @@
+# Focused offline HTTP/SQL harness. No agent/model/provider/parser stack.
+pytest==8.0.0
+SQLAlchemy==2.0.29
+PyMySQL==1.1.0
+fastapi==0.141.1
+httpx==0.28.1
+pydantic==2.13.4
+pydantic-settings==2.15.0

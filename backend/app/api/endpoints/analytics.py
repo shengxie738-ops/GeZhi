@@ -18,7 +18,7 @@ from app.core.username_policy import is_valid_student_username
 from app.models.student_profile import StudentProfile
 from app.models.user_account import UserAccount
 from app.models.domain_record import DomainRecord
-from app.repositories.json_store import JsonStore, make_record_key
+from app.repositories.json_store import JsonStore, atomic_store, make_record_key
 from app.core.config import settings
 from app.utils.datetime import utc_now_iso
 
@@ -574,86 +574,88 @@ async def get_interaction_records(payload: dict = Depends(require_teacher), db: 
 
 @router.post("/analytics/interactions")
 async def dispatch_student_interaction(payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    data = payload.model_dump()
-    record_id = make_record_key("ir")
-    target = data.get("target") or {}
-    target_label = target.get("label") if isinstance(target, dict) else str(target or "all")
-    student_ids = target.get("studentIds", []) if isinstance(target, dict) else []
-    allowed = {s["username"] for s in _student_cards(db, teacher_student_ids(auth["sub"]))}
-    if not isinstance(student_ids, list):
-        raise HTTPException(status_code=400, detail="studentIds must be a list")
-    student_ids = sorted({str(sid) for sid in student_ids}) if student_ids else sorted(allowed)
-    if not student_ids or not set(student_ids).issubset(allowed):
-        raise HTTPException(status_code=403, detail="no assigned students for this target")
-    initial_count = len(student_ids)
-    record = {
-        "id": record_id,
-        "type": data.get("type"),
-        "title": data.get("title") or data.get("topic") or "Interaction task",
-        "targetLabel": target_label or "all",
-        "studentIds": student_ids,
-        "completionRate": 0,
-        "unreadCount": initial_count,
-        "pendingCount": initial_count,
-        "completedCount": 0,
-        "createdAt": utc_now_iso(),
-        "status": data.get("status") or "running",
-        "nextAction": data.get("nextAction") or "Track student response.",
-        "payload": data.get("payload") or {},
-        "source": data.get("source") or {},
-    }
-    JsonStore(db).upsert("analytics", "interaction", record_id, record, owner_id=auth["sub"], status=record["status"])
+    with atomic_store(db):
+        data = payload.model_dump()
+        record_id = make_record_key("ir")
+        target = data.get("target") or {}
+        target_label = target.get("label") if isinstance(target, dict) else str(target or "all")
+        student_ids = target.get("studentIds", []) if isinstance(target, dict) else []
+        allowed = {s["username"] for s in _student_cards(db, teacher_student_ids(auth["sub"]))}
+        if not isinstance(student_ids, list):
+            raise HTTPException(status_code=400, detail="studentIds must be a list")
+        student_ids = sorted({str(sid) for sid in student_ids}) if student_ids else sorted(allowed)
+        if not student_ids or not set(student_ids).issubset(allowed):
+            raise HTTPException(status_code=403, detail="no assigned students for this target")
+        initial_count = len(student_ids)
+        record = {
+            "id": record_id,
+            "type": data.get("type"),
+            "title": data.get("title") or data.get("topic") or "Interaction task",
+            "targetLabel": target_label or "all",
+            "studentIds": student_ids,
+            "completionRate": 0,
+            "unreadCount": initial_count,
+            "pendingCount": initial_count,
+            "completedCount": 0,
+            "createdAt": utc_now_iso(),
+            "status": data.get("status") or "running",
+            "nextAction": data.get("nextAction") or "Track student response.",
+            "payload": data.get("payload") or {},
+            "source": data.get("source") or {},
+        }
+        JsonStore(db).upsert("analytics", "interaction", record_id, record, owner_id=auth["sub"], status=record["status"])
 
-    # 个人提醒同步写入 analytics/nudge，学生仪表盘可直接拉取
-    if data.get("type") == "nudge" and student_ids:
-        message = (data.get("payload") or {}).get("desc") or data.get("title") or "教师学习提醒"
-        for owner_id in student_ids:
-            nudge_id = make_record_key("nudge")
-            JsonStore(db).upsert(
-                "analytics",
-                "nudge",
-                nudge_id,
-                {
-                    "id": nudge_id,
-                    "studentId": owner_id,
-                    "message": message,
-                    "interactionId": record_id,
-                    "createdAt": utc_now_iso(),
-                    "status": "sent",
-                },
-                owner_id=owner_id,
-                status="sent",
-            )
+        # 个人提醒同步写入 analytics/nudge，学生仪表盘可直接拉取
+        if data.get("type") == "nudge" and student_ids:
+            message = (data.get("payload") or {}).get("desc") or data.get("title") or "教师学习提醒"
+            for owner_id in student_ids:
+                nudge_id = make_record_key("nudge")
+                JsonStore(db).upsert(
+                    "analytics",
+                    "nudge",
+                    nudge_id,
+                    {
+                        "id": nudge_id,
+                        "studentId": owner_id,
+                        "message": message,
+                        "interactionId": record_id,
+                        "createdAt": utc_now_iso(),
+                        "status": "sent",
+                    },
+                    owner_id=owner_id,
+                    status="sent",
+                )
 
-    return ok({"success": True, "record": record})
+        return ok({"success": True, "record": record})
 
 
 @router.patch("/analytics/interactions/{record_id}")
 async def update_interaction_record(record_id: str, payload: FreePayload, auth: dict = Depends(require_teacher), db: Session = Depends(get_db)):
-    store = JsonStore(db)
-    existing = next((r for r in _teacher_records(store, "interaction", auth["sub"]) if r["id"] == record_id), None)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Interaction record not found")
-    data = {key: value for key, value in payload.model_dump().items()
-            if key in {"status", "nextAction", "message", "unreadCount"}}
-    updated = store.patch("analytics", "interaction", record_id, data, owner_id=auth["sub"])
+    with atomic_store(db):
+        store = JsonStore(db)
+        existing = next((r for r in _teacher_records(store, "interaction", auth["sub"]) if r["id"] == record_id), None)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Interaction record not found")
+        data = {key: value for key, value in payload.model_dump().items()
+                if key in {"status", "nextAction", "message", "unreadCount"}}
+        updated = store.patch("analytics", "interaction", record_id, data, owner_id=auth["sub"])
 
-    # 如果是补发提醒（更新 unreadCount），写入通知记录供学生端拉取
-    if "unreadCount" in data:
-        existing = updated or existing
-        notification_id = make_record_key("notif")
-        store.upsert("dashboard", "notification", notification_id, {
-            "id": notification_id,
-            "type": "interaction_reminder",
-            "interactionId": record_id,
-            "title": existing.get("title") or "教师补发提醒",
-            "targetLabel": existing.get("targetLabel") or "全班",
-            "studentIds": existing.get("studentIds") or [],
-            "message": data.get("message") or "教师针对此任务发送了新的提醒，请及时查看。",
-            "createdAt": utc_now_iso(),
-        }, status="unread")
+        # 如果是补发提醒（更新 unreadCount），写入通知记录供学生端拉取
+        if "unreadCount" in data:
+            existing = updated or existing
+            notification_id = make_record_key("notif")
+            store.upsert("dashboard", "notification", notification_id, {
+                "id": notification_id,
+                "type": "interaction_reminder",
+                "interactionId": record_id,
+                "title": existing.get("title") or "教师补发提醒",
+                "targetLabel": existing.get("targetLabel") or "全班",
+                "studentIds": existing.get("studentIds") or [],
+                "message": data.get("message") or "教师针对此任务发送了新的提醒，请及时查看。",
+                "createdAt": utc_now_iso(),
+            }, status="unread")
 
-    return ok({"success": True, "record": updated or {"id": record_id, **data}})
+        return ok({"success": True, "record": updated or {"id": record_id, **data}})
 
 
 @router.post("/analytics/dispatch")
@@ -666,55 +668,56 @@ async def dispatch_intervention_task(payload: FreePayload, auth: dict = Depends(
 @router.post("/analytics/interactions/{record_id}/complete")
 async def mark_interaction_complete(record_id: str, payload: FreePayload, auth: dict = Depends(get_auth_payload), db: Session = Depends(get_db)):
     """学生标记交互任务完成，自动更新 completionRate 等计数（防重复提交）"""
-    store = JsonStore(db)
-    record = store.get_payload("analytics", "interaction", record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Interaction record not found")
+    with atomic_store(db):
+        store = JsonStore(db)
+        record = store.get_payload("analytics", "interaction", record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Interaction record not found")
 
-    data = payload.model_dump()
-    user_id = str(data.get("userId") or data.get("studentId") or auth["sub"])
-    ensure_self_or_teacher(user_id, auth)
-    if user_id not in (record.get("studentIds") or []):
-        raise HTTPException(status_code=403, detail="not an interaction recipient")
+        data = payload.model_dump()
+        user_id = str(data.get("userId") or data.get("studentId") or auth["sub"])
+        ensure_self_or_teacher(user_id, auth)
+        if user_id not in (record.get("studentIds") or []):
+            raise HTTPException(status_code=403, detail="not an interaction recipient")
 
-    # 防重复提交：检查该学生是否已完成此任务
-    completion_id = f"{record_id}:{user_id}"
-    existing_completion = store.get_payload("analytics", "interaction_completion", completion_id)
-    if existing_completion:
-        # 已完成过，直接返回当前状态
-        return ok({
-            "success": True,
-            "alreadyCompleted": True,
-            "completionRate": record.get("completionRate", 0),
-            "completedCount": record.get("completedCount", 0),
-        })
+        # 防重复提交：检查该学生是否已完成此任务
+        completion_id = f"{record_id}:{user_id}"
+        existing_completion = store.get_payload("analytics", "interaction_completion", completion_id)
+        if existing_completion:
+            # 已完成过，直接返回当前状态
+            return ok({
+                "success": True,
+                "alreadyCompleted": True,
+                "completionRate": record.get("completionRate", 0),
+                "completedCount": record.get("completedCount", 0),
+            })
 
-    # 更新计数
-    completed = record.get("completedCount", 0) + 1
-    pending = max(0, record.get("pendingCount", 0) - 1)
-    unread = max(0, record.get("unreadCount", 0) - 1)
-    total = completed + pending
-    completion_rate = round(completed / total * 100) if total > 0 else 0
+        # 更新计数
+        completed = record.get("completedCount", 0) + 1
+        pending = max(0, record.get("pendingCount", 0) - 1)
+        unread = max(0, record.get("unreadCount", 0) - 1)
+        total = completed + pending
+        completion_rate = round(completed / total * 100) if total > 0 else 0
 
-    patch = {
-        "completedCount": completed,
-        "pendingCount": pending,
-        "unreadCount": unread,
-        "completionRate": completion_rate,
-        "status": "completed" if pending == 0 else "running",
-    }
-    store.patch("analytics", "interaction", record_id, patch)
+        patch = {
+            "completedCount": completed,
+            "pendingCount": pending,
+            "unreadCount": unread,
+            "completionRate": completion_rate,
+            "status": "completed" if pending == 0 else "running",
+        }
+        store.patch("analytics", "interaction", record_id, patch)
 
-    # 记录学生完成状态
-    store.upsert("analytics", "interaction_completion", completion_id, {
-        "id": completion_id,
-        "interactionId": record_id,
-        "userId": user_id,
-        "completedAt": utc_now_iso(),
-        "result": data.get("result", {}),
-    }, owner_id=user_id, status="completed")
+        # 记录学生完成状态
+        store.upsert("analytics", "interaction_completion", completion_id, {
+            "id": completion_id,
+            "interactionId": record_id,
+            "userId": user_id,
+            "completedAt": utc_now_iso(),
+            "result": data.get("result", {}),
+        }, owner_id=user_id, status="completed")
 
-    return ok({"success": True, "completionRate": completion_rate, "completedCount": completed})
+        return ok({"success": True, "completionRate": completion_rate, "completedCount": completed})
 
 
 
