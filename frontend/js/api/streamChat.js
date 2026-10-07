@@ -30,8 +30,8 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
     if (!msg.trim() || thinkingAgent.value || !isCurrent()) return;
     const normalizedMode = normalizeAgentMode(agentMode);
     const isPaperRequest = normalizedMode === 'paper';
-    // A retry is the same submission. Never reread mounted Skills, mutable
-    // agent settings or the model choice after transport has started.
+    // Snapshot one submission. Never reread mounted Skills, mutable agent
+    // settings or the model choice after transport has started.
     const requestBody = JSON.stringify(buildChatPayload({ message: msg, forceRAG, sessionId, agentMode: normalizedMode, conversationId, projectId, repositoryId, agent, courseDatasetIds, model, skillIds: lifecycle.skillIds || [] }));
     const usesChatSkill = Boolean(lifecycle.skillIds?.length);
     const currentTime = formatChatTimestamp();
@@ -114,6 +114,32 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
     };
     let streamCompletion = null;
     let streamDeliveryError = null;
+    const hasCompletionAuthority = completion => {
+        const receipt = completion?.history_receipt;
+        const positiveId = value => Number.isInteger(value) && value > 0;
+        const knownReceipt = receipt && typeof completion?.history_saved === 'boolean'
+            && Object.hasOwn(receipt, 'user_message_id') && Object.hasOwn(receipt, 'assistant_message_id')
+            && (completion.history_saved
+                ? positiveId(receipt.user_message_id) && positiveId(receipt.assistant_message_id)
+                : (receipt.user_message_id === null || positiveId(receipt.user_message_id)) && receipt.assistant_message_id === null);
+        const resultContext = typeof completion?.content === 'string' || typeof completion?.reply === 'string'
+            || Boolean(newAgentMsg.content.trim()) || knownReceipt && completion?.history_invalidated === true;
+        // A bare terminal marker is not evidence of model completion, emptiness
+        // or persistence. Status/content cannot bypass a malformed save receipt.
+        return Boolean(knownReceipt && resultContext);
+    };
+    const applyUnknownOutcome = () => {
+        newAgentMsg.historyConfirmationStatus = 'unknown';
+        if (!streamDeliveryError) {
+            newAgentMsg.deliveryStatus = 'unknown';
+            newAgentMsg.deliveryErrorCode = 'unknown_outcome';
+            newAgentMsg.deliveryError = '连接中断，无法确认本次请求是否完成。服务端可能仍在处理；请刷新历史记录核对后再决定重试，重试可能重复执行。';
+        } else newAgentMsg.deliveryErrorCode = streamDeliveryError.code;
+        // Retain the local question and any partial text for reconciliation.
+        // Losing confirmation is not proof that execution or saving failed.
+        applyHistoryReceipt(null);
+        parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
+    };
     const applyCompletion = completion => {
         if (isPaperRequest) newAgentMsg.historyConfirmationStatus = completion?.history_confirmation_status || '';
         if (typeof completion?.content === 'string') newAgentMsg.content = completion.content;
@@ -145,45 +171,17 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
     };
 
     try {
-        // Try streaming first, fall back to non-streaming if it fails
-        let response;
-        let useStreaming = true;
-        
-        try {
-            requireCurrent();
-            response = await request('/chat/stream', {
-                ...requestOptions,
-                method: 'POST',
-                body: requestBody,
-                isStream: true
-            });
-            requireCurrent();
-            if (!response.ok) throw new Error('Stream API failed');
-        } catch (streamError) {
-            requireCurrent();
-            if (streamError?.name === 'AbortError') throw streamError;
-            if (isPaperRequest) throw streamError;
-            console.warn('[Chat] Streaming failed, falling back to non-streaming:', streamError);
-            useStreaming = false;
-            // Use non-streaming endpoint as fallback
-            requireCurrent();
-            const chatResponse = await request('/chat', {
-                ...requestOptions,
-                method: 'POST',
-                body: requestBody
-            });
-            requireCurrent();
-            // Simulate streaming response
-            if (chatResponse && typeof chatResponse.reply === 'string') {
-                applyCompletion(chatResponse);
-                if (chatResponse.error === 'model_unavailable' && typeof onModelUnavailable === 'function') onModelUnavailable(chatResponse.model || model);
-                thinkingAgent.value = null;
-                throttledScroll(chatContainer, isCurrent);
-                return;
-            }
-            throw new Error('Both streaming and non-streaming failed');
-        }
-
+        // A failed or empty stream may already have executed on the server.
+        // Neither endpoint has a normal-chat idempotency receipt, so automatic
+        // /chat fallback would be a second execution, not a safe transport retry.
+        requireCurrent();
+        const response = await request('/chat/stream', {
+            ...requestOptions,
+            method: 'POST',
+            body: requestBody,
+            isStream: true
+        });
+        requireCurrent();
         if (!response.ok) throw new Error('API failed');
 
         requireCurrent();
@@ -210,8 +208,11 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
                     if (!dataStr) continue;
                     try {
                         const data = JSON.parse(dataStr);
+                        // The normal backend emits one terminal completion.
+                        // Latch it; later envelopes cannot rewrite its authority.
+                        if (!isPaperRequest && streamCompletion) continue;
                         if (data.type === 'complete') {
-                            streamCompletion = data;
+                            if (isPaperRequest || hasCompletionAuthority(data)) streamCompletion = data;
                         } else if (data.type === 'reset') {
                             newAgentMsg.content = typeof data.content === 'string' ? data.content : '';
                             parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
@@ -276,37 +277,34 @@ export async function sendStreamingMessage(msg, messages, thinkingAgent, inputTe
         requireCurrent();
         thinkingAgent.value = null;
         
-        // If no content was received from streaming, fall back to non-streaming
-        if (!isPaperRequest && !newAgentMsg.content && useStreaming && !streamCompletion && !streamDeliveryError) {
-            console.warn('[Chat] No token events received, falling back to non-streaming');
-            try {
-                requireCurrent();
-                const chatResponse = await request('/chat', {
-                    ...requestOptions,
-                    method: 'POST',
-                    body: requestBody
-                });
-                requireCurrent();
-                if (chatResponse && typeof chatResponse.reply === 'string') {
-                    newAgentMsg.content = chatResponse.reply;
-                    streamCompletion = chatResponse;
-                }
-            } catch (fallbackError) {
-                requireCurrent();
-                console.error('[Chat] Fallback also failed:', fallbackError);
-            }
-        }
-        
         if (isPaperRequest && !streamCompletion) {
             streamDeliveryError ||= { code: 'incomplete_stream', message: '论文研读未收到完整结束与保存回执，请刷新历史核对后重试。' };
             newAgentMsg.deliveryStatus = 'failed';
         }
-        applyCompletion(streamCompletion);
+        if (!isPaperRequest && !streamCompletion) {
+            applyUnknownOutcome();
+        } else applyCompletion(streamCompletion);
         throttledScroll(chatContainer, isCurrent);
 
     } catch (error) {
-        if (!isCurrent() || error?.name === 'AbortError') return false;
+        // Current-context fences identify genuine cancellation. A reader can
+        // also throw AbortError after delivering a valid completion receipt.
+        if (!isCurrent() || (isPaperRequest && error?.name === 'AbortError')) return false;
         thinkingAgent.value = null;
+        if (!isPaperRequest) {
+            if (streamCompletion) applyCompletion(streamCompletion);
+            // These auth/router/validation responses reject the request before
+            // chat execution. Keep their reason without opting into /chat.
+            else if ([401, 403, 404, 405, 422].includes(error?.status)) {
+                newAgentMsg.deliveryStatus = 'failed';
+                newAgentMsg.deliveryErrorCode = 'request_rejected';
+                newAgentMsg.deliveryError = error.message || '服务端未接受本次请求';
+                applyHistoryReceipt(null);
+                parsedHtmlCache[streamMessageId] = safeParse(newAgentMsg.content);
+            } else applyUnknownOutcome();
+            throttledScroll(chatContainer, isCurrent);
+            return false;
+        }
         userMessage.syncState = 'failed';
         newAgentMsg.syncState = 'failed';
         newAgentMsg.deliveryStatus = 'failed';

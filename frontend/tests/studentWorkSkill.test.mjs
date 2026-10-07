@@ -254,12 +254,14 @@ for (const mode of ['chat', 'paper']) {
             h.state.currentModel.value = 'later-selected-model';
             pending.reject(new Error('synthetic stream unavailable'));
             await sending;
-            assert.equal(h.chatCalls().length, mode === 'paper' ? 1 : 2);
+            // A stream failure cannot safely repeat the invocation through
+            // /chat; preserve the submitted snapshot and expose uncertainty.
+            assert.equal(h.chatCalls().length, 1);
             assert.equal(h.chatCalls()[0].payload.agent_model, 'owner-selected-model');
             if (mode === 'chat') {
-                assert.equal(h.chatCalls()[0].options.body, h.chatCalls()[1].options.body);
-                assert.equal(h.chatCalls()[1].payload.agent_model, 'owner-selected-model');
-                assert.deepEqual(h.chatCalls()[1].payload.skill_ids, ['academic-review']);
+                assert.deepEqual(h.chatCalls()[0].payload.skill_ids, ['academic-review']);
+                assert.equal(h.state.modeMessageBuckets.value.chat.at(-1).deliveryStatus, 'unknown');
+                assert.match(h.state.modeMessageBuckets.value.chat.at(-1).deliveryError, /重试可能重复执行/);
             } else {
                 assert.equal(h.state.modeMessageBuckets.value.paper.at(-1).syncState, 'failed');
             }
@@ -268,7 +270,9 @@ for (const mode of ['chat', 'paper']) {
     });
 }
 
-for (const transport of ['stream', 'nonstream']) {
+// Both authoritative error forms are supported within the original stream.
+// The removed nonstream fallback was a new execution without idempotency proof.
+for (const transport of ['error-event', 'completion-error']) {
     for (const error of ['model_error', 'model_unavailable', 'empty_response']) {
         test(`student Work skill: ${transport} ${error} preserves terminal status, explicit UI error and no saved assistant`, async () => {
             const h = await setup({ withChat: true });
@@ -278,11 +282,8 @@ for (const transport of ['stream', 'nonstream']) {
                 const message = `${error}: synthetic provider returned no reply`;
                 const completion = { content: '', reply: '', delivery_status: status, error, message, history_saved: false, history_receipt: { user_message_id: 901, assistant_message_id: null } };
                 h.respondWith(call => {
-                    if (transport === 'nonstream') {
-                        if (call.path === '/chat/stream') throw new Error('synthetic stream unavailable');
-                        return jsonResponse(completion);
-                    }
                     assert.equal(call.path, '/chat/stream', 'Terminal model failure must never replay through fallback');
+                    if (transport === 'completion-error') return streamResponse([{ type: 'complete', ...completion }]);
                     const event = error === 'model_unavailable' ? { type: error, model: 'chosen-model', message } : { type: 'error', code: error, message };
                     return streamResponse([event, { type: 'complete', content: '', delivery_status: status, history_saved: false, history_receipt: completion.history_receipt }]);
                 });
@@ -293,7 +294,7 @@ for (const transport of ['stream', 'nonstream']) {
                 assert.ok(!String(assistant.id).startsWith('db-'));
                 assert.equal(assistant.deliveryError, message, 'Human-readable provider failure must survive canonical empty content');
                 assert.doesNotMatch(assistant.content, /已保存|已同步/);
-                assert.equal(h.chatCalls().length, transport === 'stream' ? 1 : 2);
+                assert.equal(h.chatCalls().length, 1);
                 assert.equal(h.state.currentModel.value, 'Auto Mode', 'Failure must not switch models');
             } finally { await h.close(); }
         });

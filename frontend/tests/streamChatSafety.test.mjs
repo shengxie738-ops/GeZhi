@@ -24,14 +24,21 @@ const originalWarn = console.warn;
 console.warn = () => {};
 try {
  const failed = await send(async () => { throw new Error('offline'); });
- assert.equal(failed.deliveryStatus, 'failed');
- assert.match(failed.content, /请求失败/);
+ assert.equal(failed.deliveryStatus, 'unknown');
+ assert.match(failed.deliveryError, /无法确认/);
+ assert.equal(failed.content, '');
  assert.ok(!failed.content.includes('演示'));
- const fallback = await send(async (_url, options) => {
-   if (options.isStream) throw new Error('stream unavailable');
-   return { reply: payload };
+ // No idempotency proof exists for normal chat. A failed stream must never
+ // execute the same submission again through the old compatibility endpoint.
+ let writes = 0;
+ const unavailable = await send(async (url) => {
+   writes += 1;
+   assert.equal(url, '/chat/stream');
+   throw new Error('stream unavailable');
  });
- assert.equal(fallback.content, payload);
+ assert.equal(writes, 1);
+ assert.equal(unavailable.deliveryStatus, 'unknown');
+ assert.equal(unavailable.content, '');
  const streamed = await send(async () => ({ ok: true, body: { getReader() {
    let sent = false;
    return { async read() { if (sent) return { done: true }; sent = true;
@@ -40,4 +47,4 @@ try {
  } } }));
  assert.equal(streamed.content, payload);
 } finally { console.warn = originalWarn; }
-console.log('stream chat failure, non-stream fallback and streaming HTML boundary checks passed');
+console.log('stream chat uncertainty, no automatic resubmission and streaming HTML boundary checks passed');

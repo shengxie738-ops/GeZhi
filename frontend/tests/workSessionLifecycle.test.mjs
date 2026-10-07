@@ -182,10 +182,12 @@ test('obsolete unauthorized transport response cannot expire the next account se
     assert.deepEqual(events,[]);
 });
 
-for(const outcome of ['success','notSaved','invalid']) test(`chat nonstream fallback marks sync only from an actual ${outcome} receipt`,async()=>{
+// Receipt checks use the original stream. Transport loss is not permission to
+// execute /chat again, even if that compatibility endpoint could return a reply.
+for(const outcome of ['success','notSaved','invalid']) test(`chat stream marks sync only from an actual ${outcome} receipt`,async()=>{
     setup(async(url,options)=>{
-        if(String(url).endsWith('/chat/stream')) throw new Error('offline stream');
-        if(String(url).endsWith('/chat')) return response({reply:'source-grounded reply',history_saved:outcome==='success',history_receipt:outcome==='invalid'?{user_message_id:'bad',assistant_message_id:'bad'}:{user_message_id:101,assistant_message_id:102}});
+        if(String(url).endsWith('/chat/stream')) return streamResponse({reply:'source-grounded reply',history_saved:outcome==='success',history_receipt:outcome==='invalid'?{user_message_id:'bad',assistant_message_id:'bad'}:{user_message_id:101,assistant_message_id:102}});
+        if(String(url).endsWith('/chat')) assert.fail('stream must not automatically resubmit');
         return response({status:'success',data:[]});
     });
     const {state,scope}=makeHook(useChat); await settle(); state.agentMode.value='chat'; state.inputText.value='Explain metadata'; await state.sendMessage();
@@ -256,14 +258,14 @@ test('saved search representative with no publication year is explicitly unknown
 });
 
 test('invalidated stream removes live rows even when a history refresh replaced the captured mode array',async()=>{
-    const fallback=deferred();setup(async url=>{
-        if(String(url).endsWith('/chat/stream')) throw new Error('stream unavailable');
-        if(String(url).endsWith('/chat')) return await fallback.promise;
+    const terminal=deferred();setup(async url=>{
+        if(String(url).endsWith('/chat/stream')) return await terminal.promise;
+        if(String(url).endsWith('/chat')) assert.fail('stream must not automatically resubmit');
         return response({status:'success',data:[],pagination:{has_more:false,complete:true}});
     });
     const {state,scope}=makeHook(useChat);await settle();state.agentMode.value='chat';state.inputText.value='inflight private';const sending=state.sendMessage();await settle();
     const before=state.modeMessageBuckets.value.chat;await state.loadChatHistory('chat');assert.notEqual(state.modeMessageBuckets.value.chat,before);
-    fallback.resolve(response({reply:'invalidated reply',history_saved:false,history_invalidated:true,history_receipt:{user_message_id:null,assistant_message_id:null}}));await sending;
+    terminal.resolve(streamResponse({reply:'invalidated reply',history_saved:false,history_invalidated:true,history_receipt:{user_message_id:null,assistant_message_id:null}}));await sending;
     assert.equal(state.modeMessageBuckets.value.chat.length,0);scope.stop();
 });
 
