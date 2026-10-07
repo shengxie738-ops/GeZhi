@@ -12,7 +12,11 @@
     "backend/tests/test_work_byok_transport.py",
     "backend/tests/test_work_byok_repository.py",
     "backend/tests/test_work_byok_http.py",
-    "backend/tests/test_work_byok_schema.py"
+    "backend/tests/test_work_byok_schema.py",
+    "backend/tests/test_work_byok_resolver.py",
+    "backend/tests/test_work_byok_adapter.py",
+    "backend/tests/test_work_byok_limits.py",
+    "backend/tests/test_work_byok_probes.py"
   ],
   "allowed_app_modules": [
     "app.schemas.model_selection",
@@ -32,7 +36,11 @@
     "app.services.byok.http_boundary",
     "app.services.byok.observability",
     "app.services.byok.reservations",
-    "app.api.endpoints.user_models"
+    "app.api.endpoints.user_models",
+    "app.services.byok.resolver",
+    "app.services.byok.capabilities",
+    "app.services.byok.adapter",
+    "app.services.byok.probes"
   ],
   "source_pins": [
     {
@@ -193,7 +201,7 @@
     {
       "path": "backend/app/api/endpoints/user_models.py",
       "blob_sha": "cbf974333286af888f4ca66750da8c98f4664933",
-      "sha256": "9f3d6f3b8165b0e72fb91dac46db756c3ebc39b69b67edc55c93b265dc7f3266"
+      "sha256": "71413402dff566cfe9402c21005911a29ea07344f4228fee50145a041fdabfeb"
     },
     {
       "path": "backend/app/api/endpoints/visual_guide.py",
@@ -468,7 +476,7 @@
     {
       "path": "backend/app/schemas/user_model.py",
       "blob_sha": "de6169efc5d4117330d8b92ea1005d9c3c906a35",
-      "sha256": "a79017427ffd54249913c965e634f274b4be9f881a04f850f4c486482ea40c9f"
+      "sha256": "72eefc8c8091cb6fab5c6b3cc617c4724b2a551fe9edbf14aab1997cda1f74f5"
     },
     {
       "path": "backend/app/services/academic_sources.py",
@@ -693,7 +701,7 @@
     {
       "path": "backend/app/services/model_registry.py",
       "blob_sha": "7f19f2328599ded9c6796d8f96b53d8409aba829",
-      "sha256": "d75d199fab6da049e12c73e8a78e03af7798bee27838c97383bfb2b65444bbc1"
+      "sha256": "67a3e3d01f7629b374a748ccd1f97f06f66a84b381b0786fc193e6581844ea9f"
     },
     {
       "path": "backend/app/services/profile_extractor.py",
@@ -2228,7 +2236,7 @@
     {
       "path": "backend/app/services/byok/errors.py",
       "blob_sha": null,
-      "sha256": "3bf5df922098fa91638ccd20ce6f54bd51802d7dab855123230f81bca329ca9c"
+      "sha256": "f949ae4393bef1e27e8eb8fca88b21ba7ce52642f761a617257ab1d2acd1cb8e"
     },
     {
       "path": "backend/app/services/byok/endpoint_policy.py",
@@ -2298,7 +2306,7 @@
     {
       "path": "backend/app/repositories/user_models.py",
       "blob_sha": null,
-      "sha256": "1f4ac2bafaa2f56b32d0685370f6b48fa0b9dfc57eb2903133eb28787c19f909"
+      "sha256": "d492bdad6ac1286044cce0ccffc547299ffc3bcf935a9c3139b125427d2c1b19"
     },
     {
       "path": "backend/app/services/byok/schema.py",
@@ -2329,6 +2337,51 @@
       "path": "backend/tests/support/work_byok_repository_fakes.py",
       "blob_sha": null,
       "sha256": "42fd7e71b72b64d14a38aeff1b54a211717395b388cbf218efbda776ce4b96e5"
+    },
+    {
+      "path": "backend/tests/test_work_byok_resolver.py",
+      "blob_sha": null,
+      "sha256": "8396906b7918bc65d0df6f456d4a213fb339bc601fdd0aa263a7a6a396d60e3c"
+    },
+    {
+      "path": "backend/tests/test_work_byok_adapter.py",
+      "blob_sha": null,
+      "sha256": "7c5ea105b848b02691daa770fa38a6796f3627065b950c3948424faf2a996b7c"
+    },
+    {
+      "path": "backend/tests/test_work_byok_limits.py",
+      "blob_sha": null,
+      "sha256": "74581e11cd5fa1d81a5832881a4c53dd89e8bb003b339ac86daf4b8d7e4fcb61"
+    },
+    {
+      "path": "backend/app/services/byok/resolver.py",
+      "blob_sha": null,
+      "sha256": "7584b12ec4c69713e71015ce09e413574e3b7d152563942d3a79b1061bfb53d6"
+    },
+    {
+      "path": "backend/app/services/byok/capabilities.py",
+      "blob_sha": null,
+      "sha256": "2f21d16245dc285975f8035aab26bf1c938f3fb19d4782b1d709a37e32bc794b"
+    },
+    {
+      "path": "backend/app/services/byok/adapter.py",
+      "blob_sha": null,
+      "sha256": "3a41b978326827d6f0fc094c5bff2422a8019106802e8a98d574027371120fb8"
+    },
+    {
+      "path": "backend/tests/support/work_byok_adapter_fakes.py",
+      "blob_sha": null,
+      "sha256": "72d9626482ce2f1e66151d9e2b23e6183bfffa0dfb240c2582b7ce385261cad1"
+    },
+    {
+      "path": "backend/tests/test_work_byok_probes.py",
+      "blob_sha": null,
+      "sha256": "999727aeda0453661bd371ecd21793ca89ac41eda336fcfb83418ebb473c4388"
+    },
+    {
+      "path": "backend/app/services/byok/probes.py",
+      "blob_sha": null,
+      "sha256": "03268550d54968aec28331a3eb4d2a33990e6027c352de3291ea51cca5910615"
     }
   ],
   "review_state": "candidate_pending_independent_review"

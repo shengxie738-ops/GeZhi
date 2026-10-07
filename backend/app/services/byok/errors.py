@@ -45,7 +45,7 @@ PUBLIC_MESSAGES = MappingProxyType({
 SAFE_FIELDS = frozenset({'model_selection', 'source', 'model_id', 'config_id', 'config_version',
     'expected_config_version', 'adapter_id', 'base_url', 'api_key', 'name', 'provider', 'provider_label',
     'model_ids', 'response_model_aliases', 'secret_action', 'is_active', 'destination_consent',
-    'accepted', 'destination_digest', 'probe_kind', 'operation_id', 'purpose', 'task_id', 'revision',
+    'accepted', 'destination_digest', 'probe_kind', 'operation_id', 'draft_revision', 'purpose', 'task_id', 'revision',
     'output_tokens', 'timeout_seconds', 'connect_seconds', 'request_bytes', 'envelope_bytes',
     'text_bytes', 'sse_event_bytes', 'tool_arguments_bytes', 'tool_call_count'})
 _DEFAULT_STATUS = {'CUSTOM_MODEL_NOT_FOUND': 404, 'MODEL_CONFIG_STALE': 409,
@@ -56,7 +56,7 @@ _DEFAULT_STATUS = {'CUSTOM_MODEL_NOT_FOUND': 404, 'MODEL_CONFIG_STALE': 409,
 
 
 class ByokError(Exception):
-    __slots__ = ('_code', '_status_code', '_request_id', '_fields')
+    __slots__ = ('_code', '_status_code', '_request_id', '_fields', '_retry_after_seconds')
 
     @property
     def code(self):
@@ -74,7 +74,11 @@ class ByokError(Exception):
     def fields(self):
         return self._fields
 
-    def __init__(self, code: str, status_code: int | None = None, request_id: str | None = None, *, fields: tuple[str, ...] = ()):
+    @property
+    def retry_after_seconds(self):
+        return self._retry_after_seconds
+
+    def __init__(self, code: str, status_code: int | None = None, request_id: str | None = None, *, fields: tuple[str, ...] = (), retry_after_seconds: int | None = None):
         if type(code) is not str or code not in PUBLIC_MESSAGES:
             raise ValueError('invalid controlled error code')
         status_code = _DEFAULT_STATUS.get(code, 400) if status_code is None else status_code
@@ -85,6 +89,9 @@ class ByokError(Exception):
             raise ValueError('invalid opaque request identifier')
         if type(fields) is not tuple or len(fields) > len(SAFE_FIELDS) or any(type(f) is not str or f not in SAFE_FIELDS for f in fields):
             raise ValueError('invalid safe field names')
+        if retry_after_seconds is not None and (code not in {'PROVIDER_RATE_LIMITED', 'PROBE_RATE_LIMITED', 'MODEL_CAPACITY_EXCEEDED'} or type(retry_after_seconds) is not int or not 0 <= retry_after_seconds <= 300):
+            raise ValueError('invalid safe retry hint')
+        self._retry_after_seconds = retry_after_seconds
         self._code, self._status_code, self._request_id = code, status_code, request_id
         self._fields = tuple(dict.fromkeys(fields))
         super().__init__(code)
@@ -103,4 +110,6 @@ def public_error(error: BaseException) -> dict:
     result = {'code': error.code, 'message': PUBLIC_MESSAGES[error.code], 'request_id': error.request_id}
     if error.fields:
         result['fields'] = list(error.fields)
+    if error.retry_after_seconds is not None:
+        result['retry_after_seconds'] = error.retry_after_seconds
     return result

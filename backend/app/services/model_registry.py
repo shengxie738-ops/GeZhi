@@ -376,3 +376,16 @@ def build_omni_client(model_id: str, *, timeout: float = 180.0, client_factory: 
     config = get_model_config(model_id, category="omni")
     client = factory(api_key=config.api_key, base_url=config.base_url, timeout=timeout)
     return client, config.api_model or config.model_id
+
+
+def get_platform_model_metadata_exact(model_id):
+    """Non-secret Work port; no trim, legacy aliases, api_model or fallback.
+
+    Deployment credential sources and existing platform construction remain
+    unchanged. The caller separately owns the current platform readiness gates.
+    """
+    from app.services.byok.errors import ByokError
+    config = _MODEL_CONFIGS.get(model_id) if type(model_id) is str else None
+    if config is None or config.category != 'text' or config.model_id != model_id:
+        raise ByokError('MODEL_SELECTION_REQUIRED')
+    return {'model_id': config.model_id, 'capabilities': ('text', 'stream', 'tools', 'json')}

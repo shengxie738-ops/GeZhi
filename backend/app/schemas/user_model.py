@@ -93,3 +93,86 @@ class UserCustomModelUpdateRequest(_ConfigFields):
 
 class UserCustomModelDeleteRequest(SafeFrozenModel):
     expected_config_version: Version
+
+
+from app.schemas.model_selection import ModelSelection
+from app.services.byok.types import ModelPurpose
+from uuid import UUID
+
+
+class UserModelCheckSelectionRequest(SafeFrozenModel):
+    model_selection: ModelSelection
+    purpose: ModelPurpose
+    task_id: UUID | None = None
+    revision: Version | None = None
+
+    @field_validator('task_id', mode='before')
+    @classmethod
+    def exact_task_uuid(cls, value):
+        from uuid import UUID
+        if isinstance(value, UUID):
+            return value
+        if type(value) is str:
+            try:
+                parsed = UUID(value)
+                if str(parsed) == value:
+                    return parsed
+            except ValueError:
+                pass
+        raise ValueError('canonical task UUID required')
+
+    @model_validator(mode='after')
+    def teacher_context_required(self):
+        if self.purpose.startswith('teacher_') and (self.task_id is None or self.revision is None):
+            raise ByokError('INVALID_INPUT', fields=('task_id', 'revision'))
+        if not self.purpose.startswith('teacher_') and (self.task_id is not None or self.revision is not None):
+            raise ByokError('INVALID_INPUT', fields=('task_id', 'revision'))
+        return self
+
+
+from app.schemas.model_selection import ModelID
+from app.services.byok.types import ProbeKind, validate_destination_consent
+
+
+class _ProbeFields(SafeFrozenModel):
+    model_id: ModelID
+    probe_kind: ProbeKind
+    operation_id: UUID
+
+    @field_validator('operation_id', mode='before')
+    @classmethod
+    def canonical_operation_id(cls, value):
+        if isinstance(value, UUID):
+            return value
+        if type(value) is str:
+            try:
+                parsed = UUID(value)
+                if str(parsed) == value:
+                    return parsed
+            except ValueError:
+                pass
+        raise ValueError('canonical operation UUID required')
+
+
+class SavedProbeRequest(_ProbeFields):
+    expected_config_version: Version
+
+
+class DraftProbeRequest(_ConfigFields, _ProbeFields):
+    # Drafts carry no saved selection or expected saved version.
+    adapter_id: Literal['openai_chat_completions_v1']
+    base_url: Annotated[str, Field(max_length=512)]
+    api_key: str = Field(repr=False, exclude=True)
+    destination_consent: DestinationConsent
+    draft_revision: Version
+    response_model_aliases: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+
+    @model_validator(mode='after')
+    def draft_only_destination(self):
+        validate_destination_consent(self.destination_consent, normalize_endpoint(self.base_url))
+        return self
+
+    @field_validator('response_model_aliases', mode='before')
+    @classmethod
+    def draft_aliases(cls, value, info):
+        return dict(normalize_response_model_aliases(value, (info.data.get('model_id'),)))

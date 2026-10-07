@@ -22,6 +22,7 @@ from app.models.user_custom_ai_model import UserCustomAIModel
 from app.models.user_model_inventory import UserModelInventory
 from app.schemas.model_selection import CustomSelection
 from app.schemas.user_model import UserCustomModelCreateRequest, UserCustomModelUpdateRequest
+from app.services.byok.capabilities import (CapabilityProof, required_capabilities, current_evidence, capability_states)
 from app.services.byok.endpoint_policy import normalize_endpoint
 from app.services.byok.errors import ByokError
 from app.services.byok.limits import CAPS, ModelCallLimits, WorkCallBudget
@@ -61,6 +62,10 @@ class ConfigPublicDTO(SafeFrozenModel):
     latest_attempts: tuple[dict, ...] = ()
 
 
+class ExactConfigMetadata(ConfigPublicDTO):
+    destination_digest: str | None
+
+
 class ModelInventory(SafeFrozenModel):
     records: tuple[ConfigPublicDTO, ...]
     inventory_revision: int
@@ -83,6 +88,7 @@ class LockedConfig:
         'model_ids',
         'response_model_aliases',
         'envelope',
+        'capability_evidence',
         '_frozen'
     )
 
@@ -95,11 +101,12 @@ class LockedConfig:
         endpoint,
         model_ids,
         response_model_aliases,
-        envelope
+        envelope,
+        capability_evidence=()
     ):
         for name, value in zip(
             self.__slots__,
-            (owner_subject, config_id, config_version, credential_version, endpoint, model_ids, response_model_aliases, envelope, True)
+            (owner_subject, config_id, config_version, credential_version, endpoint, model_ids, response_model_aliases, envelope, capability_evidence, True)
         ):
             object.__setattr__(self, name, value)
 
@@ -189,6 +196,8 @@ def _safe_latest(generations, version):
 
 
 class ProbeAttemptBinding(SafeFrozenModel):
+    owner_subject: str
+    consent_version: int
     config_id: str
     config_version: int
     credential_version: int
@@ -196,6 +205,17 @@ class ProbeAttemptBinding(SafeFrozenModel):
     model_id: str
     probe_kind: str
     generation: int
+
+
+from app.services.byok.reservations import _Ephemeral
+_PROBE_RESERVATION_AUTHORITY = object()
+
+
+class PendingProbeReservation(_Ephemeral):
+    __slots__ = ('actor', 'binding', 'pending', '_authority')
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError('saved probe reservations are repository only')
 
 
 class UserModelRepository:
@@ -221,6 +241,7 @@ class UserModelRepository:
         self._locked = {}
         self._last_config_id = None
         self._pending_reservations = []
+        self._pending_probe_bindings = []
         self.audit_facts = []
         if schema_observation is None or not schema_observation.available or (not session.in_transaction()):
             raise ByokError('BYOK_STORAGE_UNAVAILABLE')
@@ -529,6 +550,31 @@ class UserModelRepository:
             inventory_revision=inv.inventory_revision if inv else 0
         )
 
+    def platform_metadata(self, model_id):
+        from app.services.model_registry import get_platform_model_metadata_exact
+        return get_platform_model_metadata_exact(model_id)
+
+    def read_exact_metadata(self, actor, selection):
+        """One exact owner+ID query in the caller's current root, without writes.
+
+        No inventory creation, FOR UPDATE, envelope copy or decryption. Actual
+        admission uses lock_exact_config and final pending current reads again.
+        """
+        if not isinstance(selection, CustomSelection):
+            raise ByokError('MODEL_SELECTION_REQUIRED')
+        self._account(actor, locking=False)
+        row = self.session.execute(select(UserCustomAIModel).where(
+            UserCustomAIModel.user_id == actor.subject,
+            UserCustomAIModel.id == selection.config_id,
+        ).execution_options(populate_existing=True)).scalar_one_or_none()
+        if row is None:
+            raise ByokError('CUSTOM_MODEL_NOT_FOUND')
+        if row.config_version != selection.config_version:
+            raise ByokError('MODEL_CONFIG_STALE')
+        inventory = self._inventory(actor, locking=False)
+        dto = self._dto(row, inventory)
+        return ExactConfigMetadata(**dto.model_dump(), destination_digest=row.destination_digest)
+
     def lock_exact_config(self, actor, selection):
         self._writer()
         if not isinstance(selection, CustomSelection):
@@ -556,7 +602,12 @@ class UserModelRepository:
             endpoint,
             models,
             normalize_response_model_aliases(row.response_model_aliases or {}, models),
-            CredentialEnvelope(**row.credential_envelope)
+            CredentialEnvelope(**row.credential_envelope),
+            tuple(CapabilityProof.model_validate_json(json.dumps(entry | {
+                'owner_subject': actor.subject, 'config_id': row.id,
+                'credential_version': row.credential_version,
+                'destination_digest': endpoint.destination_digest,
+            })) for entry in _safe_evidence(row.capability_evidence, row.config_version, configuration_fingerprint(row))),
         )
 
     def reserve_custom_call(self, actor, selection, purpose, caps, provenance):
@@ -580,25 +631,38 @@ class UserModelRepository:
         snapshot = self.lock_exact_config(actor, selection)
         if provenance.destination_digest != snapshot.endpoint.destination_digest or provenance.safe_host != snapshot.endpoint.host:
             raise ByokError('DESTINATION_CONSENT_REQUIRED')
-        required = 'json' if purpose in {
-            'teacher_chat',
-            'teacher_lesson_outline'
-        } else 'tools' if purpose == 'student_tutor' else None
-        if required:
-            row = self._locked[actor.subject, selection.config_id]
-            evidence = _safe_evidence(
-                row.capability_evidence,
-                row.config_version,
-                configuration_fingerprint(row)
-            )
-            matching = [e for e in evidence if e['model_id'] == selection.model_id and e['probe_kind'] == required]
-            if not matching:
-                raise ByokError('CAPABILITY_UNVERIFIED')
-            if not set(provenance.capability_evidence_ids).issuperset((e['evidence_id'] for e in matching)):
-                raise ByokError('CAPABILITY_UNVERIFIED')
+        self._require_current_capabilities(
+            self._locked[actor.subject, selection.config_id], selection, purpose, provenance
+        )
         pending = _pending(snapshot, selection, purpose, caps, provenance, self.token)
         self._pending_reservations.append((actor, pending))
         return pending
+
+    def _require_current_capabilities(self, row, selection, purpose, provenance):
+        """The same current capability policy at reservation AND final commit.
+
+        A readiness observation is not authority: probe attempts/evidence can
+        change without config_version changing. Unknown basic text remains
+        allowed, retained success survives a failed latest attempt, and explicit
+        unsupported text cannot slip through actual reservation. Probe starts
+        may deliberately retest their capability without existing evidence.
+        """
+        required = required_capabilities(purpose)
+        if purpose.startswith('probe_'):
+            return
+        entries = _safe_evidence(row.capability_evidence, row.config_version, configuration_fingerprint(row))
+        evidence = current_evidence(entries, selection)
+        states = capability_states(evidence, _safe_latest(row.probe_generations, row.config_version), selection)
+        for kind in required:
+            if states[kind] == 'unsupported':
+                raise ByokError('CAPABILITY_UNSUPPORTED')
+            if kind != 'text':
+                matching = evidence.get(kind, ())
+                if not matching or not set(provenance.capability_evidence_ids).issuperset(matching):
+                    raise ByokError('CAPABILITY_UNVERIFIED')
+        current_ids = {evidence_id for values in evidence.values() for evidence_id in values}
+        if not set(provenance.capability_evidence_ids).issubset(current_ids):
+            raise ByokError('CAPABILITY_UNVERIFIED')
 
     def begin_probe_attempt(self, actor, selection, probe_kind, *, started_at):
         snapshot = self.lock_exact_config(actor, selection)
@@ -623,6 +687,8 @@ class UserModelRepository:
         generations[key] = {'generation': generation, 'latest_attempt': attempt.model_dump(mode='json')}
         self._probe_write(actor, row, {'probe_generations': generations})
         return ProbeAttemptBinding(
+            owner_subject=actor.subject,
+            consent_version=row.consent_version,
             config_id=selection.config_id,
             config_version=selection.config_version,
             credential_version=snapshot.credential_version,
@@ -632,6 +698,55 @@ class UserModelRepository:
             generation=generation
         )
 
+    def reserve_saved_probe(self, actor, config_id, expected_config_version, model_id, probe_kind, *, started_at):
+        """Generation and single paid-call reservation in the SAME locked root."""
+        from app.services.byok.capabilities import purpose_limits
+        selection = CustomSelection(source='custom', config_id=config_id,
+            config_version=expected_config_version, model_id=model_id)
+        binding = self.begin_probe_attempt(actor, selection, probe_kind, started_at=started_at)
+        snapshot = self.lock_exact_config(actor, selection)
+        caps = purpose_limits('probe_' + probe_kind)
+        provenance = ModelProvenance(selection=selection, destination_digest=snapshot.endpoint.destination_digest,
+            safe_host=snapshot.endpoint.host, frozen_caps=caps)
+        value = object.__new__(PendingProbeReservation)
+        value.actor, value.binding = actor, binding
+        value.pending = self.reserve_custom_call(actor, selection, 'probe_' + probe_kind, caps, provenance)
+        value._authority = _PROBE_RESERVATION_AUTHORITY
+        self._pending_probe_bindings.append((actor, binding))
+        return value
+
+    def complete_saved_probe(self, reservation, result, latest_generation):
+        """Fresh root, exact version/credential/consent/active/generation CAS.
+
+        Success evidence and the most recent attempt are separate. A failed
+        attempt never manufactures unsupported or discards retained success.
+        """
+        from app.services.byok.probes import ProbeOutcome
+        if (not isinstance(reservation, PendingProbeReservation) or
+            reservation._authority is not _PROBE_RESERVATION_AUTHORITY or not isinstance(result, ProbeOutcome)):
+            raise ByokError('INVALID_INPUT')
+        binding = reservation.binding
+        if type(latest_generation) is not int or latest_generation != binding.generation:
+            raise ByokError('MODEL_CONFIG_STALE')
+        fields = dict(config_version=binding.config_version, model_id=binding.model_id,
+            probe_kind=binding.probe_kind, generation=binding.generation,
+            checked_at=result.checked_at, duration_ms=result.duration_ms)
+        success = result.status in {'usable_for_text', 'capability_verified'}
+        if success and not result.transport_closed:
+            raise ByokError('OUTCOME_UNKNOWN')
+        if result.status == 'checking' or result.status == 'not_tested' or (success and
+            result.status != ('usable_for_text' if binding.probe_kind == 'text' else 'capability_verified')):
+            raise ByokError('INVALID_INPUT')
+        attempt = ProbeAttempt(**fields, status=result.status, code=result.code)
+        evidence = CapabilityEvidence(**fields, evidence_id=uuid4().hex) if success else None
+        try:
+            return self.complete_probe_attempt(reservation.actor, binding, attempt, evidence=evidence)
+        except ByokError as error:
+            if error.code in {'CUSTOM_MODEL_NOT_FOUND', 'MODEL_DISABLED', 'CREDENTIAL_UNAVAILABLE',
+                'CREDENTIAL_REENTRY_REQUIRED', 'DESTINATION_CONSENT_REQUIRED'}:
+                raise ByokError('MODEL_CONFIG_STALE') from None
+            raise
+
     def _probe_write(self, actor, row, values):
         result = self.session.execute(update(UserCustomAIModel).where(
             UserCustomAIModel.user_id == actor.subject,
@@ -639,7 +754,8 @@ class UserModelRepository:
             UserCustomAIModel.config_version == row.config_version,
             UserCustomAIModel.credential_version == row.credential_version,
             UserCustomAIModel.is_active == True,
-            UserCustomAIModel.destination_digest == row.destination_digest
+            UserCustomAIModel.destination_digest == row.destination_digest,
+            UserCustomAIModel.consent_version == row.consent_version
         ).values(**values).execution_options(synchronize_session=False))
         if result.rowcount != 1:
             raise ByokError('MODEL_CONFIG_STALE')
@@ -661,7 +777,7 @@ class UserModelRepository:
         generations = dict(row.probe_generations or {})
         key = json.dumps([binding.model_id, binding.probe_kind], separators=(',', ':'))
         current = generations.get(key, {})
-        if binding.credential_version != snapshot.credential_version or binding.destination_digest != snapshot.endpoint.destination_digest or current.get('generation') != binding.generation or (current.get(
+        if binding.owner_subject != actor.subject or binding.consent_version != row.consent_version or binding.credential_version != snapshot.credential_version or binding.destination_digest != snapshot.endpoint.destination_digest or current.get('generation') != binding.generation or (current.get(
             'latest_attempt',
             {}
         ).get('status') != 'checking') or ((
@@ -749,7 +865,17 @@ class UserModelRepository:
                 raise ByokError('CUSTOM_MODEL_NOT_FOUND')
             self._locked[(actor.subject, pending.selection.config_id)] = row
             current = self.lock_exact_config(actor, pending.selection)
+            self._require_current_capabilities(row, pending.selection, pending.purpose, pending.provenance)
             snapshot = pending._snapshot
             if (current.credential_version != snapshot.credential_version
                     or current.endpoint != snapshot.endpoint):
+                raise ByokError('MODEL_CONFIG_STALE')
+
+        for actor, binding in self._pending_probe_bindings:
+            row = self._locked[actor.subject, binding.config_id]
+            key = json.dumps([binding.model_id, binding.probe_kind], separators=(',', ':'))
+            current = (row.probe_generations or {}).get(key, {})
+            if (row.consent_version != binding.consent_version or row.credential_version != binding.credential_version
+                or row.destination_digest != binding.destination_digest or current.get('generation') != binding.generation
+                or current.get('latest_attempt', {}).get('status') != 'checking'):
                 raise ByokError('MODEL_CONFIG_STALE')
